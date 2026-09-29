@@ -1,0 +1,18 @@
+# Secrets: dev/agent tokens. Production secrets live in /etc/processor/.env.
+.env
+.env.*
+
+# cannobserv wheelhouse: mirrored from the private index, or built locally.
+.wheelhouse/
+
+# Python / uv
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/

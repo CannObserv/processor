@@ -13,8 +13,15 @@ cannobserv `docs/plans/2026-09-24-content-process-contract-co-core-deltas.md`.
 
 Written for the agent that builds Processor on `co-processor`, who has not seen
 the conversation that produced it. Every co-core name below was checked against
-co-core 0.19.5 in Observo's venv; confirm each against the pinned 0.19.4 before
-relying on it.
+co-core 0.19.5 in Observo's venv, then against tags `v0.19.4` and `v0.19.7`
+on `co-processor`.
+
+**Amended 2026-09-29 (`co-processor` review, processor#1):**
+- The pin moves from 0.19.4 to **0.19.7**, Watcher's locked version (D5,
+  Sections 2, 5 and 7).
+- The child process is a fresh `spawn` process per command (Section 3).
+- The parity corpus adds real samples (Section 7).
+- Open Questions 2 and 3 are answered.
 
 ---
 
@@ -57,7 +64,7 @@ state and UI it should not have).
 | D2 | **Headless and stateless in v1**: no UI, no database. Idempotency is the write-if-absent store; correlation and dedupe are the issuer's (by `command_id`). |
 | D3 | **Own identities**: broker ACL user, GCS service account, bucket, tailnet tag. Observo's broker#62 `observo` user is stripped. |
 | D4 | **Own bucket** `gs://co-gcs-processor`, derived outputs only, so Watcher's read grant is a plain bucket-level `objectViewer`. |
-| D5 | **co-core pinned exactly, matched to Watcher** (0.19.4 today); bumps are deliberate and coordinated. |
+| D5 | **co-core pinned exactly, matched to Watcher** (0.19.7 today); bumps are deliberate and coordinated. |
 | D6 | **Extraction runs in a killable child process** with a timeout and an address-space limit, never a thread. |
 | D7 | Broker `NOPERM` and `OOM` are **transient**; a reclaim **re-runs** the extraction (no dedupe key). |
 | D8 | **v1 scope is #629's requirements only.** |
@@ -95,7 +102,7 @@ processor-version pin on the command; no job API — the bus is the interface.
 | Thing | Value |
 |---|---|
 | Repo | `CannObserv/processor` — Python 3.12, uv, hatchling src layout |
-| Dependencies | `co-core[extract]`, `co-core-aio[bus]`, `co-core-sync[gcs]`, all `==0.19.4` (Section 5), from the private CannObserv index |
+| Dependencies | `co-core[extract]`, `co-core-aio[bus]`, `co-core-sync[gcs]`, all `==0.19.7` (Section 5), from the private CannObserv index |
 | CI | wheelhouse pulled through WIF as `co-pypi-reader` (org var `GCP_WIF_PROVIDER`), as in the other cohort repos |
 | VM | exe.dev `co-processor`, 8 GB, default `exeuntu` image, tag `processor` |
 | Service | systemd unit `processor`: `MemoryMax` below VM RAM, `Restart=on-failure`, `OOMPolicy=continue` (Section 4) |
@@ -154,11 +161,18 @@ Serial: one command at a time.
    bare_sha256(output_digest), CANONICAL_TEXT_MEDIA_TYPE)`, write-if-absent.
 6. **Publish** `ProcessingCompleteEmit`, then **ack**.
 
-**The child process.** A single-worker process pool with a per-command timeout,
-recycled on timeout or crash. Its initializer sets `RLIMIT_AS` so a
-memory-hungry document raises `MemoryError` in the child instead of drawing the
-OOM killer. A thread cannot be killed; one PDF that wedges pypdf would stall the
-consumer forever.
+**The child process.** Each command gets a fresh `spawn`-context process,
+killed on timeout. On a crash, the child's exit code tells the parent. The
+child sets `RLIMIT_AS` on itself before it imports the extractors, so a
+memory-hungry document raises `MemoryError` in the child instead of drawing
+the OOM killer. A thread cannot be killed; one PDF that wedges pypdf would
+stall the consumer forever.
+
+Not a `ProcessPoolExecutor`: it cannot kill a running task on timeout
+without private internals. On 3.12 it also forks from the asyncio parent
+with its GCS client, and the child inherits that address space, which makes
+`RLIMIT_AS` hard to size. At ≤ ~100 commands/day the spawn cost is noise
+(amended 2026-09-29).
 
 **Layout:**
 
@@ -225,9 +239,18 @@ reclaim re-running (not re-publishing) the extraction.
   1` — the dispatch Processor runs is Watcher's, lifted into co-core. Bump it by
   hand only when Processor's own logic (config merging, dispatch) changes output
   in a way co-core's version cannot see.
-- **co-core `==0.19.4`**, Watcher's version. Processor needs `GcsBlobStore`
-  (0.19.3+) and the `content.process` types (0.19.4), nothing newer, so both
-  sides report `"0.19.4+1"` from the first shadow command.
+- **co-core `==0.19.7`**, the version Watcher's `uv.lock` resolves. Watcher's
+  `pyproject.toml` allows `>=0.19.6,<0.20`. Both sides then report `"0.19.7+1"`
+  from the first shadow command. Processor needs `GcsBlobStore` (0.19.3+) and
+  the `content.process` types (0.19.4).
+  - Between 0.19.4 and 0.19.7, `co_core.pure.extract` and `co_core_aio.bus` are
+    byte-identical, and the `content.process` types did not change. 0.19.6 only
+    added the `content.persist` pair.
+  - 0.19.6 does change one thing Processor relies on: a store checks the
+    fingerprint against the bytes it writes, and raises `FingerprintMismatch`.
+  - This section named 0.19.4 until the 2026-09-29 amendment. That pin would
+    have reported `"0.19.4+1"` against Watcher's `"0.19.7+1"`, which is Open
+    Question 1's hazard from the first command.
 - **Bumps are deliberate and coordinated.** `processor_version` moves on every
   co-core release whether or not output moves, and Watcher's Option A reacts to
   it. No automatic lock refresh; dependency bots skip co-core. A bump is planned
@@ -272,12 +295,18 @@ TDD, red first.
 
 - **Pure core — golden-digest parity.** A corpus of HTML / PDF / CSV fixtures,
   each with a spec and resolved `media_type`, asserting `output_digest` and
-  `empty`. Seed it from Watcher's extraction fixtures so parity with Watcher's
-  local path is proven before shadow, not discovered in it. Include: a one-page
-  scanned PDF (one empty chunk → `empty`, not a failure); an unknown essence (→
-  HTML); a spec whose `spec_fingerprint` raises (→ `None`).
+  `empty`. Include: a one-page scanned PDF (one empty chunk → `empty`, not a
+  failure); an unknown essence (→ HTML); a spec whose `spec_fingerprint` raises
+  (→ `None`).
+  - Watcher's only file fixture is `tests/fixtures/sample.html`, so the corpus
+    starts synthetic.
+  - Before shadow it adds real samples: per watched item, the raw digest,
+    `source_spec`, resolved `media_type` and Watcher's recorded fingerprint.
+    That needs a small export from Watcher.
+  - Parity with Watcher's local path should be proven before shadow, not
+    discovered in it.
 - **Pin test.** The lock's co-core equals the expected exact version and
-  `processor_version(LOCAL_GENERATION) == "0.19.4+1"` — a bump is a deliberate,
+  `processor_version(LOCAL_GENERATION) == "0.19.7+1"` — a bump is a deliberate,
   test-failing act.
 - **Shells — one test per Section 4 row.** Input/output stores: a local co-core
   store on a temp dir behind the same interface, plus fakes raising GCS 5xx /
@@ -322,7 +351,7 @@ writing-plans for v1 there. Implementation happens on `co-processor`.
 
 ---
 
-## Contract quick reference (co-core 0.19.4)
+## Contract quick reference (co-core 0.19.4–0.19.7, unchanged across them)
 
 | Need | Name | Module |
 |---|---|---|
@@ -355,8 +384,18 @@ echoed, reporting only.
    `processor_version` refreshed? If not, every co-core bump silently absorbs
    the next real change on each watched item; if so, a bump costs nothing unless
    it coincides with a change (the residual Watcher already accepts).
-2. **co-core-aio:** does `AsyncBusConsumer` expose a delivery count or a
-   max-deliveries hook? If so, it replaces the in-memory retry counter.
-3. **Merge order** of `extraction_overrides_for_essence` over
-   `extraction_config_from_spec`: stated per the co-core author's #629 comment;
-   confirm against Watcher's local pipeline in the parity corpus.
+2. ~~**co-core-aio:** does `AsyncBusConsumer` expose a delivery count or a
+   max-deliveries hook?~~ **Answered, no (0.19.4 through 0.19.7).** It offers
+   primitives only: `ensure_group`, `read`, `ack`, `claim_stale` /
+   `claim_stale_page`, and `dead_letter`. It has no delivery count, no hook
+   and no run loop. The in-memory counter stays, and Processor owns its loop.
+   It reclaims with `claim_stale_page`, which returns malformed frames for
+   `dead_letter`; `claim_stale` raises instead.
+3. ~~**Merge order** of `extraction_overrides_for_essence` over
+   `extraction_config_from_spec`~~ **Answered: the overrides win.**
+   - Watcher's `_extract_with_spec` builds `{**config_from_spec,
+     **extra_config}` (`src/workers/pipeline.py`, Watcher `main` on
+     2026-09-29).
+   - Watcher's `_DEFAULT_EXTRACTOR_MAP` is entry-for-entry co-core's
+     `EXTRACTOR_BY_ESSENCE`, with the same HTML fallback.
+   - The parity corpus still pins both.
