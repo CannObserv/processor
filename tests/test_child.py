@@ -1,7 +1,9 @@
 """The killable child: timeout, ``RLIMIT_AS``, hard exits, a clean result channel (spec §3)."""
 
+import asyncio
 import json
 import os
+import signal
 import time
 from pathlib import Path
 
@@ -116,3 +118,18 @@ async def test_the_child_volunteers_as_the_oom_victim() -> None:
     # unit's OOMPolicy=continue keeps the service up and the loss is a counted crash.
     result = await _run("oom_score_adj")
     assert (result.kind, result.value) == ("ok", "1000")
+
+
+async def test_a_terminal_interrupt_lets_the_child_finish(tmp_path: Path) -> None:
+    # Ctrl+C reaches the whole foreground process group. The parent treats SIGINT as
+    # "finish the in-flight command"; a KeyboardInterrupt in the child would instead
+    # come back as "raised", a terminal extraction_error for a healthy document.
+    pid_file = tmp_path / "pid"
+    task = asyncio.create_task(_run("pid_then_sleep", str(pid_file), 1.5))
+    for _ in range(100):
+        if pid_file.exists() and pid_file.read_text():
+            break
+        await asyncio.sleep(0.05)
+    os.kill(int(pid_file.read_text()), signal.SIGINT)
+    result = await task
+    assert (result.kind, result.value) == ("ok", None)

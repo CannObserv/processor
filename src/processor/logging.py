@@ -3,7 +3,8 @@
 The cohort's four-key floor — ``timestamp`` (ISO 8601 UTC, microseconds, ``Z``),
 ``level``, ``logger``, ``message`` — the fields Observo adopted in observo#395/#407,
 so a later observability plane ingests them unchanged. ``extra=`` fields ride
-alongside. Entry points call ``configure_logging`` once.
+alongside and never overwrite the floor. ``warnings`` become records too, so stderr
+carries nothing but JSON lines. Entry points call ``configure_logging`` once.
 """
 
 import json
@@ -27,17 +28,20 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
         for key, value in vars(record).items():
-            if key not in _STANDARD and not key.startswith("_"):
+            if key not in _STANDARD and key not in out and not key.startswith("_"):
                 out[key] = value
         if record.exc_info:
             out["exc_info"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            out["stack_info"] = self.formatStack(record.stack_info)
         return json.dumps(out, default=str)
 
 
 def configure_logging(level: str = "INFO") -> None:
-    """Route every logger through one JSON handler on stderr."""
+    """Route every logger, and ``warnings``, through one JSON handler on stderr."""
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(JsonFormatter())
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level)
+    logging.captureWarnings(True)

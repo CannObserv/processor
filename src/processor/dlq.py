@@ -9,25 +9,19 @@ from co_core.pure.adapters.bus.dead_letter import split_dead_letter
 from co_core.pure.adapters.bus.streams import CONTENT_PROCESS, dlq_name
 from redis.asyncio import Redis
 
+from processor.consumer import as_str, decode_fields
+
 DLQ = dlq_name(CONTENT_PROCESS)
-
-
-def _fields(raw: dict) -> dict[str, str]:
-    return {_str(k): _str(v) for k, v in raw.items()}
-
-
-def _str(value: bytes | str) -> str:
-    return value.decode() if isinstance(value, bytes) else value
 
 
 async def list_entries(client: Redis, *, count: int = 100) -> list[dict]:
     """One summary per entry, oldest first."""
     rows = []
     for entry_id, raw in await client.xrange(DLQ, count=count):
-        fields, provenance = split_dead_letter(_fields(raw))
+        fields, provenance = split_dead_letter(decode_fields(raw))
         rows.append(
             {
-                "id": _str(entry_id),
+                "id": as_str(entry_id),
                 "source_id": provenance.source_id,
                 "reason": provenance.reason,
                 "event_type": fields.get("event_type"),
@@ -37,13 +31,18 @@ async def list_entries(client: Redis, *, count: int = 100) -> list[dict]:
 
 
 async def show(client: Redis, entry_id: str) -> dict | None:
-    """The original fields and the provenance of one entry, or ``None``."""
+    """The original fields and the provenance of one entry, or ``None``.
+
+    The ``id`` is the entry's own: ``XRANGE`` reads a bare millisecond id as a range
+    over that millisecond, so it can differ from the ``entry_id`` asked for.
+    """
     entries = await client.xrange(DLQ, min=entry_id, max=entry_id)
     if not entries:
         return None
-    fields, provenance = split_dead_letter(_fields(entries[0][1]))
+    found_id, raw = entries[0]
+    fields, provenance = split_dead_letter(decode_fields(raw))
     return {
-        "id": entry_id,
+        "id": as_str(found_id),
         "fields": fields,
         "provenance": {
             "source_id": provenance.source_id,

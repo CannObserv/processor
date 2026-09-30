@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import signal
 import sys
@@ -24,6 +25,17 @@ pytestmark = pytest.mark.integration
 
 URL = "redis://localhost:6379/15"
 HTML = (Path(__file__).parent / "fixtures" / "parity" / "inputs" / "agenda.html").read_bytes()
+
+
+@pytest.fixture(autouse=True)
+def _restore_root_logging():
+    # main() reconfigures the process-wide root logger; put pytest's back after.
+    root = logging.getLogger()
+    handlers, level = root.handlers[:], root.level
+    yield
+    logging.captureWarnings(False)
+    root.handlers[:] = handlers
+    root.setLevel(level)
 
 
 @pytest.fixture
@@ -136,3 +148,20 @@ async def test_ensure_group_creates_processor_process_once(admin, env) -> None:
     assert await asyncio.to_thread(main, ["ensure-group"]) == 0
     (group,) = await admin.xinfo_groups(CONTENT_PROCESS)
     assert (group["name"], group["last-delivered-id"]) == ("processor.process", "0-0")
+
+
+def test_a_settings_error_is_one_json_record_and_exit_2(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("CO_PROCESSOR_BUS_URL", "redis://processor:hunter2@127.0.0.1:1/0")
+    monkeypatch.setenv("CO_PROCESSOR_RECLAIM_MIN_IDLE_MS", "1000")
+    assert main(["run"]) == 2
+    err = capsys.readouterr().err
+    (record,) = [json.loads(line) for line in err.splitlines()]
+    assert record["level"] == "ERROR" and "reclaim_min_idle_ms" in json.dumps(record)
+    assert "hunter2" not in err and "redis://" not in err
+
+
+def test_dlq_list_count_must_be_positive(capsys) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["dlq", "list", "--count", "0"])
+    assert exc.value.code == 2
+    assert "--count" in capsys.readouterr().err

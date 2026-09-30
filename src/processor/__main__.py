@@ -1,4 +1,5 @@
-"""``processor run`` — the service; ``processor dlq list|show|drop`` — the drainer."""
+"""``processor run`` — the service; ``processor ensure-group`` — the hard ordering;
+``processor dlq list|show|drop`` — the drainer."""
 
 import argparse
 import asyncio
@@ -10,6 +11,8 @@ from datetime import UTC, datetime
 
 from co_core.pure.adapters.bus.streams import CONTENT_PROCESS
 from co_core_aio.bus import AsyncBusConsumer, AsyncBusPublisher
+from pydantic import ValidationError
+from redis.asyncio import Redis
 
 from processor import dlq
 from processor.child import run_in_child
@@ -24,6 +27,11 @@ logger = logging.getLogger("processor")
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse ``argv``, configure JSON logging and settings, run one subcommand.
+
+    Exit 2 on invalid settings, logged as one JSON record that echoes no input value
+    (pydantic's own message would print part of the bus URL, credential and all).
+    """
     parser = argparse.ArgumentParser(prog="processor")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("run", help="consume content.process until SIGTERM")
@@ -33,13 +41,18 @@ def main(argv: list[str] | None = None) -> int:
     drain = commands.add_parser("dlq", help="inspect or drop content.process.dlq entries")
     drain_commands = drain.add_subparsers(dest="dlq_command", required=True)
     listing = drain_commands.add_parser("list")
-    listing.add_argument("--count", type=int, default=100)
+    listing.add_argument("--count", type=_positive_int, default=100)
     drain_commands.add_parser("show").add_argument("id")
     drain_commands.add_parser("drop").add_argument("id")
     args = parser.parse_args(argv)
 
     configure_logging()
-    settings = Settings()
+    try:
+        settings = Settings()
+    except ValidationError as exc:
+        errors = exc.errors(include_url=False, include_input=False)
+        logger.error("invalid settings", extra={"errors": errors})
+        return 2
     if args.command == "run":
         return asyncio.run(_run(settings))
     if args.command == "ensure-group":
@@ -47,9 +60,20 @@ def main(argv: list[str] | None = None) -> int:
     return asyncio.run(_dlq(settings, args))
 
 
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, not {number}")
+    return number
+
+
+def _bus(settings: Settings) -> Redis:
+    return redis_client(settings.bus_url.get_secret_value(), read_block_ms=settings.read_block_ms)
+
+
 async def _ensure_group(settings: Settings) -> int:
     """The hard ordering (spec §6): the group exists before Watcher's first command."""
-    client = redis_client(settings.bus_url.get_secret_value(), read_block_ms=settings.read_block_ms)
+    client = _bus(settings)
     try:
         await AsyncBusConsumer(
             client, topic=CONTENT_PROCESS, group=GROUP, consumer=settings.consumer_name
@@ -69,7 +93,7 @@ async def _run(settings: Settings) -> int:
         logger.exception("store preflight failed; exiting for systemd to restart")
         return 1
 
-    client = redis_client(settings.bus_url.get_secret_value(), read_block_ms=settings.read_block_ms)
+    client = _bus(settings)
     deps = Deps(
         stores=stores,
         publish=AsyncBusPublisher(client).execute,
@@ -112,7 +136,7 @@ async def _run(settings: Settings) -> int:
 
 
 async def _dlq(settings: Settings, args: argparse.Namespace) -> int:
-    client = redis_client(settings.bus_url.get_secret_value(), read_block_ms=settings.read_block_ms)
+    client = _bus(settings)
     try:
         if args.dlq_command == "list":
             for row in await dlq.list_entries(client, count=args.count):

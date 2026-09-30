@@ -13,16 +13,23 @@ imports-at-top convention.
 The child also raises its own ``oom_score_adj`` to the maximum (always permitted): if
 the host still reaches the OOM killer, the child dies rather than the consumer, and
 the unit's ``OOMPolicy=continue`` turns the loss into a counted crash.
+
+It ignores ``SIGINT``: a terminal Ctrl+C reaches the whole foreground process group,
+the parent's answer to it is "finish the in-flight command", and a
+``KeyboardInterrupt`` caught below would come back as ``raised`` — a terminal
+``extraction_error`` for a healthy document. The parent's timeout kill is ``SIGKILL``.
 """
 
 import importlib
 import pickle
 import resource
+import signal
 import sys
 
 
 def main(argv: list[str]) -> int:
     """Run one target under the address-space limit; always exit 0 unless killed."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
         with open("/proc/self/oom_score_adj", "w") as f:
             f.write("1000")

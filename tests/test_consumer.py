@@ -288,6 +288,29 @@ async def test_run_stops_promptly(bus, stores) -> None:
     await asyncio.wait_for(task, timeout=5)
 
 
+async def test_stop_during_a_reclaim_finishes_only_the_in_flight_command(
+    admin, bus, stores
+) -> None:
+    # A restart after a crash reclaims a backlog. SIGTERM mid-reclaim must not wait
+    # for the whole backlog: that outlasts TimeoutStopSec and ends in SIGKILL.
+    dead = AsyncBusConsumer(bus, topic=CONTENT_PROCESS, group=GROUP, consumer="old-instance")
+    await dead.ensure_group()
+    await issue(admin, stores, "cmd-1")
+    await issue(admin, stores, "cmd-2")
+    assert len(await dead.read(count=2)) == 2
+    stop = asyncio.Event()
+
+    async def run_child(*args, **kwargs) -> ChildResult:
+        stop.set()  # SIGTERM arrives while the first reclaimed command runs
+        return await run_in_child(*args, **kwargs)
+
+    consumer = make_consumer(bus, stores, run_child=run_child)
+    await asyncio.wait_for(consumer.run(stop), timeout=30)
+    (fact,) = await facts(admin)
+    assert fact.command_id == "cmd-1"
+    assert (await group_info(admin))["pending"] == 1  # cmd-2: left for the next reclaim
+
+
 async def test_noperm_leaves_the_entry_pending(admin, stores) -> None:
     narrow = [g for g in GRANTS if not g.startswith("(+xadd")]
     narrow.append("(+xadd ~content.process.dlq)")  # can dead-letter, cannot publish facts

@@ -81,7 +81,7 @@ On boot, the service preflights both buckets and exits non-zero if either is unr
 git pull --ff-only && uv sync --frozen --no-dev && sudo systemctl restart processor
 ```
 
-A restart lets the in-flight command finish (`TimeoutStopSec=180`). A command killed mid-flight stays pending, and the reclaim re-runs it after `reclaim_min_idle_ms`.
+A restart lets the in-flight command finish (`KillMode=mixed`: SIGTERM reaches the consumer, not its extraction child; `TimeoutStopSec=240`, which must grow with `CO_PROCESSOR_EXTRACTION_TIMEOUT_S`). A stop mid-reclaim finishes the command in hand and leaves the rest pending. A command killed mid-flight stays pending, and the reclaim re-runs it after `reclaim_min_idle_ms`.
 
 ## Operate
 

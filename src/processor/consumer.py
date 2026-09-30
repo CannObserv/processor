@@ -11,7 +11,9 @@ max-deliveries hook, no loop (spec Open Question 2) — so the loop is here:
   a poison command then gets at most ``max_attempts`` more.
 - A frame that does not decode is dead-lettered with its raw fields.
 - ``run``: ``step`` until stopped, backing off on any exception (connection loss,
-  ``NOPERM``, ``OOM``), never exiting on one.
+  ``NOPERM``, ``OOM``), never exiting on one. A stop also ends a reclaim between
+  messages: the in-flight command finishes, and the rest of a backlog stays pending
+  for the next process rather than outlasting the unit's ``TimeoutStopSec``.
 """
 
 import asyncio
@@ -83,6 +85,7 @@ class Consumer:
         self._reclaim_interval_s = reclaim_interval_s
         self._next_reclaim = 0.0
         self._strikes: dict[str, int] = {}
+        self._stop: asyncio.Event | None = None
 
     async def start(self) -> None:
         """Create ``processor.process`` from ``$`` if it does not exist."""
@@ -90,6 +93,7 @@ class Consumer:
 
     async def run(self, stop: asyncio.Event) -> None:
         """Consume until ``stop`` is set; the current message always finishes."""
+        self._stop = stop
         backoff = _BACKOFF_START_S
         started = False
         while not stop.is_set():
@@ -117,6 +121,8 @@ class Consumer:
         if time.monotonic() >= self._next_reclaim:
             await self.reclaim()
             self._next_reclaim = time.monotonic() + self._reclaim_interval_s
+        if self._stopping():
+            return
         try:
             messages = await self._bus.read(count=1, block_ms=self._read_block_ms)
         except BusMessageAnomaly as exc:
@@ -135,12 +141,17 @@ class Consumer:
             for frame in page.poison:
                 await self._dead_letter(frame.message_id, dict(frame.fields), frame.anomaly)
             for message in page.messages:
+                if self._stopping():
+                    return  # claimed, not run: pending until the next reclaim
                 await self._process(message)
             for message_id in page.deleted:
                 self._strikes.pop(message_id, None)
             cursor = page.cursor
             if cursor == "0-0":
                 return
+
+    def _stopping(self) -> bool:
+        return self._stop is not None and self._stop.is_set()
 
     async def _process(self, message: BusMessage) -> None:
         message_id = message.message_id
@@ -170,7 +181,7 @@ class Consumer:
         # are not on the anomaly, so fetch them to keep them in the DLQ.
         message_id = anomaly.message_id
         entries = await self._client.xrange(CONTENT_PROCESS, min=message_id, max=message_id)
-        fields = {_str(k): _str(v) for k, v in entries[0][1].items()} if entries else {}
+        fields = decode_fields(entries[0][1]) if entries else {}
         await self._dead_letter(message_id, fields, anomaly)
 
     async def _dead_letter(
@@ -182,7 +193,13 @@ class Consumer:
         await self._bus.dead_letter(message_id, fields, reason=reason)
 
 
-def _str(value: bytes | str) -> str:
+def decode_fields(raw: dict) -> dict[str, str]:
+    """A raw stream entry's field map as strings, whether the client decodes or not."""
+    return {as_str(k): as_str(v) for k, v in raw.items()}
+
+
+def as_str(value: bytes | str) -> str:
+    """A stream id, key or value as a string, whether the client decodes or not."""
     return value.decode() if isinstance(value, bytes) else value
 
 

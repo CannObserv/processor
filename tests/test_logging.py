@@ -4,8 +4,11 @@ import json
 import logging
 import re
 import sys
+import warnings
 
-from processor.logging import JsonFormatter
+import pytest
+
+from processor.logging import JsonFormatter, configure_logging
 
 TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$")
 
@@ -43,3 +46,35 @@ def test_exceptions_are_captured() -> None:
         record = logging.LogRecord("x", logging.ERROR, __file__, 1, "failed", (), sys.exc_info())
     out = _format(record)
     assert "ValueError: boom" in out["exc_info"]
+
+
+def test_extras_never_overwrite_the_floor() -> None:
+    out = _format(_record(level="DEBUG", logger="spoof", timestamp="then", message="other"))
+    assert (out["level"], out["logger"], out["message"]) == (
+        "WARNING",
+        "processor.consumer",
+        "hello",
+    )
+    assert TIMESTAMP.match(out["timestamp"])
+
+
+def test_stack_info_is_kept() -> None:
+    record = _record()
+    record.stack_info = "Stack (most recent call last):\n  File x"
+    assert _format(record)["stack_info"].startswith("Stack (most recent call last)")
+
+
+def test_warnings_are_json_records(capsys: pytest.CaptureFixture[str]) -> None:
+    root = logging.getLogger()
+    handlers, level = root.handlers[:], root.level
+    try:
+        configure_logging()
+        warnings.warn("a library's warning", UserWarning, stacklevel=1)
+    finally:
+        logging.captureWarnings(False)
+        root.handlers[:] = handlers
+        root.setLevel(level)
+    (line,) = capsys.readouterr().err.splitlines()
+    record = json.loads(line)
+    assert (record["logger"], record["level"]) == ("py.warnings", "WARNING")
+    assert "a library's warning" in record["message"]

@@ -26,9 +26,15 @@ MemoryMax=6G
 OOMPolicy=continue
 OOMScoreAdjust=-500
 
-# SIGTERM lets the in-flight command finish: extraction timeout 120 s, then store
-# and publish. A kill past this leaves the entry pending for the reclaim.
-TimeoutStopSec=180
+# SIGTERM lets the in-flight command finish. KillMode=mixed sends it to the consumer
+# alone: the default (control-group) signals the extraction child too, killing the
+# very command the consumer is draining. The final SIGKILL still reaches every
+# process. Budget: the blocking read (5 s), input read (30 s), extraction timeout
+# (120 s), store (30 s) and publish (15 s), plus margin; raise it with
+# CO_PROCESSOR_EXTRACTION_TIMEOUT_S. A kill past this leaves the entry pending for
+# the reclaim.
+KillMode=mixed
+TimeoutStopSec=240
 
 NoNewPrivileges=yes
 PrivateTmp=yes
