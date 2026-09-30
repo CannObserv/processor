@@ -63,3 +63,8 @@ def evil(marker: str) -> _Evil:
 
 def ordered_dict() -> OrderedDict:
     return OrderedDict(a=1)
+
+
+def oom_score_adj() -> str:
+    with open("/proc/self/oom_score_adj") as f:
+        return f.read().strip()

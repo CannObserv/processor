@@ -9,6 +9,10 @@ Only the stdlib is imported at module level, and the transform's module is impor
 and a memory-hungry document raises ``MemoryError`` here instead of drawing the OOM
 killer (spec §3). That deferred import is the one deliberate exception to the
 imports-at-top convention.
+
+The child also raises its own ``oom_score_adj`` to the maximum (always permitted): if
+the host still reaches the OOM killer, the child dies rather than the consumer, and
+the unit's ``OOMPolicy=continue`` turns the loss into a counted crash.
 """
 
 import importlib
@@ -19,6 +23,11 @@ import sys
 
 def main(argv: list[str]) -> int:
     """Run one target under the address-space limit; always exit 0 unless killed."""
+    try:
+        with open("/proc/self/oom_score_adj", "w") as f:
+            f.write("1000")
+    except OSError:
+        pass  # not Linux, or /proc unavailable: the RLIMIT_AS is the real guard
     limit = int(argv[0])
     if limit > 0:
         resource.setrlimit(resource.RLIMIT_AS, (limit, limit))

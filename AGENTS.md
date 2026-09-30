@@ -38,7 +38,7 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 | Scratch bus | `redis-server` on `localhost:6379` — tests and smoke runs only |
 | Input | `gs://co-gcs-blobs` (Replicator's raw blobs), read-only |
 | Output | `gs://co-gcs-processor/blobs/<sha256>.bin`, write-if-absent, **never deleted** |
-| Service | systemd unit `processor` (not yet installed) |
+| Service | systemd unit `processor` — [deploy/processor.service](deploy/processor.service), runbook [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (not yet installed) |
 
 **Tests never touch the real broker or real buckets.** Use the scratch Redis, co-core's `LocalBlobStore`, and fakes. `processor` cannot and must not `XADD content.process` on the broker.
 
@@ -46,7 +46,9 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 
 **Failure classes (spec §4).** Deterministic errors publish `processing_failed` with `terminal=true` and ack. Infrastructure errors — GCS 5xx/429/timeout/auth, broker `NOPERM`, broker `OOM command not allowed`, connection loss — publish **nothing** and leave the entry pending for reclaim. `NOPERM` and `OOM` are `ResponseError`s, not connection errors: keep both transient. Order is always **store → publish → ack**.
 
-**Extraction runs in a killable child process** (spawn, timeout, `RLIMIT_AS`), never a thread.
+**Extraction runs in a killable child process** (`python -I -m processor._child`: timeout, `RLIMIT_AS`, `oom_score_adj` 1000, scrubbed env, allowlisting unpickler for its result), never a thread. The child is untrusted: it parses untrusted documents.
+
+**Parity goldens** come from Watcher's own code (`scripts/gen_parity_goldens.py`), never from Processor's. A failing parity test means output diverged from Watcher; do not regenerate the goldens to make it pass.
 
 ## Environment Files
 
@@ -66,6 +68,7 @@ uv sync                                  # install deps (wheelhouse first)
 uv run pytest                            # tests
 uv run pytest -m integration             # bus tests against the scratch redis-server
 uv run ruff check . && uv run ruff format --check .
+.venv/bin/processor run | ensure-group | dlq list|show|drop   # needs CO_PROCESSOR_* in the env
 ```
 
 ## Conventions
@@ -81,4 +84,5 @@ uv run ruff check . && uv run ruff format --check .
 ## Detail Docs
 
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, env file, group creation, install, operate, co-core bumps
 - [docs/plans/](docs/plans/) — implementation plans

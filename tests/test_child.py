@@ -109,3 +109,10 @@ async def test_only_allowlisted_globals_decode() -> None:
     result = await _run("ordered_dict")
     assert result.kind == "crashed"
     assert "OrderedDict" in result.detail
+
+
+async def test_the_child_volunteers_as_the_oom_victim() -> None:
+    # If the host does reach the OOM killer, the child dies, not the consumer: the
+    # unit's OOMPolicy=continue keeps the service up and the loss is a counted crash.
+    result = await _run("oom_score_adj")
+    assert (result.kind, result.value) == ("ok", "1000")

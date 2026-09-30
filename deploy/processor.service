@@ -1,0 +1,38 @@
+# Processor — the content.process consumer (CannObserv/processor, spec §2–§4).
+# Install: docs/DEPLOYMENT.md. Code on main is the deployed code.
+[Unit]
+Description=Processor: consume content.process, extract, store by hash, publish content.derived
+Documentation=https://github.com/CannObserv/processor/blob/main/docs/DEPLOYMENT.md
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service
+
+[Service]
+Type=exec
+User=exedev
+Group=exedev
+WorkingDirectory=/home/exedev/processor
+# CO_PROCESSOR_BUS_URL (the broker credential), GOOGLE_APPLICATION_CREDENTIALS, and
+# any CO_PROCESSOR_* override. 600, owned by exedev; never sourced into a shell profile.
+EnvironmentFile=/etc/processor/.env
+ExecStart=/home/exedev/processor/.venv/bin/processor run
+Restart=on-failure
+RestartSec=5
+
+# Memory (spec §2, §4): a cap below the VM's 8 GB. Each extraction child carries its
+# own RLIMIT_AS (3 GiB) and volunteers as the OOM victim (oom_score_adj 1000), so
+# the consumer outlives it; OOMPolicy=continue keeps the unit up when that happens
+# (the default stops the whole unit on any OOM kill).
+MemoryMax=6G
+OOMPolicy=continue
+OOMScoreAdjust=-500
+
+# SIGTERM lets the in-flight command finish: extraction timeout 120 s, then store
+# and publish. A kill past this leaves the entry pending for the reclaim.
+TimeoutStopSec=180
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
