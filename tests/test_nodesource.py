@@ -18,9 +18,16 @@ EXPECTED_MAJOR = 24
 FINGERPRINT = "6F71F525282841EEDAF851B42F59B5F99B1BE0B4"
 
 
+def _stanzas(path: Path) -> list[dict[str, str]]:
+    """deb822 stanzas, blank-line separated; ``#`` comment lines dropped."""
+    blocks = path.read_text().split("\n\n")
+    lines = ([ln for ln in b.splitlines() if ln and not ln.startswith("#")] for b in blocks)
+    return [dict(ln.split(": ", 1) for ln in block) for block in lines if block]
+
+
 def _deb822(path: Path) -> dict[str, str]:
-    lines = [ln for ln in path.read_text().splitlines() if ln and not ln.startswith("#")]
-    return dict(ln.split(": ", 1) for ln in lines)
+    (only,) = _stanzas(path)
+    return only
 
 
 def _script_value(name: str) -> str:
@@ -39,12 +46,17 @@ def test_source_is_the_pinned_major_line_signed_by_its_own_keyring() -> None:
 
 
 def test_preference_pins_nodejs_to_nodesource_by_host() -> None:
-    pref = _deb822(APT / "nodesource.pref")
-    assert pref["Package"] == "nodejs"
+    nodejs, rest = _stanzas(APT / "nodesource.pref")
+    assert nodejs["Package"] == "nodejs"
     # By host: the Release file's Origin is aptly's generic ". nodistro".
-    assert pref["Pin"] == "origin deb.nodesource.com"
+    assert nodejs["Pin"] == "origin deb.nodesource.com"
     # Above universe's 500 (its nodejs 18), below 1000 (never a downgrade).
-    assert 500 < int(pref["Pin-Priority"]) < 1000
+    assert 500 < int(nodejs["Pin-Priority"]) < 1000
+    # Everything else the host serves stays below Ubuntu's 500: the maintenance lane's
+    # site=deb.nodesource.com selects the whole site, so the pin is what scopes it to Node.
+    assert rest["Package"] == "*"
+    assert rest["Pin"] == nodejs["Pin"]
+    assert 0 < int(rest["Pin-Priority"]) < 500
 
 
 def test_script_installs_what_the_repo_versions() -> None:

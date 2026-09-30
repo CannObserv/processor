@@ -4,3 +4,10 @@ Explanation: repo's Release Origin is aptly's generic ". nodistro". 600: above 5
 Package: nodejs
 Pin: origin deb.nodesource.com
 Pin-Priority: 600
+
+Explanation: Everything else this host serves (nsolid, and whatever it adds) stays below
+Explanation: Ubuntu's 500: the maintenance lane's site=deb.nodesource.com selects the whole
+Explanation: site, so this is what scopes NodeSource to Node. The nodejs entry above wins.
+Package: *
+Pin: origin deb.nodesource.com
+Pin-Priority: 100
