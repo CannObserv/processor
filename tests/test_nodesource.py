@@ -84,3 +84,11 @@ def test_docs_follow_the_major_line_and_the_installed_paths() -> None:
 def test_script_parses() -> None:
     result = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_bare_invocation_prints_usage_naming_both_subcommands() -> None:
+    result = subprocess.run(["bash", str(SCRIPT)], capture_output=True, text=True)
+    assert result.returncode == 2
+    assert "Usage:" in result.stderr
+    assert "nodesource.sh install" in result.stderr
+    assert "nodesource.sh check" in result.stderr

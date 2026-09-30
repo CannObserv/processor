@@ -23,7 +23,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_SOURCES="$HERE/apt/nodesource.sources"
 REPO_PREF="$HERE/apt/nodesource.pref"
 
-usage() { sed -n '5,7p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+# The header's Usage block, found by pattern, so editing the header above it can't shift it.
+usage() { sed -n '/^# Usage:$/,/^#$/p' "$0" | sed '$d; s/^# \{0,1\}//' >&2; exit 2; }
 
 # The major line, from the versioned source's URIs (node_<N>.x): one place to bump it.
 major() {
