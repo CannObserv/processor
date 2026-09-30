@@ -1,0 +1,6 @@
+Explanation: Installed as /etc/apt/preferences.d/nodesource.pref by deploy/nodesource.sh (#6).
+Explanation: nodejs comes from NodeSource, never universe's 18. Pinned by host because the
+Explanation: repo's Release Origin is aptly's generic ". nodistro". 600: above 500, below 1000.
+Package: nodejs
+Pin: origin deb.nodesource.com
+Pin-Priority: 600
