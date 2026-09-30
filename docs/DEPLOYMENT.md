@@ -107,3 +107,49 @@ co-core is pinned `==` in lockstep with Watcher (spec §5). A bump changes `proc
 1. Rebuild the wheelhouse at the new tag, then update the pin in `pyproject.toml` and `EXPECTED` in `tests/test_pin.py`, and `uv lock`.
 2. Regenerate the goldens from Watcher on the new version (`scripts/gen_parity_goldens.py`). They must not change, or the bump note says why output moved.
 3. Deploy together with Watcher's bump, or neither moves.
+
+## Node.js (agent tooling only)
+
+Node 24 LTS from NodeSource's apt repo, for `using-mayfly-chat` and SocratiCode (`npx`). The `processor` unit never runs it. The cohort survey and the reasons for NodeSource and for 24 are in #6.
+
+```bash
+sudo bash deploy/nodesource.sh install   # key, source, pin, nodejs; ends with check
+bash deploy/nodesource.sh check          # exit 0 in sync; 3, naming each drift
+```
+
+| Installed | From | Why |
+|---|---|---|
+| `/etc/apt/keyrings/nodesource.gpg` | `https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key`, refused unless its fingerprint is `6F71 F525 2828 41EE DAF8 51B4 2F59 B5F9 9B1B E0B4` | `Signed-By:` binds the key to this one source |
+| `/etc/apt/sources.list.d/nodesource.sources` | [deploy/apt/nodesource.sources](../deploy/apt/nodesource.sources) | `node_24.x`: the major line is pinned |
+| `/etc/apt/preferences.d/nodesource.pref` | [deploy/apt/nodesource.pref](../deploy/apt/nodesource.pref) | `nodejs` from NodeSource at 600: above universe's 18 (500), never a downgrade |
+
+`node` is the package's `/usr/bin/node`, so it is on every PATH: hooks, systemd user units, VS Code sessions. Installed 2026-09-30: 24.21.0, with npm 11.19.0 bundled (no Ubuntu `npm`); nothing restarted.
+
+### Patching
+
+Posture is the cohort's `scheduled` (gregoryfoster/skills `patching-hosts`): the apt timers stay masked, and nothing updates Node on its own. NodeSource ships security fixes in its own repo, never `noble-security`, so its policy is **follow**: `nodejs` rides the monthly maintenance lane. Never a bare `apt-get upgrade`.
+
+**Select it by host, not by origin.** NodeSource's Release file says `Origin: . nodistro`, aptly's default, which every aptly-published `nodistro` repo shares. The lane's `APT_CONFIG`:
+
+```
+Unattended-Upgrade::Origins-Pattern {
+  "origin=Ubuntu,archive=${distro_codename}-updates";
+  "site=deb.nodesource.com";
+};
+```
+
+Proven 2026-09-30, with `nodejs` stepped back to 24.20.0: `unattended-upgrade --dry-run` selected it under `site=deb.nodesource.com` and not under the stock security-lane config. `origin=. nodistro` also selects it, but can't tell NodeSource from any other aptly repo. The `.skills/patching-hosts` knob's `origin <origin> follow` line can't hold a value with a space, so this repo commits no knob line for NodeSource yet.
+
+An out-of-cycle fix (a Node security release): `sudo NEEDRESTART_MODE=l apt-get install nodejs` takes this one package.
+
+### Moving the major line
+
+Edit `node_<N>.x` in `deploy/apt/nodesource.sources` and `EXPECTED_MAJOR` in `tests/test_nodesource.py` in one commit, then `sudo bash deploy/nodesource.sh install`. Read `init-socraticode`'s preflight first: Node 26 crashes SocratiCode older than 1.13.
+
+### Removing it
+
+```bash
+sudo apt-get purge nodejs
+sudo rm /etc/apt/keyrings/nodesource.gpg /etc/apt/sources.list.d/nodesource.sources /etc/apt/preferences.d/nodesource.pref
+sudo apt-get update
+```
