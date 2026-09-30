@@ -140,7 +140,7 @@ Unattended-Upgrade::Origins-Pattern {
 
 Proven 2026-09-30, with `nodejs` stepped back to 24.20.0: `unattended-upgrade --dry-run` selected it under `site=deb.nodesource.com` and not under the stock security-lane config. `origin=. nodistro` also selects it, but can't tell NodeSource from any other aptly repo. The `.skills/patching-hosts` knob's `origin <origin> follow` line can't hold a value with a space, so this repo commits no knob line for NodeSource yet.
 
-An out-of-cycle fix (a Node security release): `sudo NEEDRESTART_MODE=l choom -n 0 -- apt-get install nodejs` takes this one package, at adj 0 as run.md applies.
+**An out-of-cycle fix** (a Node security release): `sudo bash deploy/nodesource.sh install`. It refreshes the package lists first, which nothing else here does (`apt-daily.timer` is masked and `APT::Periodic::Enable` is 0), so a bare `apt-get install nodejs` answers "already the newest version" while the release sits unfetched. It then takes the newest `nodejs` candidate, at adj 0 with needrestart listing only, and ends with `check`. `check` alone reads the lists as of the last update.
 
 ### Moving the major line
 
