@@ -14,6 +14,8 @@ max-deliveries hook, no loop (spec Open Question 2) — so the loop is here:
   non-transient refusal of an ack or dead-letter) counts like a strike; at
   ``max_attempts`` the entry is dead-lettered with the exception as its reason.
   Transient escapes (broker, GCS) stay uncapped.
+- A strike count clears only once the entry's ack or dead-letter lands, so a failed
+  one on the last attempt does not restart the count.
 - ``run``: ``step`` until stopped, backing off on any exception (connection loss,
   ``NOPERM``, ``OOM``), never exiting on one. A stop also ends a reclaim between
   messages: the in-flight command finishes, and the rest of a backlog stays pending
@@ -152,7 +154,9 @@ class Consumer:
                 min_idle_ms=self._reclaim_min_idle_ms, count=1, start_id=cursor
             )
             for frame in page.poison:
-                await self._dead_letter(frame.message_id, dict(frame.fields), frame.anomaly)
+                await self._dead_letter(
+                    frame.message_id, dict(frame.fields), _undecodable(frame.anomaly)
+                )
             for message in page.messages:
                 if self._stopping():
                     return  # claimed, not run: pending until the next reclaim
@@ -176,14 +180,25 @@ class Consumer:
                 raise  # a broker or GCS fault: uncapped, the loop backs off
             # A bug outside the handler's own try, or a non-transient refusal of an
             # ack or dead-letter. Counted like a strike; at the cap the entry goes to
-            # the DLQ, since it could not even fail cleanly. Nothing is published.
+            # the DLQ, since it could not even fail cleanly. Nothing more is published,
+            # but a fact published before a refused ack stands (one per attempt).
+            detail = f"{type(exc).__name__}: {exc}"
+            ids = {"attempt": attempt, **_command_ids(message)}
             if attempt < self._deps.max_attempts:
                 self._strikes[message_id] = attempt
+                logger.warning(
+                    "strike: escaped",
+                    extra={
+                        "message_id": message_id,
+                        "action": "strike",
+                        "reason": "escaped",
+                        "detail": detail,
+                        **ids,
+                    },
+                )
                 raise
-            self._strikes.pop(message_id, None)
-            reason = f"gave up on attempt {attempt}: {type(exc).__name__}: {exc}"
-            logger.error("dead-lettering", extra={"message_id": message_id, "reason": reason})
-            await self._bus.dead_letter(message_id, dict(message.fields), reason=reason)
+            reason = f"gave up on attempt {attempt}: {detail}"
+            await self._dead_letter(message_id, dict(message.fields), reason, exc_info=True, **ids)
 
     async def _act(self, message: BusMessage, attempt: int) -> None:
         message_id = message.message_id
@@ -193,19 +208,18 @@ class Consumer:
         if disposition.action == "strike":
             self._strikes[message_id] = attempt
         elif disposition.action == "dead_letter":
-            self._strikes.pop(message_id, None)
             await self._bus.dead_letter(message_id, dict(message.fields), reason=disposition.reason)
-        elif disposition.action == "ack":
             self._strikes.pop(message_id, None)
+        elif disposition.action == "ack":
             try:
                 await self._bus.ack(message_id)
             except Exception:
                 logger.error(
-                    "ack failed after the fact was published; the reclaim will re-run "
-                    "the command and publish a duplicate fact",
+                    "ack failed after the fact was published; a re-run publishes a duplicate fact",
                     extra={"message_id": message_id, "command_id": disposition.command_id},
                 )
                 raise
+            self._strikes.pop(message_id, None)
 
     async def _dead_letter_unread(self, anomaly: BusMessageAnomaly) -> None:
         # read(count=1) raised on this one frame; it is in our PEL. Its raw fields
@@ -213,15 +227,34 @@ class Consumer:
         message_id = anomaly.message_id
         entries = await self._client.xrange(CONTENT_PROCESS, min=message_id, max=message_id)
         fields = decode_fields(entries[0][1]) if entries else {}
-        await self._dead_letter(message_id, fields, anomaly)
+        await self._dead_letter(message_id, fields, _undecodable(anomaly))
 
     async def _dead_letter(
-        self, message_id: str, fields: dict[str, str], anomaly: BusMessageAnomaly
+        self,
+        message_id: str,
+        fields: dict[str, str],
+        reason: str,
+        *,
+        exc_info: bool = False,
+        **extra: object,
     ) -> None:
-        reason = f"undecodable: {type(anomaly).__name__}: {anomaly}"
-        logger.error("dead-lettering", extra={"message_id": message_id, "reason": reason})
-        self._strikes.pop(message_id, None)
+        fields_logged = {"message_id": message_id, "action": "dead_letter", "reason": reason}
+        logger.error("dead-lettering", exc_info=exc_info, extra={**extra, **fields_logged})
         await self._bus.dead_letter(message_id, fields, reason=reason)
+        self._strikes.pop(message_id, None)
+
+
+def _undecodable(anomaly: BusMessageAnomaly) -> str:
+    return f"undecodable: {type(anomaly).__name__}: {anomaly}"
+
+
+def _command_ids(message: BusMessage) -> dict[str, str | None]:
+    # None for a frame whose payload is not a command.
+    payload = message.payload
+    return {
+        "command_id": getattr(payload, "command_id", None),
+        "info_source_id": getattr(payload, "info_source_id", None),
+    }
 
 
 def decode_fields(raw: dict) -> dict[str, str]:

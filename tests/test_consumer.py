@@ -11,6 +11,7 @@ commands. Two tests narrow the grant or cap memory on purpose to show ``NOPERM``
 import asyncio
 import hashlib
 import itertools
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -392,6 +393,92 @@ async def test_a_transient_escape_is_never_dead_lettered(admin, bus, stores, mon
     assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 0
     assert (await group_info(admin))["pending"] == 0
     assert {f.command_id for f in await facts(admin)} == {"cmd-1"}  # duplicates, one command
+
+
+async def test_a_failed_ack_at_the_cap_keeps_the_count(admin, bus, stores, monkeypatch) -> None:
+    # The strike count clears only once the ack lands: a broker blip on the last
+    # attempt's ack must not buy the command max_attempts more child runs.
+    async def timeout(*_a, **_k) -> ChildResult:
+        return ChildResult(kind="timeout", detail="no result after 60s")
+
+    consumer = make_consumer(bus, stores, run_child=timeout)
+    await consumer.start()
+    await issue(admin, stores)
+    real_ack = AsyncBusConsumer.ack
+    calls = itertools.count()
+
+    async def flaky_ack(self, message_id):
+        if next(calls) == 0:
+            raise RedisConnectionError("lost after the publish")
+        return await real_ack(self, message_id)
+
+    monkeypatch.setattr(AsyncBusConsumer, "ack", flaky_ack)
+    for _ in range(2):
+        await consumer.step()
+    with pytest.raises(RedisConnectionError):
+        await consumer.step()
+    await consumer.step()
+
+    assert (await group_info(admin))["pending"] == 0
+    assert [(f.reason, "attempt 3" in f.detail) for f in await facts(admin)] == [
+        ("extraction_error", True),
+        ("extraction_error", True),
+    ]
+
+
+async def test_a_failed_dead_letter_at_the_cap_keeps_the_count(
+    admin, bus, stores, monkeypatch
+) -> None:
+    async def broken_handle(*_args, **_kwargs):
+        raise KeyError("a bug outside the handler's try")
+
+    monkeypatch.setattr("processor.consumer.handle", broken_handle)
+    real_dead_letter = AsyncBusConsumer.dead_letter
+    calls = itertools.count()
+
+    async def flaky_dead_letter(self, *args, **kwargs):
+        if next(calls) == 0:
+            raise RedisConnectionError("broker unreachable")
+        return await real_dead_letter(self, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncBusConsumer, "dead_letter", flaky_dead_letter)
+    consumer = make_consumer(bus, stores)
+    await consumer.start()
+    await issue(admin, stores)
+    for _ in range(2):
+        with pytest.raises(KeyError):
+            await consumer.step()
+    with pytest.raises(RedisConnectionError):
+        await consumer.step()
+    await consumer.step()  # still at the cap: straight to the DLQ, not attempt 1 again
+
+    assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 1
+    assert (await group_info(admin))["pending"] == 0
+
+
+async def test_an_escape_logs_its_command(admin, bus, stores, monkeypatch, caplog) -> None:
+    # Every outcome logs command_id and info_source_id (spec §4), escapes included.
+    async def broken_handle(*_args, **_kwargs):
+        raise KeyError("a bug outside the handler's try")
+
+    monkeypatch.setattr("processor.consumer.handle", broken_handle)
+    consumer = make_consumer(bus, stores)
+    await consumer.start()
+    await issue(admin, stores)
+    caplog.set_level(logging.INFO, logger="processor.consumer")
+    for _ in range(2):
+        with pytest.raises(KeyError):
+            await consumer.step()
+    await consumer.step()
+
+    outcomes = [r for r in caplog.records if getattr(r, "command_id", None) == "cmd-1"]
+    assert [(r.action, r.attempt) for r in outcomes] == [
+        ("strike", 1),
+        ("strike", 2),
+        ("dead_letter", 3),
+    ]
+    assert all(r.info_source_id == "src-1" for r in outcomes)
+    assert outcomes[-1].exc_info is not None  # the last attempt's traceback survives
 
 
 async def test_noperm_leaves_the_entry_pending(admin, stores) -> None:

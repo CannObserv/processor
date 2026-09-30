@@ -215,7 +215,7 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
 | Bytes hash ≠ `input_digest` | `input_digest_mismatch`, terminal | yes |
 | Extractor raises, including `MemoryError` under `RLIMIT_AS` | `extraction_error`, terminal | yes |
 | Child timeout or crash | — | no; the 3rd attempt publishes `extraction_error`, terminal, and acks |
-| A non-transient exception escaping the handler (a bug, or an ack or dead-letter refused), amended 2026-09-30 | — | no; counted like a strike, and the 3rd attempt dead-letters the entry with the exception as its reason |
+| A non-transient exception escaping the handler (a bug, or an ack or dead-letter refused), amended 2026-09-30 | — (a fact published before a refused ack stands) | no; counted like a strike, and the 3rd attempt dead-letters the entry with the exception as its reason |
 | GCS 5xx / 429 / timeout / auth; broker `NOPERM`; broker `OOM command not allowed` | — | no; the entry is reclaimed |
 
 - **`unsupported_media_type` is never emitted in v1** — `extractor_for_essence`
@@ -239,7 +239,8 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
   when any process in it is OOM-killed.
 - **DLQ CLI:** `processor dlq list | show | drop` over `XRANGE`/`XDEL`
   (`dlq_name(CONTENT_PROCESS)` = `content.process.dlq`). No replay — an
-  undecodable frame has nothing to replay.
+  undecodable frame has nothing to replay, and a command dead-lettered after
+  escaping exceptions is a bug to fix; Watcher's reaper re-issues it.
 - **Every outcome logs** `command_id`, `info_source_id`, reason and timings.
 
 These answer the two points broker#62 left for the consumer to state: `NOPERM`

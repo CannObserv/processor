@@ -18,7 +18,9 @@ dependencies = [
     "redis>=7.4,<8",
     # Imported directly: the store shell classifies google-api-core's exception
     # classes (5xx / 429 / auth transient, spec §4).
-    "google-cloud-storage>=2,<4",
+    # >=3: google.cloud.storage.exceptions (DataCorruption, caught by the handler)
+    # arrived in 3.0; 2.x raised it from google-resumable-media.
+    "google-cloud-storage>=3,<4",
     "google-api-core>=2.27,<3",
     # Imported directly by processor.errors for the same classification (auth and
     # transport failures are transient); both already arrive via google-cloud-storage.

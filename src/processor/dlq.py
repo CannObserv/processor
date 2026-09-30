@@ -1,7 +1,9 @@
 """Draining ``content.process.dlq``: list, show, drop (spec §4). No replay.
 
-The writer of a queue is its drainer. Everything dead-lettered here is a frame that
-did not decode or was not a ``content_process`` command; there is nothing to replay.
+The writer of a queue is its drainer. An entry is a frame that did not decode, a
+frame that was not a ``content_process`` command, or a command that raised outside
+the handler on every attempt (its reason names the exception): a bug to fix, not a
+command to replay, since Watcher's reaper re-issues a stale command under a fresh id.
 Uses only ``XRANGE`` / ``XDEL`` on the DLQ, as broker#75 grants.
 """
 

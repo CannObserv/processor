@@ -86,7 +86,7 @@ A restart lets the in-flight command finish (`KillMode=mixed`: SIGTERM reaches t
 ## Operate
 
 - **Logs:** `journalctl -u processor`. Each outcome has `command_id`, `info_source_id`, `action` (`ack` / `strike` / `leave_pending` / `dead_letter`), `reason`, `detail`, and timings in `*_ms`.
-- **Dead letters:** `.venv/bin/processor dlq list | show <id> | drop <id>` (needs the env file loaded). There is no replay: every entry either failed to decode or was not a command.
+- **Dead letters:** `.venv/bin/processor dlq list | show <id> | drop <id>` (needs the env file loaded). There is no replay. An entry failed to decode, was not a command, or is a command that raised outside the handler on every attempt (`reason` starts `gave up on attempt`): that one is a bug to fix, and Watcher's reaper re-issues the command under a fresh id.
 - **Lag / missing group:** the broker probe watches `processor.process` (broker#75).
 - **Strikes** are counted in memory. A restart resets them, so a poison command gets at most 3 more attempts.
 
