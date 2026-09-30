@@ -74,7 +74,7 @@ install_nodesource() {
 }
 
 check_nodesource() {
-  local rc=0 want cand madison node_path version
+  local rc=0 want cand madison installed node_path version
   drift() { echo "DRIFT: $*" >&2; rc=3; }
   want="$(major)"
   [ -n "$want" ] || { echo "no node_<N>.x line in $REPO_SOURCES" >&2; exit 2; }
@@ -108,6 +108,13 @@ check_nodesource() {
   else
     version="$(node --version)"
     [[ "$version" == "v$want".* ]] || drift "node is $version, not $want.x"
+  fi
+
+  # Informational, never drift: under the scheduled posture a pending release waits for the
+  # monthly maintenance lane, and this is where the owner sees it. As fresh as the lists.
+  installed="$(dpkg-query -W -f='${Version}' nodejs 2>/dev/null || true)"
+  if [ -n "$installed" ] && [ -n "$cand" ] && dpkg --compare-versions "$installed" lt "$cand"; then
+    echo "pending: nodejs $installed -> $cand (monthly lane; out of cycle: sudo bash $0 install)"
   fi
 
   [ "$rc" -eq 0 ] && echo "nodesource: ok (node $version, candidate $cand)"

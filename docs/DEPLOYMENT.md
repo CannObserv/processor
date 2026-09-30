@@ -114,7 +114,7 @@ Node 24 LTS from NodeSource's apt repo, for `using-mayfly-chat` and SocratiCode 
 
 ```bash
 sudo bash deploy/nodesource.sh install   # key, source, pin, nodejs; ends with check
-bash deploy/nodesource.sh check          # exit 0 in sync; 3, naming each drift
+bash deploy/nodesource.sh check          # exit 0 in sync (a pending update is a note, not drift); 3, naming each drift
 ```
 
 | Installed | From | Why |
