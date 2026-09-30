@@ -332,6 +332,14 @@ async def test_publish_failure_leaves_pending_and_the_rerun_converges(h: Harness
     assert list(h.output.root.rglob("*.bin")) == stored
 
 
+async def test_a_non_transient_publish_failure_escapes_to_be_counted(h: Harness) -> None:
+    # WRONGTYPE, or a bug in to_wire: retrying forever would never help. The consumer
+    # counts the escape as a strike and dead-letters at the cap.
+    h.publisher.fail = rx.ResponseError("WRONGTYPE Operation against a key holding the wrong kind")
+    with pytest.raises(rx.ResponseError, match="WRONGTYPE"):
+        await h.run(h.message())
+
+
 async def test_every_disposition_carries_what_the_log_needs(h: Harness) -> None:
     disposition = await h.run(h.message())
     assert (disposition.command_id, disposition.info_source_id) == ("cmd-1", "src-1")

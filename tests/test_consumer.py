@@ -29,6 +29,7 @@ from co_core_aio.bus import AsyncBusConsumer, AsyncBusPublisher
 from co_core_sync.drivers.blobstore.local import LocalBlobStore
 from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import ResponseError
 
 from processor.child import ChildResult, run_in_child
 from processor.consumer import GROUP, Consumer, redis_client
@@ -371,6 +372,26 @@ async def test_an_escaping_exception_strikes_then_dead_letters(
     assert "KeyError" in meta.reason and "attempt 3" in meta.reason
     assert (await group_info(admin))["pending"] == 0
     assert await facts(admin) == []
+
+
+async def test_a_non_transient_publish_failure_dead_letters_at_the_cap(admin, bus, stores) -> None:
+    publisher = AsyncBusPublisher(bus)
+
+    async def publish(effect):
+        await publisher.execute(effect)  # would land, but the reply says otherwise
+        raise ResponseError("WRONGTYPE Operation against a key holding the wrong kind")
+
+    consumer = make_consumer(bus, stores, publish=publish)
+    await consumer.start()
+    await issue(admin, stores)
+    for _ in range(2):
+        with pytest.raises(ResponseError):
+            await consumer.step()
+    await consumer.step()
+    ((_id, raw),) = await admin.xrange(dlq_name(CONTENT_PROCESS))
+    _fields, meta = split_dead_letter({k.decode(): v.decode() for k, v in raw.items()})
+    assert "gave up on attempt 3" in meta.reason and "WRONGTYPE" in meta.reason
+    assert (await group_info(admin))["pending"] == 0
 
 
 async def test_a_transient_escape_is_never_dead_lettered(admin, bus, stores, monkeypatch) -> None:

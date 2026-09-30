@@ -5,6 +5,7 @@ import requests
 from google.api_core import exceptions as gapi
 from google.auth import exceptions as gauth
 from redis import exceptions as rx
+from redis._parsers.base import BaseParser
 
 from processor.errors import is_transient
 
@@ -56,3 +57,40 @@ def test_infrastructure_failures_are_transient(exc: BaseException) -> None:
 )
 def test_everything_else_is_not(exc: BaseException) -> None:
     assert not is_transient(exc)
+
+
+def _reply(raw: str) -> BaseException:
+    """The exception redis-py raises for this error reply (its parser, not a guess)."""
+    return BaseParser().parse_error(raw)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "MISCONF Redis is configured to save RDB snapshots, but it is currently not able to persist on disk.",
+        "BUSY Redis is busy running a script. You can only call SCRIPT KILL or SHUTDOWN NOSAVE.",
+        "MASTERDOWN Link with MASTER is down and replica-serve-stale-data is set to 'no'.",
+        "TRYAGAIN Multiple keys request during rehashing of slot",
+        "CLUSTERDOWN The cluster is down",
+        "NOREPLICAS Not enough good replicas to write.",
+        "NOPERM User processor has no permissions to run the 'xadd' command",
+        "OOM command not allowed when used memory > 'maxmemory'.",
+    ],
+    ids=lambda raw: raw.split()[0],
+)
+def test_broker_replies_that_mean_infrastructure_are_transient(raw: str) -> None:
+    assert is_transient(_reply(raw))
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "BUSYGROUP Consumer Group name already exists",
+        "BUSYKEY Target key name already exists.",
+        "WRONGTYPE Operation against a key holding the wrong kind of value",
+        "ERR syntax error",
+    ],
+    ids=lambda raw: raw.split()[0],
+)
+def test_other_broker_replies_are_not(raw: str) -> None:
+    assert not is_transient(_reply(raw))

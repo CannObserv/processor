@@ -5,8 +5,9 @@ handler decides; the consumer loop acts on the returned ``Disposition``:
 
 - ``ack`` — a fact was published (complete, or a terminal failure).
 - ``dead_letter`` — the frame is not a ``content_process`` command.
-- ``leave_pending`` — infrastructure failed (``errors.is_transient``) or the publish
-  failed: nothing published, the reclaim re-runs it. Uncapped.
+- ``leave_pending`` — infrastructure failed (``errors.is_transient``), the publish
+  included: nothing published, the reclaim re-runs it. Uncapped. A non-transient
+  publish failure escapes instead, and the consumer caps it.
 - ``strike`` — the child timed out or crashed, or something unexpected raised:
   nothing published, counted toward ``max_attempts``; on the last attempt the
   handler publishes ``extraction_error`` instead and returns ``ack``.
@@ -130,6 +131,10 @@ async def handle(message: BusMessage, *, attempt: int, deps: Deps) -> Dispositio
     try:
         await deps.publish(BusPublish(topic=CONTENT_DERIVED, fields=to_wire(fact)))
     except Exception as exc:
+        if not is_transient(exc):
+            # WRONGTYPE, or a bug in to_wire: a retry never helps. It escapes, and
+            # the consumer counts it like a strike and dead-letters at the cap.
+            raise
         # Nothing published; the reclaim re-runs the command. Never a strike: the
         # work succeeded, and the broker is what failed.
         detail = f"publish failed: {type(exc).__name__}: {exc}"

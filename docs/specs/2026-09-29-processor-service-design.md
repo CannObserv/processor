@@ -216,7 +216,8 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
 | Extractor raises, including `MemoryError` under `RLIMIT_AS` | `extraction_error`, terminal | yes |
 | Child timeout or crash | — | no; the 3rd attempt publishes `extraction_error`, terminal, and acks |
 | A non-transient exception escaping the handler (a bug, or an ack or dead-letter refused), amended 2026-09-30 | — (a fact published before a refused ack stands) | no; counted like a strike, and the 3rd attempt dead-letters the entry with the exception as its reason |
-| GCS 5xx / 429 / timeout / auth; broker `NOPERM`; broker `OOM command not allowed` | — | no; the entry is reclaimed |
+| GCS 5xx / 429 / timeout / auth; broker `NOPERM`; broker `OOM command not allowed`; broker `MISCONF` / `BUSY` / `MASTERDOWN` / `TRYAGAIN` / `CLUSTERDOWN` / `NOREPLICAS` (amended 2026-09-30) | — | no; the entry is reclaimed |
+| A non-transient publish failure (e.g. `WRONGTYPE`, or a bug in serialization), amended 2026-09-30 | — | no; counted like a strike, and the 3rd attempt dead-letters the entry |
 
 - **`unsupported_media_type` is never emitted in v1** — `extractor_for_essence`
   is total (HTML for anything unknown).
@@ -229,7 +230,7 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
   Watcher's reaper re-issues stale commands under fresh ids; a fact Processor
   later publishes for a superseded command is discarded by Watcher. v1 never
   publishes the `transient` token.
-- **Order is store → publish → ack.** A publish failure leaves the entry
+- **Order is store → publish → ack.** A transient publish failure leaves the entry
   unacked; the reclaim re-runs, the store write is a no-op, the publish lands.
   An ack failure after a successful publish yields a duplicate fact, which
   Watcher's idempotent upsert on `command_id` absorbs.
