@@ -21,6 +21,10 @@ VENDOR = ROOT / "skills-vendor"
 HOOK = ROOT / ".claude" / "hooks" / "skills-submodule-update.sh"
 INSTALL_REFRESH = SKILLS / "managing-skills" / "scripts" / "install-refresh.sh"
 DOCTOR_HINT = "dangling: run `bash .skills/doctor.sh`"
+# using-mayfly-chat's leak pattern (references/security.md): the 22-char ID and the
+# 43-char key, so it matches a live URL and not the keyless view URL. Character
+# classes cannot match their own text.
+CHANNEL_URL = re.compile(r"/c/[A-Za-z0-9_-]{22}#[A-Za-z0-9_-]{43}")
 
 
 def _names(directory: Path) -> list[str]:
@@ -83,3 +87,21 @@ def test_refresh_hook_is_a_vendor_symlink_and_registered() -> None:
 def test_doctor_is_a_committed_copy() -> None:
     doctor = ROOT / ".skills" / "doctor.sh"
     assert doctor.is_file() and not doctor.is_symlink()
+
+
+def test_no_mayfly_channel_url_is_committable() -> None:
+    """A channel URL is read, write and delete access; it never reaches a durable store."""
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split("\0")
+    files = [ROOT / f for f in listed if f]
+    leaks = [
+        str(f.relative_to(ROOT))
+        for f in files
+        if f.is_file() and not f.is_symlink() and CHANNEL_URL.search(f.read_text(errors="ignore"))
+    ]
+    assert not leaks, leaks
