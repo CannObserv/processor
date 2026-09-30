@@ -140,7 +140,7 @@ Unattended-Upgrade::Origins-Pattern {
 
 Proven 2026-09-30, with `nodejs` stepped back to 24.20.0: `unattended-upgrade --dry-run` selected it under `site=deb.nodesource.com` and not under the stock security-lane config. `origin=. nodistro` also selects it, but can't tell NodeSource from any other aptly repo. The `.skills/patching-hosts` knob's `origin <origin> follow` line can't hold a value with a space, so this repo commits no knob line for NodeSource yet.
 
-An out-of-cycle fix (a Node security release): `sudo NEEDRESTART_MODE=l apt-get install nodejs` takes this one package.
+An out-of-cycle fix (a Node security release): `sudo NEEDRESTART_MODE=l choom -n 0 -- apt-get install nodejs` takes this one package, at adj 0 as run.md applies.
 
 ### Moving the major line
 

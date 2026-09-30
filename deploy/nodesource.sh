@@ -64,9 +64,11 @@ install_nodesource() {
   install -m 0644 "$REPO_SOURCES" "$SOURCES"
   install -m 0644 "$REPO_PREF" "$PREF"
 
-  apt-get update -qq || { echo "apt-get update failed" >&2; exit 2; }
-  # l: needrestart lists what would restart, never restarts it (patching-hosts' run.md).
-  NEEDRESTART_MODE=l DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs ||
+  # As patching-hosts' run.md applies: needrestart mode l lists what would restart and
+  # restarts nothing; choom -n 0 so a session started at -1000 (some exe-init builds) can't
+  # make dpkg unkillable beside the production service.
+  choom -n 0 -- apt-get update -qq || { echo "apt-get update failed" >&2; exit 2; }
+  NEEDRESTART_MODE=l DEBIAN_FRONTEND=noninteractive choom -n 0 -- apt-get install -y -qq nodejs ||
     { echo "apt-get install nodejs failed" >&2; exit 2; }
   check_nodesource
 }
