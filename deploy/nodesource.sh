@@ -48,8 +48,9 @@ install_nodesource() {
   # Expanded now: $tmp is local, and gone by the time EXIT fires.
   trap "rm -rf '$tmp'" EXIT
 
-  curl -fsSL "$KEY_URL" -o "$tmp/key.asc"
-  got="$(fingerprints "$tmp/key.asc")"
+  curl -fsSL "$KEY_URL" -o "$tmp/key.asc" || { echo "could not fetch $KEY_URL" >&2; exit 2; }
+  # `|| true`: a download that is no key at all is a refusal, not a silent set -e exit.
+  got="$(fingerprints "$tmp/key.asc" || true)"
   if [ "$got" != "$FINGERPRINT" ]; then
     echo "REFUSED: $KEY_URL is not NodeSource's key" >&2
     echo "  expected $FINGERPRINT" >&2
@@ -63,9 +64,10 @@ install_nodesource() {
   install -m 0644 "$REPO_SOURCES" "$SOURCES"
   install -m 0644 "$REPO_PREF" "$PREF"
 
-  apt-get update -qq
+  apt-get update -qq || { echo "apt-get update failed" >&2; exit 2; }
   # l: needrestart lists what would restart, never restarts it (patching-hosts' run.md).
-  NEEDRESTART_MODE=l DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs
+  NEEDRESTART_MODE=l DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs ||
+    { echo "apt-get install nodejs failed" >&2; exit 2; }
   check_nodesource
 }
 
