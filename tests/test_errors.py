@@ -67,7 +67,7 @@ def _reply(raw: str) -> BaseException:
 @pytest.mark.parametrize(
     "raw",
     [
-        "MISCONF Redis is configured to save RDB snapshots, but it is currently not able to persist on disk.",
+        "MISCONF Redis is configured to save RDB snapshots, but cannot persist on disk.",
         "BUSY Redis is busy running a script. You can only call SCRIPT KILL or SHUTDOWN NOSAVE.",
         "MASTERDOWN Link with MASTER is down and replica-serve-stale-data is set to 'no'.",
         "TRYAGAIN Multiple keys request during rehashing of slot",
