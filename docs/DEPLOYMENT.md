@@ -9,23 +9,33 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`. C
 | Broker ACL user `processor` | `co-broker` | broker#75 |
 | Broker credential | `/etc/processor/.env` as `CO_PROCESSOR_BUS_URL` | broker#75 item 5 |
 | Tailnet `tag:processor` → `tag:broker` on 6379 | tailnet policy | done 2026-09-29 |
+| A direct tailnet path to the broker (still relayed via DERP `sea` on 2026-09-30, although this node advertises endpoints and its netcheck is clean) | tailnet / broker side | broker#75 finding |
 | Bucket `gs://co-gcs-processor`, UBLA, public access prevention, no lifecycle | GCP | spec §2 |
 | SA `co-gcs-processor-writer`: `objectCreator` + `objectViewer` on `co-gcs-processor` (**no delete**), `objectViewer` on `co-gcs-blobs` | GCP | spec §2 |
 | SA key at `/etc/processor/co-gcs-processor-writer.json` (600) | this VM | — |
 | Watcher's SA: `objectViewer` on `co-gcs-processor`, bucket level | GCP | watcher#325 |
 
-### Broker credential handoff (broker#75's order)
+### Broker credential handoff (hash-only, broker#75 as of 2026-09-30)
 
-The plaintext comes from `/etc/redis/broker-acl-passwords` on the broker node. The order matters:
+The broker node never holds `processor`'s plaintext; since broker#72 its hourly backup refuses a plaintext line. This follows the shape of archiver#251:
 
-1. **Verify from here, before anything is written.** The password travels in `REDISCLI_AUTH`, never argv or a URL:
+1. **On `co-processor`,** mint the password into `/etc/processor/.env` and the password manager. It stays out of argv and shell history, because `printf` is a shell builtin:
 
    ```bash
-   read -rs REDISCLI_AUTH && export REDISCLI_AUTH
-   redis-cli -h 100.97.91.19 --user processor PING   # PONG
+   pw="$(set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 40)"; [ "${#pw}" -eq 40 ]
+   ( umask 077; printf 'CO_PROCESSOR_BUS_URL=redis://processor:%s@100.97.91.19:6379/0\n' "$pw" >> /etc/processor/.env )
+   printf %s "$pw" | sha256sum | cut -d' ' -f1   # post THIS digest on broker#75; it is not the credential
+   # copy "$pw" into the password manager, then:
+   unset pw
    ```
-2. Write `/etc/processor/.env` (below).
-3. Only then does the broker replace the plaintext line with its digest.
+2. **On the broker,** once the digest is posted, the broker's owner runs `ACL SETUSER processor on "#<digest>" …`, `ACL DELUSER observo` and `ACL SAVE`, and records the digest line.
+3. **From `co-processor`,** `PING` as `processor`. This is the only verification possible. The password travels in `REDISCLI_AUTH`, never argv:
+
+   ```bash
+   REDISCLI_AUTH="$(sed -n 's|^CO_PROCESSOR_BUS_URL=redis://processor:\([^@]*\)@.*|\1|p' /etc/processor/.env)" \
+     redis-cli -h 100.97.91.19 --user processor PING   # PONG
+   ```
+4. Then create the group right away (below).
 
 Use `100.97.91.19`, not `broker`. This VM runs Tailscale with `--accept-dns=false`, so MagicDNS does not resolve.
 
