@@ -79,7 +79,7 @@ uv run ruff check . && uv run ruff format --check .
 
 **Commit messages:** `#<number> <type>: <description>` (or `<type>: <description>` without an issue). Types: feat, fix, refactor, docs, test, chore. Code on `main` is the deployed code.
 
-**Workflow:** every change is issue → branch → PR; never commit to `main` directly. Branch in a worktree (`using-git-worktrees`), not by switching this checkout: it is the unit's `WorkingDirectory`. The vendored ship/worktree skills' local merge to `main` does not apply here ([docs/SKILLS.md](docs/SKILLS.md)). Sole exception: the skills refresh hook's daily submodule bump. After a PR merges, `git pull --ff-only` in this checkout: it is the deployed code, and while it lags `origin/main` the hook's push is rejected.
+**Workflow:** every change is issue → branch → PR; never commit to `main` directly. Branch in a worktree (`using-git-worktrees`), not by switching this checkout: it is the unit's `WorkingDirectory`. Provisioning a worktree (venv, wheelhouse, submodules): [docs/SKILLS.md](docs/SKILLS.md#worktrees). The vendored ship/worktree skills' local merge to `main` does not apply here ([docs/SKILLS.md](docs/SKILLS.md)). Sole exception: the skills refresh hook's daily submodule bump. After a PR merges, `git pull --ff-only` in this checkout: it is the deployed code, and while it lags `origin/main` the hook's push is rejected.
 
 **Logging:** structured JSON, one record per line, cohort four-key floor: `timestamp` (ISO 8601 UTC), `level`, `logger`, `message`. Every command outcome logs `command_id`, `info_source_id`, reason and timings.
 

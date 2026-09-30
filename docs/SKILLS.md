@@ -52,6 +52,19 @@ Not linked: `init-project-fastapi` (scaffolder), `vendoring-openapi-client` (no 
 
 The doctor warns when the vendor moves past `synced-from:`. Re-sync by reapplying the delta onto the new upstream text (never the reverse), then bump `synced-from:`: `managing-skills` → *Updating a local override*. Kept minimal on purpose: the heavier cohort forks each needed re-sync issues.
 
+## Worktrees
+
+A new worktree has no venv (`worktree_venv` is `none`), no `.wheelhouse` (git-ignored; `uv.lock` records co-core as `registry = ".wheelhouse"`) and no submodules. `worktree-create.sh --new` also cuts from local `HEAD`, which lags `origin/main` between pulls. From this checkout:
+
+```bash
+git fetch origin && git branch <n>-<slug> origin/main
+cd "$(bash skills/using-git-worktrees/scripts/worktree-create.sh <n>-<slug>)"
+bash .skills/doctor.sh                                   # initialises both submodules
+ln -s "$(git worktree list | head -1 | awk '{print $1}')/.wheelhouse" .wheelhouse && uv sync
+```
+
+Destroying one needs `--force` once its submodules are initialised (git refuses otherwise); check `git status` is clean first.
+
 ## Workflow vs the vendored ship skill
 
 Changes land as issue → branch → PR (AGENTS.md). Two vendored steps assume otherwise: `shipping-work-python-fastapi` Step 3 (*merge to `main` first*, then push) and `using-git-worktrees` Phase 4 (local merge back to `main`). Here, push the branch and `gh pr create` instead; the rest of both skills applies.
