@@ -20,14 +20,14 @@ Python 3.12, uv, hatchling src layout, pytest, ruff.
 
 **co-core is pinned exactly (`==0.19.7`), in lockstep with Watcher** (spec D5, §5). `processor_version` = `"<co-core version>+<LOCAL_GENERATION>"`; a pin test makes every bump a deliberate, test-failing act. Never let a dependency bot or `uv lock --upgrade` move co-core; a bump is planned with Watcher and the parity corpus must pass unchanged.
 
-**Cannobserv wheelhouse.** `co-core`, `co-core-aio`, `co-core-sync` resolve from `./.wheelhouse` (git-ignored) via `[tool.uv] find-links`. Populate it before any `uv` command. Until the `co-pypi-reader` key lands, build it from the release tag (needs `GH_TOKEN_CANNOBSERV`):
+**Cannobserv wheelhouse.** `co-core`, `co-core-aio`, `co-core-sync` resolve from `./.wheelhouse` (git-ignored) via `[tool.uv] find-links`. Populate it before any `uv` command:
 
 ```bash
-git clone -q --depth 1 --branch v0.19.7 "https://x-access-token:${GH_TOKEN_CANNOBSERV}@github.com/CannObserv/cannobserv.git" /tmp/cannobserv
-for p in co-core co-core-aio co-core-sync; do (cd /tmp/cannobserv && uv build --package $p --wheel --out-dir ~/processor/.wheelhouse); done
+uv run --no-project --with 'google-cloud-storage>=2,<4' python scripts/sync_wheelhouse.py  # mirror gs://co-gcs-pypi (needs co-pypi-reader ADC)
+set -a; . ./.env; set +a; scripts/build_wheelhouse.sh                                     # or: build from the cannobserv tag
 ```
 
-find-links locks by filename, not hash, so wheels mirrored from `gs://co-gcs-pypi` swap in later without a lock change.
+find-links locks by filename, not hash, so either source satisfies the same `uv.lock`. After the first `uv sync` in a fresh checkout, `uv sync --reinstall-package processor` if `import processor` fails.
 
 ## Infrastructure
 
@@ -58,6 +58,15 @@ Settings via pydantic-settings, prefix `CO_PROCESSOR_` — **never `os.getenv`**
 ## Cross-repo Policy
 
 Never edit sibling repos (`cannobserv`, `broker`, `watcher`, `replicator`, `archiver`, `observo`, …) from here. Identify the gap, draft the issue or comment, get explicit approval **for each post**, then post it. Read access to siblings: `GH_TOKEN=$GH_TOKEN_<REPO> gh …`.
+
+## Common Commands
+
+```bash
+uv sync                                  # install deps (wheelhouse first)
+uv run pytest                            # tests
+uv run pytest -m integration             # bus tests against the scratch redis-server
+uv run ruff check . && uv run ruff format --check .
+```
 
 ## Conventions
 

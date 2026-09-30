@@ -1,0 +1,75 @@
+[project]
+name = "processor"
+version = "0.1.0"
+description = "The cohort's headless discrete-transform service: consume content.process, extract, store by hash, publish content.derived."
+readme = "AGENTS.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Exact, in lockstep with Watcher (spec D5, §5). processor_version is
+    # "<co-core version>+<LOCAL_GENERATION>", so a bump moves every fact Watcher
+    # compares; tests/test_pin.py makes one a deliberate, test-failing act.
+    "co-core[extract]==0.19.7",
+    "co-core-aio[bus]==0.19.7",
+    "co-core-sync[gcs]==0.19.7",
+    "pydantic>=2.12,<3",
+    "pydantic-settings>=2.6,<3",
+    # Imported directly: the consumer classifies redis-py's ResponseError /
+    # ConnectionError itself (NOPERM and OOM are transient, spec §4).
+    "redis>=7.4,<8",
+    # Imported directly: the store shell classifies google-api-core's exception
+    # classes (5xx / 429 / auth transient, spec §4).
+    "google-cloud-storage>=2,<4",
+    "google-api-core>=2.27,<3",
+]
+
+[project.scripts]
+processor = "processor.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pypdf>=5.0,<7",
+    "openpyxl>=3.1.0,<4",
+    "pytest>=9.1.1,<10",
+    "pytest-asyncio>=1.4.0,<2",
+    "pytest-cov>=7.1.0,<8",
+    "ruff>=0.16.8,<0.17",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: needs the scratch redis-server on localhost:6379",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["docs/plans/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["processor"]
+
+[tool.coverage.run]
+source = ["processor"]
+
+[tool.coverage.report]
+show_missing = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/processor"]
+
+[tool.uv]
+# co-core, co-core-aio and co-core-sync resolve from ./.wheelhouse (git-ignored):
+# mirrored from gs://co-gcs-pypi by scripts/sync_wheelhouse.py, or built from the
+# cannobserv release tag by scripts/build_wheelhouse.sh. find-links locks by
+# filename, not hash, so either source satisfies the same uv.lock.
+find-links = ["./.wheelhouse"]
