@@ -144,7 +144,7 @@ Proven 2026-09-30, with `nodejs` stepped back to 24.20.0: `unattended-upgrade --
 
 ### Moving the major line
 
-Edit `node_<N>.x` in `deploy/apt/nodesource.sources` and `EXPECTED_MAJOR` in `tests/test_nodesource.py` in one commit, then `sudo bash deploy/nodesource.sh install`. Read `init-socraticode`'s preflight first: Node 26 crashes SocratiCode older than 1.13.
+In one commit, edit `node_<N>.x` in `deploy/apt/nodesource.sources`, `EXPECTED_MAJOR` in `tests/test_nodesource.py`, this section's "Node <N> LTS" and table row, and AGENTS.md's Node.js row; the test fails until all of them agree. Then `sudo bash deploy/nodesource.sh install`. Read `init-socraticode`'s preflight first: Node 26 crashes SocratiCode older than 1.13.
 
 ### Removing it
 

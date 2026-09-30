@@ -70,6 +70,17 @@ def test_deployment_doc_names_the_same_fingerprint() -> None:
     assert FINGERPRINT in doc
 
 
+def test_docs_follow_the_major_line_and_the_installed_paths() -> None:
+    """A bump or a rename that leaves the docs behind fails here, not in an operator's shell."""
+    deployment = (ROOT / "docs" / "DEPLOYMENT.md").read_text()
+    assert f"Node {EXPECTED_MAJOR} LTS" in deployment
+    assert f"node_{EXPECTED_MAJOR}.x" in deployment
+    for name in ("KEYRING", "SOURCES", "PREF"):
+        # The table and the removal block both name each path.
+        assert deployment.count(_script_value(name)) >= 2, name
+    assert f"{EXPECTED_MAJOR} LTS from NodeSource" in (ROOT / "AGENTS.md").read_text()
+
+
 def test_script_parses() -> None:
     result = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
