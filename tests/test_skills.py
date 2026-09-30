@@ -52,6 +52,7 @@ def test_skills_are_vendor_links_or_declared_overrides() -> None:
         entry = SKILLS / name
         if entry.is_symlink():
             assert str(entry.readlink()).startswith("../skills-vendor/"), (name, entry.readlink())
+            assert entry.readlink().name == name, (name, entry.readlink())
             assert (entry / "SKILL.md").is_file(), (name, DOCTOR_HINT)
             continue
         meta = _frontmatter(entry / "SKILL.md")
