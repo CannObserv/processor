@@ -32,6 +32,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from processor.child import ChildResult, run_in_child
 from processor.consumer import GROUP, Consumer, redis_client
 from processor.handler import Deps
+from processor.processors.extract import extract
 from processor.stores import Stores
 
 pytestmark = pytest.mark.integration
@@ -309,6 +310,40 @@ async def test_stop_during_a_reclaim_finishes_only_the_in_flight_command(
     (fact,) = await facts(admin)
     assert fact.command_id == "cmd-1"
     assert (await group_info(admin))["pending"] == 1  # cmd-2: left for the next reclaim
+
+
+async def test_an_entry_that_raises_does_not_strand_the_ones_behind_it(
+    admin, bus, stores, monkeypatch
+) -> None:
+    # A claim resets idle clocks. Had the reclaim claimed both entries at once, the
+    # ack failure on cmd-1 would leave cmd-2 claimed but unrun until the next walk
+    # past reclaim_min_idle_ms, where cmd-1 comes first again.
+    dead = AsyncBusConsumer(bus, topic=CONTENT_PROCESS, group=GROUP, consumer="old-instance")
+    await dead.ensure_group()
+    await issue(admin, stores, "cmd-1")
+    await issue(admin, stores, "cmd-2")
+    assert len(await dead.read(count=2)) == 2
+    await asyncio.sleep(0.6)
+
+    async def inprocess(_target, args, **_kwargs) -> ChildResult:
+        return ChildResult(kind="ok", value=extract(*args))
+
+    real_ack = AsyncBusConsumer.ack
+    calls = itertools.count()
+
+    async def flaky_ack(self, message_id):
+        if next(calls) == 0:
+            raise RedisConnectionError("lost after the publish")
+        return await real_ack(self, message_id)
+
+    monkeypatch.setattr(AsyncBusConsumer, "ack", flaky_ack)
+    deps = make_consumer(bus, stores, run_child=inprocess)._deps
+    consumer = Consumer(bus, deps, consumer_name="co-processor", read_block_ms=100,
+                        reclaim_min_idle_ms=500, reclaim_interval_s=0)  # fmt: skip
+    with pytest.raises(RedisConnectionError):
+        await consumer.step()
+    await consumer.step()
+    assert [f.command_id for f in await facts(admin)] == ["cmd-1", "cmd-2"]
 
 
 async def test_noperm_leaves_the_entry_pending(admin, stores) -> None:

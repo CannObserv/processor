@@ -106,6 +106,7 @@ def _xlsx() -> bytes:
 
 
 def main() -> None:
+    """Write every synthetic input under ``OUT``."""
     OUT.mkdir(parents=True, exist_ok=True)
     files = {
         "agenda.html": HTML.encode(),

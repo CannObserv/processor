@@ -17,14 +17,11 @@ service-account key at ``GOOGLE_APPLICATION_CREDENTIALS`` (set in
 way the identity needs only ``roles/storage.objectViewer`` on the bucket.
 
 Exit codes: ``0`` success (including a no-op re-run) · ``1`` failure (auth,
-network, or a missing bucket). The systemd unit runs this as a non-fatal
-``ExecStartPre`` (``-`` prefix): a transient failure is surfaced to the journal,
-and if the wheelhouse is already populated the service still starts — only a
-genuinely missing wheel surfaces later as a hard ``uv`` resolution error.
+network, or a missing bucket). Run by hand before ``uv sync``; the ``processor``
+unit does not run it.
 """
 
-from __future__ import annotations
-
+import argparse
 import os
 import sys
 import tempfile
@@ -32,19 +29,19 @@ from pathlib import Path
 
 from google.cloud import storage
 
-BUCKET = os.environ.get("CO_PROCESSOR_WHEELHOUSE_BUCKET", "co-gcs-pypi")
-PREFIX = os.environ.get("CO_PROCESSOR_WHEELHOUSE_PREFIX", "wheels/")
+BUCKET = "co-gcs-pypi"
+PREFIX = "wheels/"
 DEST = Path(__file__).resolve().parent.parent / ".wheelhouse"
 
 
-def sync() -> int:
-    """Mirror ``gs://{BUCKET}/{PREFIX}`` into ``DEST``; return an exit code."""
+def sync(bucket: str = BUCKET, prefix: str = PREFIX) -> int:
+    """Mirror ``gs://{bucket}/{prefix}`` into ``DEST``; return an exit code."""
     DEST.mkdir(parents=True, exist_ok=True)
     downloaded = skipped = 0
     try:
         client = storage.Client()
-        for blob in client.list_blobs(BUCKET, prefix=PREFIX):
-            name = blob.name.removeprefix(PREFIX)
+        for blob in client.list_blobs(bucket, prefix=prefix):
+            name = blob.name.removeprefix(prefix)
             if not name:  # the prefix "directory" placeholder object, if any
                 continue
             target = DEST / name
@@ -68,7 +65,7 @@ def sync() -> int:
                 Path(tmp).unlink(missing_ok=True)
             downloaded += 1
     except Exception as exc:  # broad by design: auth/network/bucket failures degrade identically
-        print(f"error: could not sync gs://{BUCKET}/{PREFIX}: {exc}", file=sys.stderr)
+        print(f"error: could not sync gs://{bucket}/{prefix}: {exc}", file=sys.stderr)
         return 1
 
     print(f"wheelhouse in sync: {downloaded} downloaded, {skipped} already present -> {DEST}")
@@ -76,4 +73,8 @@ def sync() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(sync())
+    parser = argparse.ArgumentParser(description="Mirror the cannobserv index into .wheelhouse.")
+    parser.add_argument("--bucket", default=BUCKET)
+    parser.add_argument("--prefix", default=PREFIX)
+    cli = parser.parse_args()
+    sys.exit(sync(cli.bucket, cli.prefix))

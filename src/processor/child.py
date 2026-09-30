@@ -83,7 +83,7 @@ async def run_in_child(
     )
     try:
         out, err = await asyncio.wait_for(
-            proc.communicate(pickle.dumps((target, args))), timeout=timeout_s
+            _exchange(proc, pickle.dumps((target, args))), timeout=timeout_s
         )
     except TimeoutError:
         return ChildResult(kind="timeout", detail=f"no result after {timeout_s:g}s")
@@ -92,7 +92,7 @@ async def run_in_child(
             proc.kill()
             await proc.wait()
 
-    stderr_tail = err.decode("utf-8", "replace")[-_STDERR_TAIL:]
+    stderr_tail = err.decode("utf-8", "replace")
     if proc.returncode != 0:
         return ChildResult(
             kind="crashed",
@@ -107,4 +107,35 @@ async def run_in_child(
         )
     if kind == "ok":
         return ChildResult(kind="ok", value=payload, returncode=0)
-    return ChildResult(kind="raised", detail=payload, returncode=0)
+    if kind == "raised" and isinstance(payload, str):
+        return ChildResult(kind="raised", detail=payload, returncode=0)
+    # Anything else is not the child's protocol: a crash (a strike), never a terminal
+    # extraction_error carrying whatever the child chose to send as its "detail".
+    return ChildResult(kind="crashed", detail=f"malformed result: {stderr_tail}", returncode=0)
+
+
+async def _exchange(proc: asyncio.subprocess.Process, request: bytes) -> tuple[bytes, bytes]:
+    """``communicate``, keeping only the tail of stderr.
+
+    The child is untrusted: a document that makes a library warn in a loop must not
+    grow the parent by the whole stream. stdout, the result, is read in full.
+    """
+
+    async def feed() -> None:
+        try:
+            proc.stdin.write(request)
+            await proc.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the child exited without reading it all; its exit status says why
+        finally:
+            proc.stdin.close()
+
+    async def tail() -> bytes:
+        kept = b""
+        while chunk := await proc.stderr.read(64 * 1024):
+            kept = (kept + chunk)[-_STDERR_TAIL:]
+        return kept
+
+    _, out, err = await asyncio.gather(feed(), proc.stdout.read(), tail())
+    await proc.wait()
+    return out, err

@@ -20,6 +20,10 @@ dependencies = [
     # classes (5xx / 429 / auth transient, spec §4).
     "google-cloud-storage>=2,<4",
     "google-api-core>=2.27,<3",
+    # Imported directly by processor.errors for the same classification (auth and
+    # transport failures are transient); both already arrive via google-cloud-storage.
+    "google-auth>=2,<3",
+    "requests>=2.32,<3",
 ]
 
 [project.scripts]

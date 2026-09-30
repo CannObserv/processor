@@ -46,6 +46,11 @@ _LEVEL = {
 }
 
 
+def group_reader(client: Redis, consumer_name: str) -> AsyncBusConsumer:
+    """``consumer_name``'s reader in ``processor.process`` on ``content.process``."""
+    return AsyncBusConsumer(client, topic=CONTENT_PROCESS, group=GROUP, consumer=consumer_name)
+
+
 def redis_client(url: str, *, read_block_ms: int) -> Redis:
     """A broker client: the socket timeout outlasts a blocking read; retries are zero.
 
@@ -76,9 +81,7 @@ class Consumer:
         reclaim_interval_s: float,
     ) -> None:
         self._client = client
-        self._bus = AsyncBusConsumer(
-            client, topic=CONTENT_PROCESS, group=GROUP, consumer=consumer_name
-        )
+        self._bus = group_reader(client, consumer_name)
         self._deps = deps
         self._read_block_ms = read_block_ms
         self._reclaim_min_idle_ms = reclaim_min_idle_ms
@@ -132,11 +135,17 @@ class Consumer:
             await self._process(message)
 
     async def reclaim(self) -> None:
-        """Walk the whole PEL once, claiming entries idle past the threshold."""
+        """Walk the whole PEL once, claiming entries idle past the threshold.
+
+        One entry per claim: a claim resets the entry's idle clock, so a batch would
+        leave its tail claimed but unrun for as long as the head takes — past the
+        reclaim threshold, and, if the head raises, until the next walk claims the
+        whole batch again behind it.
+        """
         cursor = "0-0"
         while True:
             page = await self._bus.claim_stale_page(
-                min_idle_ms=self._reclaim_min_idle_ms, count=10, start_id=cursor
+                min_idle_ms=self._reclaim_min_idle_ms, count=1, start_id=cursor
             )
             for frame in page.poison:
                 await self._dead_letter(frame.message_id, dict(frame.fields), frame.anomaly)

@@ -18,12 +18,14 @@ GiB = 1024**3
 
 
 async def _run(name: str, *args, timeout_s: float = 30, rlimit: int = 2 * GiB) -> ChildResult:
+    return await _run_target(f"child_targets:{name}", *args, timeout_s=timeout_s, rlimit=rlimit)
+
+
+async def _run_target(
+    target: str, *args, timeout_s: float = 30, rlimit: int = 2 * GiB
+) -> ChildResult:
     return await run_in_child(
-        f"child_targets:{name}",
-        args,
-        timeout_s=timeout_s,
-        rlimit_as_bytes=rlimit,
-        sys_path=(TESTS,),
+        target, args, timeout_s=timeout_s, rlimit_as_bytes=rlimit, sys_path=(TESTS,)
     )
 
 
@@ -73,6 +75,30 @@ async def test_a_hard_exit_is_a_crash(target: str, args: tuple, code: int) -> No
 async def test_stdout_chatter_does_not_corrupt_the_result() -> None:
     result = await _run("noisy_stdout")
     assert (result.kind, result.value) == ("ok", "result")
+
+
+async def test_writes_to_fd_1_do_not_corrupt_the_result() -> None:
+    result = await _run("write_fd_1")
+    assert (result.kind, result.value) == ("ok", "result")
+
+
+async def test_a_transform_that_will_not_import_is_a_crash_not_a_raise() -> None:
+    # A venv mid-`uv sync` is the host's failure: a strike, never a terminal verdict.
+    result = await _run_target("child_targets_absent:echo")
+    assert result.kind == "crashed"
+    assert "ModuleNotFoundError" in result.detail
+
+
+async def test_only_the_tail_of_a_stderr_flood_is_kept() -> None:
+    result = await _run("flood_stderr_then_exit", 8 * 1024**2)
+    assert result.kind == "crashed" and result.detail.endswith("the last words")
+    assert len(result.detail) < 2100
+
+
+@pytest.mark.parametrize(("kind", "payload"), [("raised", 123), ("raised", ["x"]), ("odd", "x")])
+async def test_a_result_off_the_protocol_is_a_crash(kind: str, payload: object) -> None:
+    result = await _run("forge_protocol", kind, payload)
+    assert result.kind == "crashed" and "malformed result" in result.detail
 
 
 async def test_the_child_sees_no_secrets(monkeypatch: pytest.MonkeyPatch) -> None:

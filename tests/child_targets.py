@@ -1,6 +1,9 @@
 """Transforms that misbehave on purpose, run in the child by ``tests/test_child.py``."""
 
+import gc
+import io
 import os
+import pickle
 import signal
 import sys
 import time
@@ -68,3 +71,28 @@ def ordered_dict() -> OrderedDict:
 def oom_score_adj() -> str:
     with open("/proc/self/oom_score_adj") as f:
         return f.read().strip()
+
+
+def flood_stderr_then_exit(n_bytes: int) -> None:
+    chunk = b"w" * 65536
+    for _ in range(n_bytes // len(chunk)):
+        os.write(2, chunk)
+    os.write(2, b"the last words")
+    os._exit(3)
+
+
+def write_fd_1() -> str:
+    os.write(1, b"what C code or a subprocess writes to fd 1")
+    return "result"
+
+
+def forge_protocol(kind, payload) -> None:
+    """What a compromised child could send: a well-formed pickle off the protocol."""
+    (channel,) = [
+        o
+        for o in gc.get_objects()
+        if isinstance(o, io.BufferedWriter) and not o.closed and o.fileno() > 2
+    ]
+    channel.write(pickle.dumps((kind, payload)))
+    channel.flush()
+    os._exit(0)

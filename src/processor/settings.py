@@ -7,7 +7,7 @@ Never ``os.getenv``.
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 GiB = 1024**3
@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     # this VM runs Tailscale with --accept-dns=false).
     bus_url: SecretStr
     consumer_name: str = "co-processor"
-    read_block_ms: int = 5_000
+    # > 0: XREADGROUP reads BLOCK 0 as "block forever", past the socket timeout.
+    read_block_ms: int = Field(default=5_000, gt=0)
 
     # Stores (spec §2): Replicator's raw blobs in, derived text out.
     store_backend: Literal["gcs", "local"] = "gcs"
@@ -38,11 +39,11 @@ class Settings(BaseSettings):
     local_output_root: Path | None = None
 
     # The child (spec §3) and the retry cap (spec §4).
-    extraction_timeout_s: float = 120
-    rlimit_as_bytes: int = 3 * GiB
-    max_attempts: int = 3
+    extraction_timeout_s: float = Field(default=120, gt=0)
+    rlimit_as_bytes: int = Field(default=3 * GiB, ge=0)  # 0: no limit
+    max_attempts: int = Field(default=3, ge=1)
     reclaim_min_idle_ms: int = 600_000
-    reclaim_interval_s: float = 60
+    reclaim_interval_s: float = Field(default=60, gt=0)
 
     @model_validator(mode="after")
     def _check(self) -> "Settings":

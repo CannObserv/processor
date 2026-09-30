@@ -10,13 +10,13 @@ import sys
 from datetime import UTC, datetime
 
 from co_core.pure.adapters.bus.streams import CONTENT_PROCESS
-from co_core_aio.bus import AsyncBusConsumer, AsyncBusPublisher
+from co_core_aio.bus import AsyncBusPublisher
 from pydantic import ValidationError
 from redis.asyncio import Redis
 
 from processor import dlq
 from processor.child import run_in_child
-from processor.consumer import GROUP, Consumer, redis_client
+from processor.consumer import GROUP, Consumer, group_reader, redis_client
 from processor.handler import Deps
 from processor.logging import configure_logging
 from processor.processors.extract import PROCESSOR_VERSION
@@ -75,9 +75,7 @@ async def _ensure_group(settings: Settings) -> int:
     """The hard ordering (spec §6): the group exists before Watcher's first command."""
     client = _bus(settings)
     try:
-        await AsyncBusConsumer(
-            client, topic=CONTENT_PROCESS, group=GROUP, consumer=settings.consumer_name
-        ).ensure_group(start_id="$")
+        await group_reader(client, settings.consumer_name).ensure_group(start_id="$")
     finally:
         await client.aclose()
     logger.info("group ensured", extra={"group": GROUP, "stream": CONTENT_PROCESS})

@@ -29,6 +29,7 @@ from src.workers.pipeline import _extract_and_fingerprint
 
 
 def main(corpus: Path) -> None:
+    """Write ``corpus/goldens.json`` from Watcher's extraction of every case."""
     cases = json.loads((corpus / "cases.json").read_text())
     registry = ServiceRegistry()
     goldens: dict[str, dict] = {}

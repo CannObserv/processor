@@ -17,6 +17,8 @@ from processor.settings import Settings
 
 @dataclass(frozen=True)
 class Stores:
+    """Replicator's raw blobs (``input``) and the derived-text store (``output``)."""
+
     input: BlobStore
     output: BlobStore
 

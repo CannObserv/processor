@@ -69,3 +69,22 @@ def test_local_backend_needs_roots(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     monkeypatch.setenv("CO_PROCESSOR_LOCAL_INPUT_ROOT", str(tmp_path / "in"))
     monkeypatch.setenv("CO_PROCESSOR_LOCAL_OUTPUT_ROOT", str(tmp_path / "out"))
     assert Settings().local_output_root == tmp_path / "out"
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("READ_BLOCK_MS", "0"),  # XREADGROUP BLOCK 0 blocks forever
+        ("EXTRACTION_TIMEOUT_S", "0"),
+        ("MAX_ATTEMPTS", "0"),
+        ("RECLAIM_INTERVAL_S", "-1"),
+        ("RLIMIT_AS_BYTES", "-1"),
+    ],
+)
+def test_knobs_out_of_range_are_refused(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    monkeypatch.setenv("CO_PROCESSOR_BUS_URL", URL)
+    monkeypatch.setenv(f"CO_PROCESSOR_{name}", value)
+    with pytest.raises(ValidationError, match=name.lower()):
+        Settings()
