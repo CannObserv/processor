@@ -19,7 +19,7 @@ Ruff `extend-exclude`s `skills-vendor/`: upstream's Python fails our lint, and t
 
 ## Refresh
 
-A `SessionStart` hook refreshes `skills-vendor/` at most once per UTC day, **on `main` only**. It commits the pointer bump itself (staging only `skills-vendor/` and `.skills/doctor.sh`) **and pushes it to `main`**. That is the one exception to the PR workflow (AGENTS.md → Conventions). A rejected push is rolled back. It never pulls, never force-pushes, never touches a commit it didn't write, never blocks a session. Log: `.git/skills-update.log`.
+A `SessionStart` hook refreshes `skills-vendor/` at most once per UTC day, **on `main` only**. It commits the pointer bump itself (staging only `skills-vendor/` and `.skills/doctor.sh`) **and pushes it to `main`**. That is the one exception to the PR workflow (AGENTS.md → Conventions). A rejected push is rolled back. Under the PR workflow that is the common case: merges happen on GitHub, so this checkout's `main` lags `origin/main` until someone runs `git pull --ff-only`, and until then every daily bump is rolled back (the refreshed content stays in the working tree; only the pointer stalls). It never pulls, never force-pushes, never touches a commit it didn't write, never blocks a session. Log: `.git/skills-update.log`.
 
 Two artifacts, and only the second makes it run: the `.claude/hooks/skills-submodule-update.sh` symlink and its entry in `.claude/settings.json`. The symlink alone looks installed and refreshes nothing (gregoryfoster/skills#167).
 
