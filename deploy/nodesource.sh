@@ -105,6 +105,8 @@ check_nodesource() {
   node_path="$(command -v node || true)"
   if [ -z "$node_path" ] || [ "$(readlink -f "$node_path")" != /usr/bin/node ]; then
     drift "node resolves to '${node_path:-nothing}', not the package's /usr/bin/node"
+  elif [[ "$(dpkg -S /usr/bin/node 2>/dev/null)" != nodejs:* ]]; then
+    drift "/usr/bin/node does not belong to the nodejs package"
   else
     version="$(node --version)"
     [[ "$version" == "v$want".* ]] || drift "node is $version, not $want.x"
