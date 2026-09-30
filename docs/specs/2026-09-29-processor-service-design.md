@@ -19,7 +19,7 @@ on `co-processor`.
 **Amended 2026-09-29 (`co-processor` review, processor#1):**
 - The pin moves from 0.19.4 to **0.19.7**, Watcher's locked version (D5,
   Sections 2, 5 and 7).
-- The child process is a fresh `spawn` process per command (Section 3).
+- The child process is a fresh interpreter per command (Section 3).
 - The parity corpus adds real samples (Section 7).
 - Open Questions 2 and 3 are answered.
 
@@ -161,8 +161,8 @@ Serial: one command at a time.
    bare_sha256(output_digest), CANONICAL_TEXT_MEDIA_TYPE)`, write-if-absent.
 6. **Publish** `ProcessingCompleteEmit`, then **ack**.
 
-**The child process.** Each command gets a fresh `spawn`-context process,
-killed on timeout. On a crash, the child's exit code tells the parent. The
+**The child process.** Each command gets a fresh interpreter (`python -I -m
+processor._child`, over asyncio's subprocess API), killed on timeout. On a crash, the child's exit code tells the parent. The
 child sets `RLIMIT_AS` on itself before it imports the extractors, so a
 memory-hungry document raises `MemoryError` in the child instead of drawing
 the OOM killer. A thread cannot be killed; one PDF that wedges pypdf would
@@ -171,8 +171,14 @@ stall the consumer forever.
 Not a `ProcessPoolExecutor`: it cannot kill a running task on timeout
 without private internals. On 3.12 it also forks from the asyncio parent
 with its GCS client, and the child inherits that address space, which makes
-`RLIMIT_AS` hard to size. At ≤ ~100 commands/day the spawn cost is noise
-(amended 2026-09-29).
+`RLIMIT_AS` hard to size.
+
+Not `multiprocessing` spawn either: spawn re-imports the parent's `__main__`,
+with its redis and GCS clients, in every child. The child parses untrusted
+documents, so it gets a scrubbed environment (no broker credential, no GCS
+key). The parent decodes its result with an unpickler that allows no global
+but `ExtractOutcome`. At ≤ ~100 commands/day the start-up cost is noise
+(amended 2026-09-29/30).
 
 **Layout:**
 
