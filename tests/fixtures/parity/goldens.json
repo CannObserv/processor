@@ -1,0 +1,86 @@
+{
+  "co_core": "0.19.7",
+  "generated_by": "scripts/gen_parity_goldens.py (Watcher's _extract_and_fingerprint)",
+  "goldens": {
+    "csv": {
+      "content_fingerprint": "sha256:3aa128d2928d8d694df0f015dcffc146ee14d09e7dc12cc7434148b3af64e5d0",
+      "content_size_bytes": 143,
+      "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
+      "spec_schema_version": 1
+    },
+    "html_css": {
+      "content_fingerprint": "sha256:54fb39f5ee423006094f811bc0a36e0345187dfbbdb9935bd0425d954d6a77b6",
+      "content_size_bytes": 142,
+      "spec_fingerprint": "spec1:sha256:b64929933ad8042a12718037d3a5fc7140aaa81195345c62d450511889313a61",
+      "spec_schema_version": 1
+    },
+    "html_css_no_match": {
+      "content_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content_size_bytes": 0,
+      "spec_fingerprint": "spec1:sha256:abdbe9c443d2a737233b8c1012c1188b0e9e4484670e990e592a6766203fe124",
+      "spec_schema_version": 1
+    },
+    "html_full_page": {
+      "content_fingerprint": "sha256:8c815816bbcc0e3ab0fb9ec8b9e77f7aa638bb2ada24cf373112ded580acaebd",
+      "content_size_bytes": 181,
+      "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
+      "spec_schema_version": 1
+    },
+    "html_latin1": {
+      "content_fingerprint": "sha256:449e97f5b3d7bb19f30da0d29126d21417d3b7fe722ffb7556ec3d23fceb72ee",
+      "content_size_bytes": 35,
+      "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
+      "spec_schema_version": 1
+    },
+    "none_essence_is_html": {
+      "content_fingerprint": "sha256:8c815816bbcc0e3ab0fb9ec8b9e77f7aa638bb2ada24cf373112ded580acaebd",
+      "content_size_bytes": 181,
+      "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
+      "spec_schema_version": 1
+    },
+    "pdf_scanned_blank": {
+      "content_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content_size_bytes": 0,
+      "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
+      "spec_schema_version": 1
+    },
+    "pdf_text": {
+      "content_fingerprint": "sha256:e15a15411de2c7311bac8e270d57c350782045fdfffb7fc12102e1ee3c744dff",
+      "content_size_bytes": 58,
+      "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
+      "spec_schema_version": 1
+    },
+    "spec_fingerprint_raises": {
+      "content_fingerprint": "sha256:8c815816bbcc0e3ab0fb9ec8b9e77f7aa638bb2ada24cf373112ded580acaebd",
+      "content_size_bytes": 181,
+      "spec_fingerprint": null,
+      "spec_schema_version": 1
+    },
+    "spec_schema_version_2": {
+      "content_fingerprint": "sha256:54fb39f5ee423006094f811bc0a36e0345187dfbbdb9935bd0425d954d6a77b6",
+      "content_size_bytes": 142,
+      "spec_fingerprint": "spec1:sha256:751e382c239d398ebc31f665e55ad9f07bdcc22a54aba50e25cbbcab6165b809",
+      "spec_schema_version": 2
+    },
+    "unknown_essence_is_html": {
+      "content_fingerprint": "sha256:52492823a71e22338921f03375537ca3f356a747c98a72c30795b33c9d852d45",
+      "content_size_bytes": 82,
+      "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
+      "spec_schema_version": 1
+    },
+    "xhtml": {
+      "content_fingerprint": "sha256:7d4758ac98610c98405608adc1a433968b7183fec1819e6781bf1394c420a100",
+      "content_size_bytes": 56,
+      "spec_fingerprint": "spec1:sha256:b64929933ad8042a12718037d3a5fc7140aaa81195345c62d450511889313a61",
+      "spec_schema_version": 1
+    },
+    "xlsx": {
+      "content_fingerprint": "sha256:c3bab1f02e4260c1e5a5a8e09e0223ce504fc2707400a82db9873b6f06264573",
+      "content_size_bytes": 103,
+      "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
+      "spec_schema_version": 1
+    }
+  },
+  "watcher_commit": "a5d6f3417f4b559449a3f5d82f5c40438a4cc18d",
+  "watcher_processor_version": "0.19.7+1"
+}
