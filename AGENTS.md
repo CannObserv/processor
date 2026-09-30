@@ -38,6 +38,7 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 | Scratch bus | `redis-server` on `localhost:6379` — tests and smoke runs only |
 | Input | `gs://co-gcs-blobs` (Replicator's raw blobs), read-only |
 | Output | `gs://co-gcs-processor/blobs/<sha256>.bin`, write-if-absent, **never deleted** |
+| Node.js | 24 LTS from NodeSource apt, agent tooling only (mayfly, SocratiCode): `deploy/nodesource.sh install\|check`, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#nodejs-agent-tooling-only) |
 | Service | systemd unit `processor` — [deploy/processor.service](deploy/processor.service), runbook [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (not yet installed) |
 
 **Tests never touch the real broker or real buckets.** Use the scratch Redis, co-core's `LocalBlobStore`, and fakes. `processor` cannot and must not `XADD content.process` on the broker.
@@ -90,6 +91,6 @@ uv run ruff check . && uv run ruff format --check .
 ## Detail Docs
 
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, env file, group creation, install, operate, co-core bumps
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, env file, group creation, install, operate, co-core bumps, Node.js
 - [docs/plans/](docs/plans/) — implementation plans
 - [docs/SKILLS.md](docs/SKILLS.md) — vendored agent skills, the brainstorming override, the refresh hook
