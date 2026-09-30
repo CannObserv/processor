@@ -67,8 +67,8 @@ Destroying one needs `--force` once its submodules are initialised (git refuses 
 
 ## Workflow vs the vendored ship skill
 
-Changes land as issue → branch → PR (AGENTS.md). Two vendored steps assume otherwise: `shipping-work-python-fastapi` Step 3 (*merge to `main` first*, then push) and `using-git-worktrees` Phase 4 (local merge back to `main`). Here, push the branch and `gh pr create` instead; the rest of both skills applies.
+Changes land as issue → branch → PR (AGENTS.md). Two vendored steps assume otherwise: `shipping-work-python-fastapi` Step 3 (*merge to `main` first*, then push) and `using-git-worktrees` Phase 4 (local merge back to `main`). Here, push the branch and `gh pr create` instead; the rest of both skills applies. Upstream fix proposed as [gregoryfoster/skills#342](https://github.com/gregoryfoster/skills/issues/342): a `pr` mode, on by default; drop this section when it lands. `worktree-destroy.sh` also verifies a merge by ancestry, which a squash or rebase merge fails, so destroy a squash-merged branch's worktree with `--descoped "merged as PR #<n>"` until then.
 
 ## Not installed
 
-Separate decisions, as in broker#15: `curating-context`'s weekly cadence workflow and `PostToolUse` write guard, SocratiCode indexing and its two hooks, processor's row on upstream's `.skills/cohort` roster, and the tailored doc-check lists (`.skills/doc-sensitive-paths`, `.skills/doc-sections`).
+Separate decisions, as in broker#15: `curating-context`'s weekly cadence workflow and `PostToolUse` write guard, SocratiCode indexing and its two hooks (#5), processor's row on upstream's `.skills/cohort` roster ([gregoryfoster/skills#343](https://github.com/gregoryfoster/skills/issues/343)), and the tailored doc-check lists (`.skills/doc-sensitive-paths`, `.skills/doc-sections`).
