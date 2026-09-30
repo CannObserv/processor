@@ -53,7 +53,8 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["docs/plans/"]
+# skills-vendor/: upstream's code, bumped unreviewed by the refresh hook (docs/SKILLS.md).
+extend-exclude = ["docs/plans/", "skills-vendor/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP"]

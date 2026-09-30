@@ -16,3 +16,11 @@ dist/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# Machine-local Claude Code settings.
+.claude/settings.local.json
+
+# Git worktrees: the using-git-worktrees scripts resolve to .worktrees/; the Claude
+# Code harness (isolation: "worktree") provisions into .claude/worktrees/.
+.worktrees/
+.claude/worktrees/
