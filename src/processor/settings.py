@@ -1,0 +1,58 @@
+"""Configuration: ``CO_PROCESSOR_*`` environment variables via pydantic-settings.
+
+Production values live in ``/etc/processor/.env``, loaded by the systemd unit.
+Never ``os.getenv``.
+"""
+
+from pathlib import Path
+from typing import Literal
+
+from pydantic import SecretStr, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+GiB = 1024**3
+
+# What a command may spend after its extraction before it counts as idle: the
+# output store write and the publish, each bounded by its client's timeout.
+_POST_EXTRACTION_ALLOWANCE_MS = 60_000
+
+
+class Settings(BaseSettings):
+    """Every knob, with the spec's defaults."""
+
+    model_config = SettingsConfigDict(env_prefix="CO_PROCESSOR_", extra="ignore")
+
+    # The bus: redis://processor:<pw>@100.97.91.19:6379/0 (not the MagicDNS name —
+    # this VM runs Tailscale with --accept-dns=false).
+    bus_url: SecretStr
+    consumer_name: str = "co-processor"
+    read_block_ms: int = 5_000
+
+    # Stores (spec §2): Replicator's raw blobs in, derived text out.
+    store_backend: Literal["gcs", "local"] = "gcs"
+    input_bucket: str = "co-gcs-blobs"
+    input_prefix: str = "blobs"
+    output_bucket: str = "co-gcs-processor"
+    output_prefix: str = "blobs"
+    local_input_root: Path | None = None
+    local_output_root: Path | None = None
+
+    # The child (spec §3) and the retry cap (spec §4).
+    extraction_timeout_s: float = 120
+    rlimit_as_bytes: int = 3 * GiB
+    max_attempts: int = 3
+    reclaim_min_idle_ms: int = 600_000
+    reclaim_interval_s: float = 60
+
+    @model_validator(mode="after")
+    def _check(self) -> "Settings":
+        floor = int(self.extraction_timeout_s * 1000) + _POST_EXTRACTION_ALLOWANCE_MS
+        if self.reclaim_min_idle_ms <= floor:
+            raise ValueError(
+                f"reclaim_min_idle_ms ({self.reclaim_min_idle_ms}) must exceed the extraction "
+                f"timeout plus {_POST_EXTRACTION_ALLOWANCE_MS} ms ({floor}), or a slow command "
+                "is reclaimed from under itself"
+            )
+        if self.store_backend == "local" and not (self.local_input_root and self.local_output_root):
+            raise ValueError("store_backend=local needs local_input_root and local_output_root")
+        return self
