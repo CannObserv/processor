@@ -50,6 +50,10 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 
 **Parity goldens** come from Watcher's own code (`scripts/gen_parity_goldens.py`), never from Processor's. A failing parity test means output diverged from Watcher; do not regenerate the goldens to make it pass.
 
+## Agent Skills
+
+`gregoryfoster/skills` and `obra/superpowers` vendored under `skills-vendor/`, symlinked into `skills/` (agentskills.io) and `.claude/skills/` (Claude Code). Symlinks dangle until the submodules are initialised: `bash .skills/doctor.sh`. A `SessionStart` hook bumps them daily on `main` and pushes. Inventory, override, refresh: [docs/SKILLS.md](docs/SKILLS.md).
+
 ## Environment Files
 
 1. `/etc/processor/.env` (dir 700, file 600) — production secrets and settings: `CO_PROCESSOR_*`, broker credential, `GOOGLE_APPLICATION_CREDENTIALS`. Managed by the operator.
@@ -75,6 +79,8 @@ uv run ruff check . && uv run ruff format --check .
 
 **Commit messages:** `#<number> <type>: <description>` (or `<type>: <description>` without an issue). Types: feat, fix, refactor, docs, test, chore. Code on `main` is the deployed code.
 
+**Workflow:** every change is issue → branch → PR; never commit to `main` directly. Branch in a worktree (`using-git-worktrees`), not by switching this checkout: it is the unit's `WorkingDirectory`. Provisioning a worktree (venv, wheelhouse, submodules): [docs/SKILLS.md](docs/SKILLS.md#worktrees). The vendored ship/worktree skills' local merge to `main` does not apply here ([docs/SKILLS.md](docs/SKILLS.md)). Sole exception: the skills refresh hook's daily submodule bump. After a PR merges, `git pull --ff-only` in this checkout: it is the deployed code, and while it lags `origin/main` the hook's push is rejected.
+
 **Logging:** structured JSON, one record per line, cohort four-key floor: `timestamp` (ISO 8601 UTC), `level`, `logger`, `message`. Every command outcome logs `command_id`, `info_source_id`, reason and timings.
 
 **Date & time:** all UTC; `YYYY-MM-DDTHH:MM:SS.ffffffZ`.
@@ -86,3 +92,4 @@ uv run ruff check . && uv run ruff format --check .
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, env file, group creation, install, operate, co-core bumps
 - [docs/plans/](docs/plans/) — implementation plans
+- [docs/SKILLS.md](docs/SKILLS.md) — vendored agent skills, the brainstorming override, the refresh hook

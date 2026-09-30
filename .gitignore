@@ -2,8 +2,9 @@
 .env
 .env.*
 
-# cannobserv wheelhouse: mirrored from the private index, or built locally.
-.wheelhouse/
+# cannobserv wheelhouse: mirrored from the private index, or built locally. No trailing
+# slash: a worktree links it (docs/SKILLS.md), and a symlink is not a directory.
+.wheelhouse
 
 # Python / uv
 .venv/
@@ -16,3 +17,11 @@ dist/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# Machine-local Claude Code settings.
+.claude/settings.local.json
+
+# Git worktrees: the using-git-worktrees scripts resolve to .worktrees/; the Claude
+# Code harness (isolation: "worktree") provisions into .claude/worktrees/.
+.worktrees/
+.claude/worktrees/
