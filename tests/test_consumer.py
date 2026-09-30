@@ -346,6 +346,54 @@ async def test_an_entry_that_raises_does_not_strand_the_ones_behind_it(
     assert [f.command_id for f in await facts(admin)] == ["cmd-1", "cmd-2"]
 
 
+async def test_an_escaping_exception_strikes_then_dead_letters(
+    admin, bus, stores, monkeypatch
+) -> None:
+    # A bug outside the handler's own try (logging, building the failure fact) must
+    # not retry forever: it counts, and at the cap the entry goes to the DLQ.
+    async def broken_handle(*_args, **_kwargs):
+        raise KeyError("a bug outside the handler's try")
+
+    monkeypatch.setattr("processor.consumer.handle", broken_handle)
+    consumer = make_consumer(bus, stores)
+    await consumer.start()
+    source_id = await issue(admin, stores)
+    for _ in range(2):
+        with pytest.raises(KeyError):
+            await consumer.step()
+        assert (await group_info(admin))["pending"] == 1
+    await consumer.step()
+
+    ((_id, raw),) = await admin.xrange(dlq_name(CONTENT_PROCESS))
+    _fields, meta = split_dead_letter({k.decode(): v.decode() for k, v in raw.items()})
+    assert meta.source_id == source_id
+    assert "KeyError" in meta.reason and "attempt 3" in meta.reason
+    assert (await group_info(admin))["pending"] == 0
+    assert await facts(admin) == []
+
+
+async def test_a_transient_escape_is_never_dead_lettered(admin, bus, stores, monkeypatch) -> None:
+    consumer = make_consumer(bus, stores)
+    await consumer.start()
+    await issue(admin, stores)
+    real_ack = AsyncBusConsumer.ack
+    calls = itertools.count()
+
+    async def flaky_ack(self, message_id):
+        if next(calls) < 5:  # past max_attempts: a broker fault is not a strike
+            raise RedisConnectionError("broker unreachable")
+        return await real_ack(self, message_id)
+
+    monkeypatch.setattr(AsyncBusConsumer, "ack", flaky_ack)
+    for _ in range(5):
+        with pytest.raises(RedisConnectionError):
+            await consumer.step()
+    await consumer.step()
+    assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 0
+    assert (await group_info(admin))["pending"] == 0
+    assert {f.command_id for f in await facts(admin)} == {"cmd-1"}  # duplicates, one command
+
+
 async def test_noperm_leaves_the_entry_pending(admin, stores) -> None:
     narrow = [g for g in GRANTS if not g.startswith("(+xadd")]
     narrow.append("(+xadd ~content.process.dlq)")  # can dead-letter, cannot publish facts

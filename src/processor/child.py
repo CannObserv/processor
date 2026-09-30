@@ -9,6 +9,12 @@ The child parses untrusted documents, so it is treated as untrusted too: it gets
 scrubbed environment (never the broker credential or the GCS key), and its result is
 decoded by an unpickler that resolves no global but ``ExtractOutcome`` — a child
 compromised by a document cannot make the parent run code.
+
+**Not a sandbox.** The child runs as the service user, so a child compromised by a
+parser bug can still read what that user can (the env file, the GCS key, the
+parent's ``/proc/<pid>/environ``) and open connections. Accepted for the MVP
+(2026-09-30); containment — Landlock, a non-dumpable parent, a dedicated service
+user — is processor#2.
 """
 
 import asyncio

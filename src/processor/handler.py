@@ -11,6 +11,8 @@ handler decides; the consumer loop acts on the returned ``Disposition``:
   nothing published, counted toward ``max_attempts``; on the last attempt the
   handler publishes ``extraction_error`` instead and returns ``ack``.
 
+A download that fails its checksum (``DataCorruption``) is ``input_unreadable``.
+
 Order is store → publish → ack. A publish failure after a store leaves the entry
 pending; the re-run finds the object already stored (write-if-absent) and publishes.
 """
@@ -35,6 +37,7 @@ from co_core.pure.models.changes import (
 )
 from co_core.pure.util.blobstore import validate_fingerprint
 from co_core.pure.util.hashing import bare_sha256
+from google.cloud.storage.exceptions import DataCorruption
 
 from processor.child import ChildResult, transform_target
 from processor.errors import is_transient
@@ -204,6 +207,10 @@ async def _read_input(command: ContentProcessCommand, deps: Deps, timer: _Timer)
         raw = await asyncio.to_thread(store.open, digest)
     except FileNotFoundError as exc:
         raise _Terminal("input_unreadable", f"no blob for {digest}") from exc
+    except DataCorruption as exc:
+        # The storage read failed its checksum, not the document: Watcher's re-fetch
+        # rewrites a temp blob that really is corrupt, and is cheap if it was in transit.
+        raise _Terminal("input_unreadable", f"checksum mismatch on download: {exc}") from exc
     timer.lap("read_ms", since)
     actual = hashlib.sha256(raw).hexdigest()
     if actual != digest:

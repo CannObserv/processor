@@ -10,6 +10,10 @@ max-deliveries hook, no loop (spec Open Question 2) — so the loop is here:
   keeps the in-memory strike count per stream entry id. A restart resets the count:
   a poison command then gets at most ``max_attempts`` more.
 - A frame that does not decode is dead-lettered with its raw fields.
+- An exception escaping a message (a bug outside the handler's own try, or a
+  non-transient refusal of an ack or dead-letter) counts like a strike; at
+  ``max_attempts`` the entry is dead-lettered with the exception as its reason.
+  Transient escapes (broker, GCS) stay uncapped.
 - ``run``: ``step`` until stopped, backing off on any exception (connection loss,
   ``NOPERM``, ``OOM``), never exiting on one. A stop also ends a reclaim between
   messages: the in-flight command finishes, and the rest of a backlog stays pending
@@ -165,6 +169,24 @@ class Consumer:
     async def _process(self, message: BusMessage) -> None:
         message_id = message.message_id
         attempt = self._strikes.get(message_id, 0) + 1
+        try:
+            await self._act(message, attempt)
+        except Exception as exc:
+            if is_transient(exc):
+                raise  # a broker or GCS fault: uncapped, the loop backs off
+            # A bug outside the handler's own try, or a non-transient refusal of an
+            # ack or dead-letter. Counted like a strike; at the cap the entry goes to
+            # the DLQ, since it could not even fail cleanly. Nothing is published.
+            if attempt < self._deps.max_attempts:
+                self._strikes[message_id] = attempt
+                raise
+            self._strikes.pop(message_id, None)
+            reason = f"gave up on attempt {attempt}: {type(exc).__name__}: {exc}"
+            logger.error("dead-lettering", extra={"message_id": message_id, "reason": reason})
+            await self._bus.dead_letter(message_id, dict(message.fields), reason=reason)
+
+    async def _act(self, message: BusMessage, attempt: int) -> None:
+        message_id = message.message_id
         disposition = await handle(message, attempt=attempt, deps=self._deps)
         _log(disposition, message_id, attempt)
 

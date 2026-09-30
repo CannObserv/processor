@@ -180,6 +180,14 @@ key). The parent decodes its result with an unpickler that allows no global
 but `ExtractOutcome`. At ≤ ~100 commands/day the start-up cost is noise
 (amended 2026-09-29/30).
 
+**Known limitation (accepted for the MVP, 2026-09-30).** The scrubbed
+environment and the unpickler are not a sandbox. The child runs as the
+service user, so a child that a parser bug gives code execution can read
+what that user can: the env file, the GCS key, and the parent's
+`/proc/<pid>/environ`. It can also open network connections.
+Containment is processor#2: Landlock in the child, a non-dumpable parent,
+and a dedicated service user.
+
 **Layout:**
 
 - `processors/extract.py` — the pure core: `(raw, media_type, source_spec) →
@@ -200,13 +208,14 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
 
 | Condition | Publish | Ack |
 |---|---|---|
-| Undecodable frame | — (DLQ) | yes |
+| Undecodable frame, or a well-formed frame that is not a `content_process` command | — (DLQ) | yes |
 | `processor` ≠ `"extract"` | `unsupported_processor`, terminal | yes |
 | Malformed digest, or `input_uri` the input store does not recognize | `invalid_input`, terminal (issuer does not re-fetch) | yes |
-| Input bytes gone | `input_unreadable`, terminal for the command (issuer re-fetches, capped) | yes |
+| Input bytes gone, or the download fails its checksum (`DataCorruption`, amended 2026-09-30) | `input_unreadable`, terminal for the command (issuer re-fetches, capped) | yes |
 | Bytes hash ≠ `input_digest` | `input_digest_mismatch`, terminal | yes |
 | Extractor raises, including `MemoryError` under `RLIMIT_AS` | `extraction_error`, terminal | yes |
 | Child timeout or crash | — | no; the 3rd attempt publishes `extraction_error`, terminal, and acks |
+| A non-transient exception escaping the handler (a bug, or an ack or dead-letter refused), amended 2026-09-30 | — | no; counted like a strike, and the 3rd attempt dead-letters the entry with the exception as its reason |
 | GCS 5xx / 429 / timeout / auth; broker `NOPERM`; broker `OOM command not allowed` | — | no; the entry is reclaimed |
 
 - **`unsupported_media_type` is never emitted in v1** — `extractor_for_essence`

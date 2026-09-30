@@ -31,8 +31,11 @@ OOMScoreAdjust=-500
 # very command the consumer is draining. The final SIGKILL still reaches every
 # process. Budget: the blocking read (5 s), input read (30 s), extraction timeout
 # (120 s), store (30 s) and publish (15 s), plus margin; raise it with
-# CO_PROCESSOR_EXTRACTION_TIMEOUT_S. A kill past this leaves the entry pending for
-# the reclaim.
+# CO_PROCESSOR_EXTRACTION_TIMEOUT_S. That is the healthy-GCS case: under a GCS
+# outage the library's own retries can stretch the read and the store to ~150 s
+# each (~435 s worst case), and a stop then ends in SIGKILL. That is safe, and kept
+# on purpose so a deploy never hangs for minutes: the entry stays pending (nothing
+# was acked) and the reclaim re-runs it after reclaim_min_idle_ms.
 KillMode=mixed
 TimeoutStopSec=240
 

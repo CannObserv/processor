@@ -21,6 +21,7 @@ from co_core.pure.util.hashing import bare_sha256
 from co_core_sync.drivers.blobstore.local import LocalBlobStore
 from google.api_core import exceptions as gapi
 from google.auth import exceptions as gauth
+from google.cloud.storage.exceptions import DataCorruption
 from redis import exceptions as rx
 
 from processor.child import ChildResult, run_in_child
@@ -230,6 +231,15 @@ async def test_an_input_uri_the_store_does_not_recognize_is_invalid_input(h: Har
 async def test_input_bytes_gone(h: Harness) -> None:
     assert (await h.run(h.message(store=False))).action == "ack"
     assert h.only_failure().reason == "input_unreadable"
+
+
+async def test_a_checksum_mismatch_on_download_is_input_unreadable(h: Harness) -> None:
+    # The storage read failed, not the document: Watcher's re-fetch rewrites a temp
+    # blob that really is corrupt, and costs one cheap fetch if it was only in transit.
+    h.input_override = FlakyStore(h.input, method="open", exc=DataCorruption(None, "crc32c"))
+    assert (await h.run(h.message(), attempt=1)).action == "ack"
+    failure = h.only_failure()
+    assert failure.reason == "input_unreadable" and "checksum" in failure.detail
 
 
 async def test_bytes_that_hash_differently(h: Harness) -> None:
