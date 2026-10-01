@@ -116,7 +116,7 @@ Since #8 (2026-10-01) this VM runs Tailscale with `--accept-dns=true`, as every 
 How it works here:
 
 - exeuntu has no `systemd-resolved`, so tailscaled runs in direct mode and writes `/etc/resolv.conf` itself, pointing it at MagicDNS (`100.100.100.100`).
-- exe.dev wrote `nameserver 169.254.169.254` (its resolver) into `/etc/resolv.conf` at the VM's first boot: the file has the same 2026-09-29 22:50:42 mtime as `/etc/hosts`. The 2026-10-01 reboot left both alone. Both already held exe.dev's content then, so whether exe.dev rewrites a file that differs at boot is unknown. tailscaled keeps that file as `/etc/resolv.pre-tailscale-backup.conf` and forwards public names to it, since the tailnet sets no global resolvers. The unit's `ExecStopPost=/usr/sbin/tailscaled --cleanup` puts it back on a clean stop, and tailscaled takes it over again when it starts.
+- exe.dev wrote `nameserver 169.254.169.254` (its resolver) into `/etc/resolv.conf` at the VM's first boot: the file has the same 2026-09-29 22:50:42 mtime as `/etc/hosts`. exe.dev's init writes it again at boot, before systemd starts. After the 2026-10-01 hard reset it replaced the tailscaled file it found. After that day's graceful reboot, when the file already matched, it left it alone, as it has `/etc/hosts` at both boots. tailscaled keeps that file as `/etc/resolv.pre-tailscale-backup.conf` and forwards public names to it, since the tailnet sets no global resolvers. The unit's `ExecStopPost=/usr/sbin/tailscaled --cleanup` puts it back on a clean stop, and tailscaled takes it over again when it starts.
 - `broker` resolves through MagicDNS, so the bus URL names it and never its address. Broker's `docs/RECOVERY.md` rebuilds the node under the same name with a new address. Only the peers the tailnet policy shows this node resolve; on 2026-10-01 that was `broker` alone.
 
 **`CorpDNS` must be true.** It can be false while `tailscale status` looks healthy: the peers are listed, and every tailnet name still fails (archiver#193). `tests/test_tailscaled.py` checks it on this node.
@@ -138,18 +138,30 @@ cat /proc/$(systemctl show -p MainPID --value tailscaled)/oom_score_adj   # -950
 
 ### At boot
 
-**Proven across a graceful reboot (`sudo systemctl reboot`) on 2026-10-01.** A one-shot boot unit timed each lookup from tailscaled's start. It would have turned Tailscale DNS off if public names had still failed after 90 s. The probe and its unit file are in `/var/backups/processor/8/` (root only), with the log beside them, so the untested hard-reset path below can be measured the same way. To arm it, copy the unit to `/etc/systemd/system/` and `systemctl enable` it; it disables itself after one run.
+**Proven across a graceful reboot (`sudo systemctl reboot`) and a hard reset (`exe.dev restart`), both on 2026-10-01.** A probe ran at each boot:
+
+- One unit snapshots `/etc/resolv.conf` and the backup before tailscaled starts (from the hard reset on).
+- A second unit times each lookup from tailscaled's start. It would have turned Tailscale DNS off if public names had still failed after 90 s.
+
+The probe, its two units and its log are in `/var/backups/processor/8/` (root only). To arm it again, copy both units to `/etc/systemd/system/` and `systemctl enable` both; the second unit disables both after one run.
+
+The graceful reboot:
 
 - tailscaled started 1.1 s into boot, at `-950`, with `CorpDNS: true`.
 - Public names resolved on the probe's first try (+0.5 s), through exe.dev's resolver in the file the stop hook had restored, which was in place from boot.
 - tailscaled took the file over at +1.46 s, exact from the file's mtime. `broker` resolved by +1.65 s (replicator#88 measured about 2 s).
 - The boot's journal has no name-resolution error.
 
-The probe started 0.32 s after tailscaled and polled every 0.25 s, so the lookup times are upper bounds.
+The hard reset skips the stop hook, so tailscaled's own file and its backup were still in place when the VM went down:
 
-A hard reset (`exe.dev restart`) skips the stop hook, so tailscaled's own file is still in place when the VM goes down. What happens next is untested: either the file is still there at boot, and nothing answers on `100.100.100.100` until tailscaled is up, or exe.dev rewrites it first.
+- exe.dev's init replaced the file with `nameserver 169.254.169.254` 1.5 s into boot, before systemd's first journal line. So lookups made before tailscaled takes over go to exe.dev's resolver, as after a clean stop.
+- tailscaled started at 2.1 s, at `-950`, with `CorpDNS: true`. It deleted the backup the reset left behind, then took the file over at +1.60 s, exact from the file's mtime, backing up exe.dev's fresh copy.
+- Public names resolved on the probe's first try (+0.8 s). `broker` and `index` resolved by +1.67 s.
+- The boot's journal has no name-resolution error.
 
-A lookup made before tailscaled answers can fail. The GCS preflight's listing retries a connection error for up to 120 s (the storage client's `DEFAULT_RETRY`). A start that still fails exits 1, and systemd restarts it 5 s later. The bus loop backs off and retries a name that does not resolve yet, as it does for any broker fault (`tests/test_consumer.py`).
+The second unit polled every 0.25 s, starting 0.32 s (reboot) and 0.44 s (reset) after tailscaled, so the lookup times are upper bounds.
+
+On both paths, tailnet names such as `broker` don't resolve until tailscaled takes the file over, 1.5–1.6 s after it starts; public names do. The bus loop backs off and retries a name that does not resolve yet, as it does for any broker fault (`tests/test_consumer.py`). The GCS preflight's listing retries a connection error for up to 120 s (the storage client's `DEFAULT_RETRY`). A start that still fails exits 1, and systemd restarts it 5 s later.
 
 Check after a reboot:
 
