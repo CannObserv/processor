@@ -42,6 +42,10 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 # something must still be killable.
 OOM_EXEMPT = -1000
 
+# A shell write onto /etc/resolv.conf: a copy, move, link, removal, tee or dd onto
+# it, an in-place sed, or a redirect into it.
+RESOLV_WRITE = re.compile(r"\b(cp|mv|ln|rm|tee|install|dd)\b|\bsed\b.*\s-i|>>?\s*/etc/resolv\.conf")
+
 # The broker's tailnet address, which a rebuild changes. Escaped, so this file
 # does not match itself.
 BROKER_ADDRESS = re.compile(r"\b100\.97\.91\.19\b")
@@ -106,13 +110,38 @@ def test_deployment_installs_the_dropin() -> None:
     assert str(INSTALLED) in doc
 
 
+def _writes_resolv_conf(line: str) -> bool:
+    return "/etc/resolv.conf" in line and RESOLV_WRITE.search(line) is not None
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "sudo cp infra/resolv.conf /etc/resolv.conf",
+        "echo nameserver 1.1.1.1 | sudo tee /etc/resolv.conf",
+        "sudo sh -c 'echo nameserver 1.1.1.1 > /etc/resolv.conf'",
+        "echo options rotate >> /etc/resolv.conf",
+        "sudo sed -i 's/^nameserver .*/nameserver 1.1.1.1/' /etc/resolv.conf",
+        "sudo ln -sf /run/resolv.conf /etc/resolv.conf",
+        "sudo rm /etc/resolv.conf",
+    ],
+)
+def test_the_write_guard_sees_every_shell_write(line: str) -> None:
+    assert _writes_resolv_conf(line)
+
+
+def test_the_write_guard_passes_reads() -> None:
+    for line in (
+        "grep nameserver /etc/resolv.conf",
+        "cat /etc/resolv.conf",
+        "head -1 /etc/resolv.conf",
+    ):
+        assert not _writes_resolv_conf(line), line
+
+
 def test_deployment_never_writes_a_file_over_resolv_conf() -> None:
     """tailscaled owns ``/etc/resolv.conf``; the one sanctioned write restores its backup."""
-    writes = [
-        ln.strip()
-        for ln in DEPLOYMENT.read_text().splitlines()
-        if "/etc/resolv.conf" in ln and re.search(r"\b(cp|tee|install|mv)\b", ln)
-    ]
+    writes = [ln.strip() for ln in DEPLOYMENT.read_text().splitlines() if _writes_resolv_conf(ln)]
     for ln in writes:
         assert RESOLV_BACKUP in ln, f"docs/DEPLOYMENT.md overwrites /etc/resolv.conf: {ln}"
 
