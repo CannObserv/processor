@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same PR; never cancel runs on main (every commit
+# that lands keeps its signal).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    # WIF: an OIDC token for google-github-actions/auth to impersonate the
+    # read-only co-pypi-reader SA and pull the cannobserv wheelhouse, as in the
+    # other cohort repos. Job-scoped, so no other step gains cloud access.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # Submodules: tests/test_skills.py walks skills-vendor/ (#3).
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Authenticate to Google Cloud (WIF, read-only)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: co-pypi-reader@co-gcs.iam.gserviceaccount.com
+
+      # co-core resolves from ./.wheelhouse (find-links), so it must exist before
+      # any project-aware uv command, `uv lock --locked` included.
+      - name: Sync cannobserv wheelhouse
+        run: uv run --no-project --with 'google-cloud-storage>=2,<4' python scripts/sync_wheelhouse.py
+
+      - name: uv sync
+        run: uv sync --locked
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: uv lock --locked
+        run: uv lock --locked
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    # The broker's Redis (7.2); co-processor's scratch server is 7.0.15, so CI and
+    # the VM between them cover both. The integration suite runs here in full: it
+    # uses db 15, a throwaway ACL user, and briefly maxmemory, all of which a
+    # service container absorbs.
+    services:
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Authenticate to Google Cloud (WIF, read-only)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: co-pypi-reader@co-gcs.iam.gserviceaccount.com
+
+      - name: Sync cannobserv wheelhouse
+        run: uv run --no-project --with 'google-cloud-storage>=2,<4' python scripts/sync_wheelhouse.py
+
+      - name: uv sync
+        run: uv sync --locked
+
+      # No marker filter: the integration tests are the bus contract. Host-bound
+      # tests (live tailscaled, installed drop-ins) skip off co-processor.
+      - name: pytest
+        run: uv run pytest
