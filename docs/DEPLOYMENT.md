@@ -141,9 +141,11 @@ cat /proc/$(systemctl show -p MainPID --value tailscaled)/oom_score_adj   # -950
 **Proven across a graceful reboot (`sudo systemctl reboot`) on 2026-10-01.** A one-shot boot unit timed each lookup from tailscaled's start:
 
 - tailscaled started 1.1 s into boot, at `-950`, with `CorpDNS: true`.
-- Public names resolved at +0.5 s, through exe.dev's resolver in the file the stop hook had restored.
-- tailscaled took the file over at +1.5 s, and `broker` resolved at +1.65 s (replicator#88 measured about 2 s).
+- Public names resolved on the probe's first try (+0.5 s), through exe.dev's resolver in the file the stop hook had restored, which was in place from boot.
+- tailscaled took the file over at +1.46 s, exact from the file's mtime. `broker` resolved by +1.65 s (replicator#88 measured about 2 s).
 - The boot's journal has no name-resolution error.
+
+The probe started 0.32 s after tailscaled and polled every 0.25 s, so the lookup times are upper bounds.
 
 A hard reset (`exe.dev restart`) skips the stop hook, so tailscaled's own file is still in place when the VM goes down. What happens next is untested: either the file is still there at boot, and nothing answers on `100.100.100.100` until tailscaled is up, or exe.dev rewrites it first.
 
