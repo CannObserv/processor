@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from processor.settings import Settings
 
-URL = "redis://processor:hunter2@100.97.91.19:6379/0"
+URL = "redis://processor:hunter2@broker:6379/0"
 
 
 @pytest.fixture(autouse=True)

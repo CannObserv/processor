@@ -34,7 +34,7 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 | Thing | Value |
 |---|---|
 | VM | exe.dev `co-processor` (8 GB, 2 vCPU), tag `processor` |
-| Broker | `100.97.91.19:6379` — this VM runs Tailscale `--accept-dns=false`, so **not** the MagicDNS name `broker` |
+| Broker | `broker:6379`, by MagicDNS name, never by address. Tailscale runs `--accept-dns=true`, with an OOM drop-in for tailscaled: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#tailscale-dns) |
 | Scratch bus | `redis-server` on `localhost:6379` — tests and smoke runs only |
 | Input | `gs://co-gcs-blobs` (Replicator's raw blobs), read-only |
 | Output | `gs://co-gcs-processor/blobs/<sha256>.bin`, write-if-absent, **never deleted** |
@@ -91,6 +91,6 @@ uv run ruff check . && uv run ruff format --check .
 ## Detail Docs
 
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, env file, group creation, install, operate, co-core bumps, Node.js
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, env file, group creation, install, operate, co-core bumps, Tailscale DNS, Node.js
 - [docs/plans/](docs/plans/) — implementation plans
 - [docs/SKILLS.md](docs/SKILLS.md) — vendored agent skills, the brainstorming override, the refresh hook

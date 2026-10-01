@@ -22,8 +22,8 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="CO_PROCESSOR_", extra="ignore")
 
-    # The bus: redis://processor:<pw>@100.97.91.19:6379/0 (not the MagicDNS name —
-    # this VM runs Tailscale with --accept-dns=false).
+    # The bus: redis://processor:<pw>@broker:6379/0 — the MagicDNS name, never the
+    # address, which a broker rebuild changes (#8).
     bus_url: SecretStr
     consumer_name: str = "co-processor"
     # > 0: XREADGROUP reads BLOCK 0 as "block forever", past the socket timeout.

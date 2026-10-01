@@ -108,7 +108,7 @@ processor-version pin on the command; no job API — the bus is the interface.
 | Service | systemd unit `processor`: `MemoryMax` below VM RAM, `Restart=on-failure`, `OOMPolicy=continue` (Section 4) |
 | Env | `/etc/processor/.env` (600), `CO_PROCESSOR_*` via pydantic-settings — never `os.getenv` |
 | Tailnet | `tag:processor`; policy `tag:processor` → `tag:broker` on 6379 |
-| Bus URL | `redis://processor:<pw>@<broker>:6379/0` — `<broker>` is the MagicDNS name `broker`, or `100.97.91.19` if the VM runs Tailscale with `--accept-dns=false` |
+| Bus URL | `redis://processor:<pw>@broker:6379/0` — the MagicDNS name, never the address, which a broker rebuild changes; the VM runs Tailscale with `--accept-dns=true`, as the cohort does (amended 2026-10-01, #8) |
 
 **Grants.**
 

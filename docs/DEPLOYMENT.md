@@ -9,6 +9,7 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`. C
 | Broker ACL user `processor` | `co-broker` | broker#75 |
 | Broker credential | `/etc/processor/.env` as `CO_PROCESSOR_BUS_URL` | broker#75 item 5 |
 | Tailnet `tag:processor` → `tag:broker` on 6379 | tailnet policy | done 2026-09-29 |
+| Tailscale `--accept-dns=true`, and tailscaled's OOM drop-in | this VM | done 2026-10-01, [Tailscale DNS](#tailscale-dns) (#8) |
 | A direct tailnet path to the broker (still relayed via DERP `sea` on 2026-09-30, although this node advertises endpoints and its netcheck is clean) | tailnet / broker side | broker#75 finding |
 | Bucket `gs://co-gcs-processor`, UBLA, public access prevention, no lifecycle | GCP | spec §2 |
 | SA `co-gcs-processor-writer`: `objectCreator` + `objectViewer` on `co-gcs-processor` (**no delete**), `objectViewer` on `co-gcs-blobs` | GCP | spec §2 |
@@ -23,7 +24,7 @@ The broker node never holds `processor`'s plaintext; since broker#72 its hourly 
 
    ```bash
    pw="$(set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 40)"; [ "${#pw}" -eq 40 ]
-   ( umask 077; printf 'CO_PROCESSOR_BUS_URL=redis://processor:%s@100.97.91.19:6379/0\n' "$pw" >> /etc/processor/.env )
+   ( umask 077; printf 'CO_PROCESSOR_BUS_URL=redis://processor:%s@broker:6379/0\n' "$pw" >> /etc/processor/.env )
    printf %s "$pw" | sha256sum | cut -d' ' -f1   # post THIS digest on broker#75; it is not the credential
    # copy "$pw" into the password manager, then:
    unset pw
@@ -33,18 +34,18 @@ The broker node never holds `processor`'s plaintext; since broker#72 its hourly 
 
    ```bash
    REDISCLI_AUTH="$(sed -n 's|^CO_PROCESSOR_BUS_URL=redis://processor:\([^@]*\)@.*|\1|p' /etc/processor/.env)" \
-     redis-cli -h 100.97.91.19 --user processor PING   # PONG
+     redis-cli -h broker --user processor PING   # PONG
    ```
 4. Then create the group right away (below).
 
-Use `100.97.91.19`, not `broker`. This VM runs Tailscale with `--accept-dns=false`, so MagicDNS does not resolve.
+The URL names the broker, never its address: see [Tailscale DNS](#tailscale-dns).
 
 ## `/etc/processor/.env`
 
 The directory is 700 and the file 600, both owned by `exedev`. The unit loads the file. Never source it into a login shell.
 
 ```bash
-CO_PROCESSOR_BUS_URL=redis://processor:<password>@100.97.91.19:6379/0
+CO_PROCESSOR_BUS_URL=redis://processor:<password>@broker:6379/0
 GOOGLE_APPLICATION_CREDENTIALS=/etc/processor/co-gcs-processor-writer.json
 # Optional overrides; defaults in src/processor/settings.py:
 # CO_PROCESSOR_EXTRACTION_TIMEOUT_S=120
@@ -107,6 +108,55 @@ co-core is pinned `==` in lockstep with Watcher (spec §5). A bump changes `proc
 1. Rebuild the wheelhouse at the new tag, then update the pin in `pyproject.toml` and `EXPECTED` in `tests/test_pin.py`, and `uv lock`.
 2. Regenerate the goldens from Watcher on the new version (`scripts/gen_parity_goldens.py`). They must not change, or the bump note says why output moved.
 3. Deploy together with Watcher's bump, or neither moves.
+
+## Tailscale DNS
+
+Since #8 (2026-10-01) this VM runs Tailscale with `--accept-dns=true`, as every cohort node does (observo#631, notifier#43 D8). It had run with DNS off since provisioning: the `tailscale up` of 2026-09-29, from an Observo session (observo#629), passed `--accept-dns=false`, and nothing records a reason.
+
+How it works here:
+
+- exeuntu has no `systemd-resolved`, so tailscaled runs in direct mode and writes `/etc/resolv.conf` itself, pointing it at MagicDNS (`100.100.100.100`).
+- exe-init, the kernel's `init=`, writes `nameserver 169.254.169.254` (exe.dev's resolver) into `/etc/resolv.conf` at boot, before systemd starts: the file carried the boot's mtime, as `/etc/hosts` does. tailscaled keeps that file as `/etc/resolv.pre-tailscale-backup.conf` and forwards public names to it, since the tailnet sets no global resolvers.
+- `broker` resolves through MagicDNS, so the bus URL names it and never its address. Broker's `docs/RECOVERY.md` rebuilds the node under the same name with a new address. Only the peers the tailnet policy shows this node resolve; on 2026-10-01 that was `broker` alone.
+
+**`CorpDNS` must be true.** It can be false while `tailscale status` looks healthy: the peers are listed, and every tailnet name still fails (archiver#193). `tests/test_tailscaled.py` checks it on this node.
+
+```bash
+tailscale debug prefs | grep CorpDNS     # true
+getent hosts broker storage.googleapis.com
+```
+
+### tailscaled's OOM rank
+
+The accepted cost: tailscaled sits in the path of every lookup on the host, as well as carrying the bus. [deploy/tailscaled.service.d/90-processor-oom.conf](../deploy/tailscaled.service.d/90-processor-oom.conf) ranks it at `-950`, below `processor.service` (`-500`). `OOMScoreAdjust=` applies at exec, so restart tailscaled after installing it. The restart blips DNS and the tailnet: on 2026-10-01 `broker` resolved again 2.4 s after it, and `oom_score` went from 670 to 37.
+
+```bash
+sudo install -D -m 644 deploy/tailscaled.service.d/90-processor-oom.conf /etc/systemd/system/tailscaled.service.d/90-processor-oom.conf
+sudo systemctl daemon-reload && sudo systemctl restart tailscaled
+cat /proc/$(systemctl show -p MainPID --value tailscaled)/oom_score_adj   # -950
+```
+
+### At boot
+
+MagicDNS answers about 2 s after tailscaled starts (replicator#88), so a lookup made at boot can fail. The GCS preflight's listing retries a connection error for up to 120 s (the storage client's `DEFAULT_RETRY`). A start that still fails exits 1, and systemd restarts it 5 s later. The bus loop backs off and retries a name that does not resolve yet, as it does for any broker fault (`tests/test_consumer.py`).
+
+DNS on has not yet been proven across a reboot here: this VM has not rebooted since #8. Check after the next one:
+
+```bash
+tailscale debug prefs | grep CorpDNS                                       # true
+getent hosts broker storage.googleapis.com github.com
+cat /proc/$(systemctl show -p MainPID --value tailscaled)/oom_score_adj   # -950
+journalctl -u processor -b | grep -ciE 'name or service not known|temporary failure in name resolution'
+```
+
+### Rollback
+
+```bash
+sudo tailscale set --accept-dns=false
+sudo cp /etc/resolv.pre-tailscale-backup.conf /etc/resolv.conf
+```
+
+After this, `broker` stops resolving. Until DNS is back on, put the broker's address from `tailscale status` into `CO_PROCESSOR_BUS_URL` and restart the service.
 
 ## Node.js (agent tooling only)
 
