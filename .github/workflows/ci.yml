@@ -47,9 +47,11 @@ jobs:
           service_account: co-pypi-reader@co-gcs.iam.gserviceaccount.com
 
       # co-core resolves from ./.wheelhouse (find-links), so it must exist before
-      # any project-aware uv command, `uv lock --locked` included.
+      # any project-aware uv command, `uv lock --locked` included. --no-config:
+      # `--no-project` alone still reads [tool.uv] find-links, and a fresh checkout
+      # has no ./.wheelhouse yet (the script creates it).
       - name: Sync cannobserv wheelhouse
-        run: uv run --no-project --with 'google-cloud-storage>=2,<4' python scripts/sync_wheelhouse.py
+        run: uv run --no-project --no-config --with 'google-cloud-storage>=2,<4' python scripts/sync_wheelhouse.py
 
       - name: uv sync
         run: uv sync --locked
@@ -103,7 +105,7 @@ jobs:
           service_account: co-pypi-reader@co-gcs.iam.gserviceaccount.com
 
       - name: Sync cannobserv wheelhouse
-        run: uv run --no-project --with 'google-cloud-storage>=2,<4' python scripts/sync_wheelhouse.py
+        run: uv run --no-project --no-config --with 'google-cloud-storage>=2,<4' python scripts/sync_wheelhouse.py
 
       - name: uv sync
         run: uv sync --locked

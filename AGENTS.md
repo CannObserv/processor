@@ -23,7 +23,7 @@ Python 3.12, uv, hatchling src layout, pytest, ruff.
 **Cannobserv wheelhouse.** `co-core`, `co-core-aio`, `co-core-sync` resolve from `./.wheelhouse` (git-ignored) via `[tool.uv] find-links`. Populate it before any `uv` command:
 
 ```bash
-uv run --no-project --with 'google-cloud-storage>=2,<4' python scripts/sync_wheelhouse.py  # mirror gs://co-gcs-pypi (needs co-pypi-reader ADC)
+uv run --no-project --no-config --with 'google-cloud-storage>=2,<4' python scripts/sync_wheelhouse.py  # mirror gs://co-gcs-pypi (needs co-pypi-reader ADC)
 set -a; . ./.env; set +a; scripts/build_wheelhouse.sh                                     # or: build from the cannobserv tag
 ```
 

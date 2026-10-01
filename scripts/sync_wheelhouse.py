@@ -6,9 +6,12 @@ then resolves ``co-core`` / ``co-core-aio`` from that directory via the
 ``[tool.uv] find-links`` entry in ``pyproject.toml`` (watcher#220).
 
 Runs standalone, *before* ``uv sync`` — it must not import the project (whose
-deps are what the wheelhouse provides), so invoke it in an isolated env:
+deps are what the wheelhouse provides), so invoke it in an isolated env. ``--no-config``
+matters: ``--no-project`` alone still reads ``[tool.uv] find-links``, which names
+the ``./.wheelhouse`` this script is about to create:
 
-    uv run --no-project --with 'google-cloud-storage>=2,<4' python scripts/sync_wheelhouse.py
+    uv run --no-project --no-config --with 'google-cloud-storage>=2,<4' \\
+        python scripts/sync_wheelhouse.py
 
 Authentication is Application Default Credentials. On the VM/deploy that is the
 service-account key at ``GOOGLE_APPLICATION_CREDENTIALS`` (set in

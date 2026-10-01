@@ -66,3 +66,23 @@ def test_the_whole_suite_runs_against_the_brokers_redis(ci: dict) -> None:
     assert "6379:6379" in redis["ports"]
     (pytest_run,) = [line for line in _runs(job).splitlines() if "pytest" in line]
     assert " -m " not in pytest_run, "a marker filter would drop the integration tests"
+
+
+def test_the_wheelhouse_sync_ignores_project_config(ci: dict) -> None:
+    # `uv run --no-project` still reads [tool.uv] find-links, and ./.wheelhouse does
+    # not exist yet in a fresh checkout: the sync has to skip config discovery.
+    for name in ("lint", "test"):
+        (sync,) = [ln for ln in _runs(ci["jobs"][name]).splitlines() if "sync_wheelhouse" in ln]
+        assert "--no-config" in sync, name
+
+
+def test_every_documented_wheelhouse_sync_ignores_project_config() -> None:
+    root = WORKFLOW.parent.parent.parent
+    sources = [root / "AGENTS.md", root / "scripts" / "sync_wheelhouse.py", *root.glob("docs/*.md")]
+    offenders = [
+        f"{path.relative_to(root)}: {line.strip()}"
+        for path in sources
+        for line in path.read_text().splitlines()
+        if "uv run" in line and "sync_wheelhouse.py" in line and "--no-config" not in line
+    ]
+    assert offenders == []
