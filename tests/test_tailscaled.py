@@ -5,7 +5,7 @@ Since #8 this VM runs Tailscale with ``--accept-dns=true``, the cohort's setting
 (``100.100.100.100``), so every lookup on the host goes through tailscaled: ``broker``
 (the bus), GCS, GitHub and the agent sessions' API. tailscaled already carries the
 only path to the broker, so an OOM kill would take both. At the packaged
-``OOMScoreAdjust=0`` it read ``oom_score`` 671 on 2026-10-01, ranked by size with
+``OOMScoreAdjust=0`` it read ``oom_score`` 670 on 2026-10-01, ranked by size with
 every other unprotected process.
 
 The bus URL names the broker, never its address: broker's ``docs/RECOVERY.md``
