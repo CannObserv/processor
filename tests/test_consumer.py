@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import itertools
 import logging
+import socket
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import ResponseError
 
+from processor import consumer as consumer_module
 from processor.child import ChildResult, run_in_child
 from processor.consumer import GROUP, Consumer, redis_client
 from processor.handler import Deps
@@ -289,6 +291,44 @@ async def test_run_stops_promptly(bus, stores) -> None:
     await asyncio.sleep(0.5)
     stop.set()
     await asyncio.wait_for(task, timeout=5)
+
+
+async def test_a_broker_name_that_does_not_resolve_yet_is_retried(
+    admin, bus, stores, monkeypatch, caplog
+) -> None:
+    # The bus URL names `broker` (#8). At boot MagicDNS answers about 2 s after
+    # tailscaled starts (replicator#88), so the first lookups can fail: the loop
+    # backs off as from any broker fault and starts once the name resolves.
+    real_getaddrinfo = socket.getaddrinfo
+    lookups = itertools.count()
+
+    def getaddrinfo(host, *args, **kwargs):
+        if host != "broker":
+            return real_getaddrinfo(host, *args, **kwargs)
+        if next(lookups) < 2:
+            raise socket.gaierror(socket.EAI_AGAIN, "Temporary failure in name resolution")
+        return real_getaddrinfo("localhost", *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(consumer_module, "_BACKOFF_START_S", 0.01)
+    # `bus` holds the ACL user and its denial check; this client reaches it by name.
+    client = redis_client(f"redis://{USER}:{PASSWORD}@broker:6379/{DB}", read_block_ms=100)
+    consumer = make_consumer(client, stores)
+    stop = asyncio.Event()
+    task = asyncio.create_task(consumer.run(stop))
+    try:
+        while not await admin.exists(CONTENT_PROCESS):
+            assert not task.done(), "the loop exited on an unresolved name"
+            await asyncio.sleep(0.01)
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, timeout=5)
+        await client.aclose()
+    assert (await group_info(admin))["name"] == GROUP.encode()
+    retries = [r for r in caplog.records if r.getMessage() == "consumer loop error; backing off"]
+    assert len(retries) == 2
+    # Logged as a broker fault (a warning), not as a bug with its traceback.
+    assert {r.levelno for r in retries} == {logging.WARNING}
 
 
 async def test_stop_during_a_reclaim_finishes_only_the_in_flight_command(
