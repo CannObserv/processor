@@ -71,6 +71,19 @@ def _oom_score_adjust(path: Path) -> int:
     return int(values[0]) if values else 0
 
 
+def _committable_files() -> list[Path]:
+    """Every file git would commit here, tracked or not; symlinks and submodules drop out."""
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split("\0")
+    files = [ROOT / f for f in listed if f]
+    return [f for f in files if f.is_file() and not f.is_symlink()]
+
+
 def _require_this_node() -> None:
     """Skip unless this is the running ``tag:processor`` node."""
     exe = shutil.which("tailscale")
@@ -139,29 +152,29 @@ def test_the_write_guard_passes_reads() -> None:
         assert not _writes_resolv_conf(line), line
 
 
-def test_deployment_never_writes_a_file_over_resolv_conf() -> None:
-    """tailscaled owns ``/etc/resolv.conf``; the one sanctioned write restores its backup."""
-    writes = [ln.strip() for ln in DEPLOYMENT.read_text().splitlines() if _writes_resolv_conf(ln)]
-    for ln in writes:
-        assert RESOLV_BACKUP in ln, f"docs/DEPLOYMENT.md overwrites /etc/resolv.conf: {ln}"
+def test_no_committable_file_writes_over_resolv_conf() -> None:
+    """tailscaled owns ``/etc/resolv.conf``; the one sanctioned write restores its backup.
+
+    Every committable file, not only the runbook: the failure on record is a script,
+    observo#2's ``infra/resolv.conf`` apply step. This module is skipped, since its
+    guard fixtures are writes on purpose.
+    """
+    writes = [
+        f"{f.relative_to(ROOT)}: {ln.strip()}"
+        for f in _committable_files()
+        if f != Path(__file__).resolve()
+        for ln in f.read_text(errors="ignore").splitlines()
+        if _writes_resolv_conf(ln) and RESOLV_BACKUP not in ln
+    ]
+    assert writes == [], f"these write over /etc/resolv.conf: {writes}"
 
 
 def test_no_committable_file_names_the_broker_by_address() -> None:
     """Every committable file, not a list: a new doc, unit or script is covered too."""
-    listed = subprocess.run(
-        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.split("\0")
-    files = [ROOT / f for f in listed if f]
     hits = [
         str(f.relative_to(ROOT))
-        for f in files
-        if f.is_file()
-        and not f.is_symlink()
-        and BROKER_ADDRESS.search(f.read_text(errors="ignore"))
+        for f in _committable_files()
+        if BROKER_ADDRESS.search(f.read_text(errors="ignore"))
     ]
     assert hits == [], f"these name the broker by address; use `broker` (#8): {hits}"
 
