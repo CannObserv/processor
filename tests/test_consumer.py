@@ -315,6 +315,7 @@ async def test_a_broker_name_that_does_not_resolve_yet_is_retried(
 
     monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
     monkeypatch.setattr(consumer_module, "_BACKOFF_START_S", 0.01)
+    caplog.set_level(logging.WARNING, logger="processor.consumer")
     # `bus` holds the ACL user and its denial check; this client reaches it by name.
     client = redis_client(f"redis://{USER}:{PASSWORD}@{host}:6379/{DB}", read_block_ms=100)
     consumer = make_consumer(client, stores)
