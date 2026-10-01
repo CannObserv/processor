@@ -299,12 +299,16 @@ async def test_a_broker_name_that_does_not_resolve_yet_is_retried(
     # The bus URL names `broker` (#8). At boot MagicDNS answers about 2 s after
     # tailscaled starts (replicator#88), so the first lookups can fail: the loop
     # backs off as from any broker fault and starts once the name resolves.
+    # Never `broker` itself: since #8 it resolves here to the real broker, so a
+    # resolver path that bypassed this patch would reach it. `.invalid` never
+    # resolves (RFC 6761), with or without the tailnet's search domain.
+    host = "broker.invalid"
     real_getaddrinfo = socket.getaddrinfo
     lookups = itertools.count()
 
-    def getaddrinfo(host, *args, **kwargs):
-        if host != "broker":
-            return real_getaddrinfo(host, *args, **kwargs)
+    def getaddrinfo(name, *args, **kwargs):
+        if name != host:
+            return real_getaddrinfo(name, *args, **kwargs)
         if next(lookups) < 2:
             raise socket.gaierror(socket.EAI_AGAIN, "Temporary failure in name resolution")
         return real_getaddrinfo("localhost", *args, **kwargs)
@@ -312,7 +316,7 @@ async def test_a_broker_name_that_does_not_resolve_yet_is_retried(
     monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
     monkeypatch.setattr(consumer_module, "_BACKOFF_START_S", 0.01)
     # `bus` holds the ACL user and its denial check; this client reaches it by name.
-    client = redis_client(f"redis://{USER}:{PASSWORD}@broker:6379/{DB}", read_block_ms=100)
+    client = redis_client(f"redis://{USER}:{PASSWORD}@{host}:6379/{DB}", read_block_ms=100)
     consumer = make_consumer(client, stores)
     stop = asyncio.Event()
     task = asyncio.create_task(consumer.run(stop))
