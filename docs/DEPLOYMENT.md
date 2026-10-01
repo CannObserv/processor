@@ -7,14 +7,14 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`. C
 | What | Where | Tracked |
 |---|---|---|
 | Broker ACL user `processor` | `co-broker` | broker#75 |
-| Broker credential | `/etc/processor/.env` as `CO_PROCESSOR_BUS_URL` | broker#75 item 5 |
+| Broker credential | `/etc/processor/.env` as `CO_PROCESSOR_BUS_URL` | broker#75 item 5; minted 2026-10-01, digest posted, waiting on the broker's step 2 |
 | Tailnet `tag:processor` → `tag:broker` on 6379 | tailnet policy | done 2026-09-29 |
 | Tailscale `--accept-dns=true`, and tailscaled's OOM drop-in | this VM | done 2026-10-01, [Tailscale DNS](#tailscale-dns) (#8) |
 | A direct tailnet path to the broker (still relayed via DERP `sea` on 2026-09-30, although this node advertises endpoints and its netcheck is clean) | tailnet / broker side | broker#75 finding |
-| Bucket `gs://co-gcs-processor`, UBLA, public access prevention, no lifecycle | GCP | spec §2 |
-| SA `co-gcs-processor-writer`: `objectCreator` + `objectViewer` on `co-gcs-processor` (**no delete**), `objectViewer` on `co-gcs-blobs` | GCP | spec §2 |
-| SA key at `/etc/processor/co-gcs-processor-writer.json` (600) | this VM | — |
-| Watcher's SA: `objectViewer` on `co-gcs-processor`, bucket level | GCP | watcher#325 |
+| Bucket `gs://co-gcs-processor`, UBLA, public access prevention, no lifecycle | GCP | spec §2, [GCP provisioning](#gcp-provisioning) |
+| SA `co-gcs-processor-writer`: `objectCreator` + `objectViewer` on `co-gcs-processor` (**no delete**), `objectViewer` on `co-gcs-blobs` | GCP | spec §2, [GCP provisioning](#gcp-provisioning) |
+| SA key at `/etc/processor/co-gcs-processor-writer.json` (600) | this VM | [GCP provisioning](#gcp-provisioning) |
+| Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level. Proposed for `co-gcs-blob-reader`, the identity Watcher already reads `gs://` blobs with | GCP | watcher#325 (unconfirmed) |
 
 ### Broker credential handoff (hash-only, broker#75 as of 2026-09-30)
 
@@ -39,6 +39,66 @@ The broker node never holds `processor`'s plaintext; since broker#72 its hourly 
 4. Then create the group right away (below).
 
 The URL names the broker, never its address: see [Tailscale DNS](#tailscale-dns).
+
+### GCP provisioning
+
+This is a draft for the operator to run where `gcloud` is authenticated to project `co-gcs`; nothing in this repo runs it. It mirrors the cohort's other buckets (Replicator's `docs/INFRASTRUCTURE.md`): `US-WEST1`, `STANDARD`, uniform bucket-level access, and public access prevented. It sets no lifecycle rule, since the output is never deleted (spec D4), and keeps GCS's default 7-day soft delete, as on `co-gcs-replicator`. The writer holds no delete permission, so soft delete only guards against an admin's mistake.
+
+```bash
+PROJECT=co-gcs
+SA="co-gcs-processor-writer@${PROJECT}.iam.gserviceaccount.com"
+
+# 1. The bucket: derived text, append-only (spec §2, D4).
+gcloud storage buckets create gs://co-gcs-processor --project="$PROJECT" \
+  --location=US-WEST1 --default-storage-class=STANDARD \
+  --uniform-bucket-level-access --public-access-prevention
+
+# 2. The writer identity.
+gcloud iam service-accounts create co-gcs-processor-writer --project="$PROJECT" \
+  --display-name="processor: derived-text writer (CannObserv/processor)"
+
+# 3. Grants (spec §2). No delete anywhere.
+gcloud storage buckets add-iam-policy-binding gs://co-gcs-processor \
+  --member="serviceAccount:${SA}" --role=roles/storage.objectCreator
+gcloud storage buckets add-iam-policy-binding gs://co-gcs-processor \
+  --member="serviceAccount:${SA}" --role=roles/storage.objectViewer
+gcloud storage buckets add-iam-policy-binding gs://co-gcs-blobs \
+  --member="serviceAccount:${SA}" --role=roles/storage.objectViewer
+
+# 4. Watcher's reader. Proposed: co-gcs-blob-reader, which Watcher already reads
+#    gs:// blobs with (GCS_BLOB_CREDENTIALS). It gains nothing new, since the text
+#    is derived from blobs that identity can read. Run once watcher#325 agrees.
+gcloud storage buckets add-iam-policy-binding gs://co-gcs-processor \
+  --member="serviceAccount:co-gcs-blob-reader@${PROJECT}.iam.gserviceaccount.com" \
+  --role=roles/storage.objectViewer
+
+# 5. The key, straight onto co-processor over SSH stdin, never left on disk here.
+(
+  set -e; dir="$(mktemp -d)"; trap 'rm -rf "$dir"' EXIT   # mktemp -d is 700
+  gcloud iam service-accounts keys create "$dir/key.json" --iam-account="$SA"
+  ssh co-processor.exe.xyz \
+    'umask 077; cat > /etc/processor/co-gcs-processor-writer.json' < "$dir/key.json"
+)
+```
+
+Then, **on `co-processor`**:
+
+```bash
+printf 'GOOGLE_APPLICATION_CREDENTIALS=/etc/processor/co-gcs-processor-writer.json\n' >> /etc/processor/.env
+# Preflight both buckets as the writer: a one-object listing each, nothing written.
+( cd ~/processor && set -a && . /etc/processor/.env && set +a
+  .venv/bin/python -c 'from processor.settings import Settings
+from processor.stores import build_stores
+s = build_stores(Settings()); s.input.preflight(); s.output.preflight(); print("both buckets reachable")' )
+```
+
+To verify the bucket's settings and grants (read-only):
+
+```bash
+gcloud storage buckets describe gs://co-gcs-processor \
+  --format="default(location, uniform_bucket_level_access, public_access_prevention, soft_delete_policy, lifecycle_config)"
+gcloud storage buckets get-iam-policy gs://co-gcs-processor
+```
 
 ## `/etc/processor/.env`
 
