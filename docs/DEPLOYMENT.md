@@ -6,9 +6,10 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`. C
 
 | What | Where | Tracked |
 |---|---|---|
-| Broker ACL user `processor` | `co-broker` | broker#75 |
-| Broker credential | `/etc/processor/.env` as `CO_PROCESSOR_BUS_URL` | broker#75 item 5; minted 2026-10-01, digest posted, waiting on the broker's step 2 |
+| Broker ACL user `processor` | `co-broker` | broker#75; live 2026-10-01 (`observo` deleted) |
+| Broker credential | `/etc/processor/.env` as `CO_PROCESSOR_BUS_URL` | broker#75 item 5; minted 2026-10-01, `PING broker` as `processor` → `PONG` 22:09:36Z |
 | Tailnet `tag:processor` → `tag:broker` on 6379 | tailnet policy | done 2026-09-29 |
+| `processor.process` on `content.process` (the hard ordering) | broker | done 2026-10-01 22:09:41Z by `processor ensure-group`: stream empty, group at `0-0`, lag 0 |
 | Tailscale `--accept-dns=true`, and tailscaled's OOM drop-in | this VM | done 2026-10-01, [Tailscale DNS](#tailscale-dns) (#8) |
 | A direct tailnet path to the broker (still relayed via DERP `sea` on 2026-09-30, although this node advertises endpoints and its netcheck is clean) | tailnet / broker side | broker#75 finding |
 | Bucket `gs://co-gcs-processor`, UBLA, public access prevention, no lifecycle | GCP | spec §2, [GCP provisioning](#gcp-provisioning) |
