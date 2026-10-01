@@ -41,7 +41,7 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 | Node.js | 24 LTS from NodeSource apt, agent tooling only (mayfly, SocratiCode): `deploy/nodesource.sh install\|check`, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#nodejs-agent-tooling-only) |
 | Service | systemd unit `processor` — [deploy/processor.service](deploy/processor.service), runbook [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (not yet installed) |
 
-**Tests never touch the real broker or real buckets.** Use the scratch Redis, co-core's `LocalBlobStore`, and fakes. `processor` cannot and must not `XADD content.process` on the broker.
+**Tests never touch the real broker or real buckets.** Use the scratch Redis, co-core's `LocalBlobStore`, and fakes. Since #8 `broker` resolves on this VM, so a test that connects names `localhost` (or `broker.invalid` for name-resolution cases), never `broker`. `processor` cannot and must not `XADD content.process` on the broker.
 
 **The bus.** Group `processor.process` on `content.process`, created with `ensure_group` from `$`. **Hard ordering:** the group must exist before Watcher (watcher#325) issues its first command — a group created later skips earlier entries. Publishes `content.derived`; dead-letters to `content.process.dlq` and drains it.
 
