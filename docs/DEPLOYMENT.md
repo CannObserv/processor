@@ -154,7 +154,7 @@ The graceful reboot:
 
 The hard reset skips the stop hook, so tailscaled's own file and its backup were still in place when the VM went down:
 
-- exe.dev's init replaced the file with `nameserver 169.254.169.254` 1.5 s into boot, before systemd's first journal line. So lookups made before tailscaled takes over go to exe.dev's resolver, as after a clean stop.
+- exe.dev's init replaced the file with `nameserver 169.254.169.254` 1.5 s into boot (mtime at 1.534 s), as it started its guest daemon (`exe-init guestd`, 1.53 s). guestd runs in PID 1's own `init.scope` rather than as a service, the mark of a process exe-init forked before it exec'd systemd. journald came up at 1.84 s. So every lookup a systemd unit makes before tailscaled takes over goes to exe.dev's resolver, as after a clean stop.
 - tailscaled started at 2.1 s, at `-950`, with `CorpDNS: true`. It deleted the backup the reset left behind, then took the file over at +1.60 s, exact from the file's mtime, backing up exe.dev's fresh copy.
 - Public names resolved on the probe's first try (+0.8 s). `broker` and `index` resolved by +1.67 s.
 - The boot's journal has no name-resolution error.
