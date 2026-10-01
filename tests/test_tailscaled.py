@@ -42,13 +42,9 @@ TAILNET = ipaddress.ip_network("100.64.0.0/10")
 # something must still be killable.
 OOM_EXEMPT = -1000
 
-# Where the broker is named. Its address would not follow a rebuild.
-BROKER_NAMED_IN = [
-    ROOT / "AGENTS.md",
-    DEPLOYMENT,
-    ROOT / "src" / "processor" / "settings.py",
-    ROOT / "docs" / "specs" / "2026-09-29-processor-service-design.md",
-]
+# The broker's tailnet address, which a rebuild changes. Escaped, so this file
+# does not match itself.
+BROKER_ADDRESS = re.compile(r"\b100\.97\.91\.19\b")
 
 
 def _directives(path: Path) -> list[str]:
@@ -121,12 +117,24 @@ def test_deployment_never_writes_a_file_over_resolv_conf() -> None:
         assert RESOLV_BACKUP in ln, f"docs/DEPLOYMENT.md overwrites /etc/resolv.conf: {ln}"
 
 
-@pytest.mark.parametrize("path", BROKER_NAMED_IN, ids=lambda p: p.name)
-def test_the_broker_is_named_not_addressed(path: Path) -> None:
-    text = path.read_text()
-    assert not re.search(r"\b100\.97\.91\.19\b", text), (
-        f"{path.name} names the broker by address; use `broker` (#8)"
-    )
+def test_no_committable_file_names_the_broker_by_address() -> None:
+    """Every committable file, not a list: a new doc, unit or script is covered too."""
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split("\0")
+    files = [ROOT / f for f in listed if f]
+    hits = [
+        str(f.relative_to(ROOT))
+        for f in files
+        if f.is_file()
+        and not f.is_symlink()
+        and BROKER_ADDRESS.search(f.read_text(errors="ignore"))
+    ]
+    assert hits == [], f"these name the broker by address; use `broker` (#8): {hits}"
 
 
 def test_every_bus_url_in_the_runbook_names_the_broker() -> None:
