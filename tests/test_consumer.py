@@ -321,9 +321,10 @@ async def test_a_broker_name_that_does_not_resolve_yet_is_retried(
     stop = asyncio.Event()
     task = asyncio.create_task(consumer.run(stop))
     try:
-        while not await admin.exists(CONTENT_PROCESS):
-            assert not task.done(), "the loop exited on an unresolved name"
-            await asyncio.sleep(0.01)
+        async with asyncio.timeout(10):  # no pytest-timeout: a loop that never starts fails
+            while not await admin.exists(CONTENT_PROCESS):
+                assert not task.done(), "the loop exited on an unresolved name"
+                await asyncio.sleep(0.01)
     finally:
         stop.set()
         await asyncio.wait_for(task, timeout=5)
