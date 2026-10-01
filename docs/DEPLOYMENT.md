@@ -152,9 +152,11 @@ journalctl -u processor -b | grep -ciE 'name or service not known|temporary fail
 ### Rollback
 
 ```bash
-sudo tailscale set --accept-dns=false
-sudo cp /etc/resolv.pre-tailscale-backup.conf /etc/resolv.conf
+sudo tailscale set --accept-dns=false   # tailscaled moves its backup back over /etc/resolv.conf
+grep nameserver /etc/resolv.conf        # 169.254.169.254
 ```
+
+The backup is gone afterwards (measured 2026-10-01), so there is nothing left to copy. Restore it by hand only while tailscaled is down and its own file is still in place: `sudo cp /etc/resolv.pre-tailscale-backup.conf /etc/resolv.conf`. Once tailscaled is back up, run the `set` above, or it takes the file over again.
 
 After this, `broker` stops resolving. Until DNS is back on, put the broker's address from `tailscale status` into `CO_PROCESSOR_BUS_URL` and restart the service.
 
