@@ -138,7 +138,7 @@ cat /proc/$(systemctl show -p MainPID --value tailscaled)/oom_score_adj   # -950
 
 ### At boot
 
-**Proven across a graceful reboot (`sudo systemctl reboot`) on 2026-10-01.** A one-shot boot unit timed each lookup from tailscaled's start:
+**Proven across a graceful reboot (`sudo systemctl reboot`) on 2026-10-01.** A one-shot boot unit timed each lookup from tailscaled's start. It would have turned Tailscale DNS off if public names had still failed after 90 s. The probe and its unit file are in `/var/backups/processor/8/` (root only), with the log beside them, so the untested hard-reset path below can be measured the same way. To arm it, copy the unit to `/etc/systemd/system/` and `systemctl enable` it; it disables itself after one run.
 
 - tailscaled started 1.1 s into boot, at `-950`, with `CorpDNS: true`.
 - Public names resolved on the probe's first try (+0.5 s), through exe.dev's resolver in the file the stop hook had restored, which was in place from boot.
