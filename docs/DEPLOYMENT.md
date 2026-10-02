@@ -159,7 +159,7 @@ Then smoke-test the write path. The boot preflight only lists the buckets, and a
 - **Output:** the production bucket, write-if-absent, so a repeat run writes nothing new.
 - **Pass:** it prints `"result": "pass"` when the fact matches Watcher's recorded fingerprint, the entry is acked, and the object reads back intact.
 
-**Installed on `co-processor` 2026-10-02 23:27:27Z** (`main` at `6e518d8`): `starting`, then `consuming` within a second; 65 MB resident. A smoke test ran one real blob through `handler.handle` with the production stores and child, and its publish captured locally (never the broker). The blob was `2e38aa5e…`, from Watcher's real corpus.
+**Installed on `co-processor` 2026-10-02 23:27:27Z** (`main` at `6e518d8`): `starting`, then `consuming` within a second; 65 MB charged to the unit's cgroup (`MemoryCurrent`, page cache included; the cap is `MemoryMax=6G`). A smoke test ran one real blob through `handler.handle` with the production stores and child, and its publish captured locally (never the broker). The blob was `2e38aa5e…`, from Watcher's real corpus.
 - Read 89 ms, extract 550 ms, store 102 ms.
 - The stored text's digest equals Watcher's recorded fingerprint, and it read back intact.
 - A second run was write-if-absent.
