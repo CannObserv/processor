@@ -7,7 +7,8 @@ handler decides; the consumer loop acts on the returned ``Disposition``:
 - ``dead_letter`` — the frame is not a ``content_process`` command.
 - ``leave_pending`` — infrastructure failed (``errors.is_transient``), the publish
   included: nothing published, the reclaim re-runs it. Uncapped. A non-transient
-  publish failure escapes instead, and the consumer caps it.
+  publish failure escapes instead, and the consumer caps it: at the cap it
+  publishes ``publish_gave_up``'s terminal fact, then dead-letters (#17).
 - ``strike`` — the child timed out or crashed, or something unexpected raised:
   nothing published, counted toward ``max_attempts``; on the last attempt the
   handler publishes ``extraction_error`` instead and returns ``ack``.
@@ -221,6 +222,17 @@ async def _read_input(command: ContentProcessCommand, deps: Deps, timer: _Timer)
     if actual != digest:
         raise _Terminal("input_digest_mismatch", f"bytes hash to {actual}")
     return raw
+
+
+async def publish_gave_up(command: ContentProcessCommand, deps: Deps, detail: str) -> None:
+    """Publish a terminal ``extraction_error`` for a command about to be dead-lettered.
+
+    Without a fact, Watcher waits on the command: its reaper re-issues only while
+    other facts flow, and its health reads the silence as Processor down (#17).
+    Raises whatever the publish raises; the consumer decides.
+    """
+    fact = _failed(command, deps, "extraction_error", detail)
+    await deps.publish(BusPublish(topic=CONTENT_DERIVED, fields=to_wire(fact)))
 
 
 def _failed(

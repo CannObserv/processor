@@ -222,9 +222,9 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
 | Bytes hash ≠ `input_digest` | `input_digest_mismatch`, terminal | yes |
 | Extractor raises, including `MemoryError` under `RLIMIT_AS` | `extraction_error`, terminal | yes |
 | Child timeout or crash | — | no; the 3rd attempt publishes `extraction_error`, terminal, and acks |
-| A non-transient exception escaping the handler (a bug, or an ack or dead-letter refused), amended 2026-09-30 | — (a fact published before a refused ack stands) | no; counted like a strike, and the 3rd attempt dead-letters the entry with the exception as its reason |
+| A non-transient exception escaping the handler (a bug, or an ack or dead-letter refused), amended 2026-09-30 and 2026-10-02 | at the cap, `extraction_error`, terminal, unless this entry's fact already went out (a fact published before a refused ack stands) | no; counted like a strike, and the 3rd attempt publishes, then dead-letters the entry with the exception as its reason |
 | GCS 5xx / 429 / timeout / auth; broker `NOPERM`; broker `OOM command not allowed`; broker `MISCONF` / `BUSY` / `MASTERDOWN` / `TRYAGAIN` / `CLUSTERDOWN` / `NOREPLICAS` (amended 2026-09-30) | — | no; the entry is reclaimed |
-| A non-transient publish failure (e.g. `WRONGTYPE`, or a bug in serialization), amended 2026-09-30 | — | no; counted like a strike, and the 3rd attempt dead-letters the entry |
+| A non-transient publish failure (e.g. `WRONGTYPE`, or a bug in serialization), amended 2026-09-30 and 2026-10-02 | at the cap, `extraction_error`, terminal, best effort (the same refusal usually refuses it too) | no; counted like a strike, and the 3rd attempt dead-letters the entry |
 
 - **`unsupported_media_type` is never emitted in v1** — `extractor_for_essence`
   is total (HTML for anything unknown).
@@ -255,7 +255,20 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
 - **DLQ CLI:** `processor dlq list | show | drop` over `XRANGE`/`XDEL`
   (`dlq_name(CONTENT_PROCESS)` = `content.process.dlq`). No replay — an
   undecodable frame has nothing to replay, and a command dead-lettered after
-  escaping exceptions is a bug to fix; Watcher's reaper re-issues it.
+  escaping exceptions is a bug to fix.
+- **A dead-lettered command still gets a fact** (amended 2026-10-02, #17). Before
+  dead-lettering a decodable command at the cap, Processor publishes
+  `processing_failed` with `terminal=true`, `reason=extraction_error`, and
+  `detail` = `dead-lettered: <the DLQ reason>`. Without it Watcher would wait on
+  the command. Its reaper re-issues only while other facts flow (watcher#325),
+  and its health reads a quiet Processor as down. Watcher closes the command
+  instead: in shadow only an audit entry, after cutover the item's failure path.
+  - **No second fact.** It is skipped when this entry's fact already went out:
+    a refused ack, or a dead-letter retried after the fact landed.
+  - **A transient refusal** leaves the entry pending (uncapped); a non-transient
+    one is logged, and the entry is dead-lettered anyway.
+  - **Frames that are not commands** (undecodable, or foreign events) carry no
+    `command_id`, so they get no fact.
 - **Every outcome logs** `command_id`, `info_source_id`, reason and timings.
 
 These answer the two points broker#62 left for the consumer to state: `NOPERM`

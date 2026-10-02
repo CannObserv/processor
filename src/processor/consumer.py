@@ -13,7 +13,10 @@ max-deliveries hook, no loop (spec Open Question 2) — so the loop is here:
 - An exception escaping a message (a bug outside the handler's own try, or a
   non-transient refusal of an ack or dead-letter) counts like a strike; at
   ``max_attempts`` the entry is dead-lettered with the exception as its reason.
-  Transient escapes (broker, GCS) stay uncapped.
+  Transient escapes (broker, GCS) stay uncapped. Before that dead-letter, a
+  decodable command whose fact never went out gets a terminal ``extraction_error``
+  (#17), so Watcher closes it instead of waiting; a refused one is logged and the
+  entry dead-lettered anyway.
 - A strike count clears only once the entry's ack or dead-letter lands, so a failed
   one on the last attempt does not restart the count.
 - ``run``: ``step`` until stopped, backing off on any exception (connection loss,
@@ -29,13 +32,14 @@ import time
 from co_core.effects.bus import BusMessage
 from co_core.pure.adapters.bus.exceptions import BusMessageAnomaly
 from co_core.pure.adapters.bus.streams import CONTENT_PROCESS, group_name
+from co_core.pure.models.changes import ContentProcessCommand
 from co_core_aio.bus import AsyncBusConsumer
 from redis.asyncio import Redis
 from redis.asyncio.retry import Retry
 from redis.backoff import NoBackoff
 
 from processor.errors import is_transient
-from processor.handler import Deps, Disposition, handle
+from processor.handler import Deps, Disposition, handle, publish_gave_up
 
 GROUP = group_name(CONTENT_PROCESS, "processor")
 
@@ -94,6 +98,9 @@ class Consumer:
         self._reclaim_interval_s = reclaim_interval_s
         self._next_reclaim = 0.0
         self._strikes: dict[str, int] = {}
+        # Entries whose fact is on content.derived but not yet acked: at the cap they
+        # get no failure fact on top (a refused ack, or a dead-letter retried).
+        self._fact_out: set[str] = set()
         self._stop: asyncio.Event | None = None
 
     async def start(self) -> None:
@@ -163,6 +170,7 @@ class Consumer:
                 await self._process(message)
             for message_id in page.deleted:
                 self._strikes.pop(message_id, None)
+                self._fact_out.discard(message_id)
             cursor = page.cursor
             if cursor == "0-0":
                 return
@@ -198,7 +206,30 @@ class Consumer:
                 )
                 raise
             reason = f"gave up on attempt {attempt}: {detail}"
+            await self._publish_gave_up(message, reason, ids)
             await self._dead_letter(message_id, dict(message.fields), reason, exc_info=True, **ids)
+
+    async def _publish_gave_up(
+        self, message: BusMessage, reason: str, ids: dict[str, object]
+    ) -> None:
+        command = message.payload
+        if not isinstance(command, ContentProcessCommand) or message.message_id in self._fact_out:
+            return
+        try:
+            await publish_gave_up(command, self._deps, f"dead-lettered: {reason}")
+        except Exception as exc:
+            if is_transient(exc):
+                raise  # pending, uncapped; the next attempt is the cap again
+            logger.error(
+                "failure fact refused; dead-lettering without it",
+                extra={
+                    "message_id": message.message_id,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    **ids,
+                },
+            )
+            return
+        self._fact_out.add(message.message_id)
 
     async def _act(self, message: BusMessage, attempt: int) -> None:
         message_id = message.message_id
@@ -211,6 +242,7 @@ class Consumer:
             await self._bus.dead_letter(message_id, dict(message.fields), reason=disposition.reason)
             self._strikes.pop(message_id, None)
         elif disposition.action == "ack":
+            self._fact_out.add(message_id)
             try:
                 await self._bus.ack(message_id)
             except Exception:
@@ -220,6 +252,7 @@ class Consumer:
                 )
                 raise
             self._strikes.pop(message_id, None)
+            self._fact_out.discard(message_id)
 
     async def _dead_letter_unread(self, anomaly: BusMessageAnomaly) -> None:
         # read(count=1) raised on this one frame; it is in our PEL. Its raw fields
@@ -242,6 +275,7 @@ class Consumer:
         logger.error("dead-lettering", exc_info=exc_info, extra={**extra, **fields_logged})
         await self._bus.dead_letter(message_id, fields, reason=reason)
         self._strikes.pop(message_id, None)
+        self._fact_out.discard(message_id)
 
 
 def _undecodable(anomaly: BusMessageAnomaly) -> str:
