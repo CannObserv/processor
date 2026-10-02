@@ -1,5 +1,6 @@
 """The CI workflow's load-bearing choices (#12), pinned so they cannot drift quietly."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -94,13 +95,32 @@ def test_the_wheelhouse_sync_ignores_project_config(ci: dict) -> None:
         assert "--no-config" in sync, name
 
 
+def _sync_commands(text: str) -> list[str]:
+    """Documented `uv run … sync_wheelhouse.py` commands, `\\`-continued lines joined."""
+    logical = re.sub(r"\s*\\+\n\s*", " ", text)
+    return [
+        ln.strip() for ln in logical.splitlines() if "uv run" in ln and "sync_wheelhouse.py" in ln
+    ]
+
+
+def test_sync_commands_join_continued_lines() -> None:
+    doc = "    uv run --no-project --with 'x' \\\\\n        python scripts/sync_wheelhouse.py\n"
+    assert _sync_commands(doc) == [
+        "uv run --no-project --with 'x' python scripts/sync_wheelhouse.py"
+    ]
+
+
 def test_every_documented_wheelhouse_sync_ignores_project_config() -> None:
     root = WORKFLOW.parent.parent.parent
-    sources = [root / "AGENTS.md", root / "scripts" / "sync_wheelhouse.py", *root.glob("docs/*.md")]
-    offenders = [
-        f"{path.relative_to(root)}: {line.strip()}"
-        for path in sources
-        for line in path.read_text().splitlines()
-        if "uv run" in line and "sync_wheelhouse.py" in line and "--no-config" not in line
+    sources = [
+        root / "AGENTS.md",
+        root / "scripts" / "sync_wheelhouse.py",
+        *root.glob("docs/**/*.md"),
     ]
-    assert offenders == []
+    found = {
+        f"{path.relative_to(root)}: {cmd}"
+        for path in sources
+        for cmd in _sync_commands(path.read_text())
+    }
+    assert any(c.startswith("scripts/sync_wheelhouse.py: ") for c in found), "docstring not scanned"
+    assert [c for c in found if "--no-config" not in c] == []
