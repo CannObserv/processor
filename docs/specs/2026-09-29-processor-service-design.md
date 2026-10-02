@@ -23,6 +23,13 @@ on `co-processor`.
 - The parity corpus adds real samples (Section 7).
 - Open Questions 2 and 3 are answered.
 
+**Amended 2026-10-02 (watcher#325's answers, processor#16):**
+- Open Question 1 is answered: yes, Watcher refreshes the baseline's `processor_version`.
+- Watcher accepts D5's lockstep and pins `==0.19.7` when #325 lands.
+- Watcher's reader is `co-gcs-blob-reader` (Section 2).
+- Watcher no longer re-issues while Processor is down (Section 4).
+- The real parity samples are in the corpus: 9 HTML inputs, 9/9 (Section 7).
+
 ---
 
 ## Why a new service
@@ -64,7 +71,7 @@ state and UI it should not have).
 | D2 | **Headless and stateless in v1**: no UI, no database. Idempotency is the write-if-absent store; correlation and dedupe are the issuer's (by `command_id`). |
 | D3 | **Own identities**: broker ACL user, GCS service account, bucket, tailnet tag. Observo's broker#62 `observo` user is stripped. |
 | D4 | **Own bucket** `gs://co-gcs-processor`, derived outputs only, so Watcher's read grant is a plain bucket-level `objectViewer`. |
-| D5 | **co-core pinned exactly, matched to Watcher** (0.19.7 today); bumps are deliberate and coordinated. |
+| D5 | **co-core pinned exactly, matched to Watcher** (0.19.7 today); bumps are deliberate and coordinated. Watcher agreed on 2026-10-02 (watcher#325): it pins `==0.19.7` when #325 lands, and neither side deploys a bump until the parity corpus passes on it unchanged. |
 | D6 | **Extraction runs in a killable child process** with a timeout and an address-space limit, never a thread. |
 | D7 | Broker `NOPERM` and `OOM` are **transient**; a reclaim **re-runs** the extraction (no dedupe key). |
 | D8 | **v1 scope is #629's requirements only.** |
@@ -119,7 +126,7 @@ processor-version pin on the command; no job API — the bus is the interface.
 | ACL user `processor` | `content.process.dlq` | selector `(+xdel ~content.process.dlq)` |
 | `co-gcs-processor-writer` | `gs://co-gcs-processor` | `objectCreator` + `objectViewer`; **no delete** — append-only, never deleted |
 | `co-gcs-processor-writer` | `gs://co-gcs-blobs` | `objectViewer` (Replicator's raw blobs — the input) |
-| Watcher's service account | `gs://co-gcs-processor` | `objectViewer`, bucket-level |
+| Watcher's service account, `co-gcs-blob-reader` (its `GCS_BLOB_CREDENTIALS`; confirmed on watcher#325, granted 2026-10-02) | `gs://co-gcs-processor` | `objectViewer`, bucket-level |
 
 The ACL shape copies broker#62's `observo` user. Withheld on purpose, as there:
 `+xpending`, `+xclaim`, `+xread`, `+xtrim`, and `+set`/`+exists` — Processor
@@ -227,9 +234,16 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
   command gets at most three more attempts. Too loose in practice → ask the
   broker for `+xpending`.
 - **Infrastructure failures are uncapped.** Publish nothing; the reclaim retries.
-  Watcher's reaper re-issues stale commands under fresh ids; a fact Processor
-  later publishes for a superseded command is discarded by Watcher. v1 never
-  publishes the `transient` token.
+  Watcher's reaper re-issues a stale command under a fresh id only while
+  Processor is consuming. Watcher infers that from any `content.derived` fact
+  arriving within its window (watcher#325, amended 2026-10-02). While Processor
+  is down, commands queue in `processor.process`; Watcher reports one
+  "Processor not consuming" signal and items as *processing delayed*. On
+  restart, Processor works through the backlog, superseded commands included.
+  Watcher discards a fact for a superseded or expired command, so they need no
+  special handling. An outage longer than Replicator's blob TTL yields
+  `input_unreadable`, then Watcher's capped re-fetch. v1 never publishes the
+  `transient` token.
 - **Order is store → publish → ack.** A transient publish failure leaves the entry
   unacked; the reclaim re-runs, the store write is a no-op, the publish lands.
   An ack failure after a successful publish yields a duplicate fact, which
@@ -304,7 +318,8 @@ Every item is external: drafted, then approved and posted one at a time.
 
 **Hard ordering:** `processor.process` exists before Watcher's first command. A
 group created from `$` afterwards skips earlier entries — Watcher's reaper
-recovers them, noisily, and the broker probe reports `group-missing` meanwhile.
+recovers them, noisily, and the broker probe reports `group-missing` meanwhile. **Satisfied 2026-10-01 22:09:41Z:** `processor ensure-group`
+from `$` on an empty stream, ahead of Watcher's first command.
 
 ## Section 7 — testing
 
@@ -319,7 +334,13 @@ TDD, red first.
     starts synthetic.
   - Before shadow it adds real samples: per watched item, the raw digest,
     `source_spec`, resolved `media_type` and Watcher's recorded fingerprint.
-    That needs a small export from Watcher.
+    **Done 2026-10-02 (#16):** Watcher exported 9 real inputs (watcher#325),
+    all `text/html`, since production has 4 watched items, all HTML.
+    `tests/fixtures/parity/real/` keeps the export verbatim and the raw blobs,
+    copied before Replicator's 7-day TTL. Processor reproduces every recorded
+    fingerprint and `spec_fingerprint`, 9/9, including two revisions from before
+    fetch commands existed and one recorded under `0.19.4+1`. PDF, CSV and XLSX
+    still rest on the synthetic corpus.
   - Parity with Watcher's local path should be proven before shadow, not
     discovered in it.
 - **Pin test.** The lock's co-core equals the expected exact version and
@@ -396,11 +417,15 @@ echoed, reporting only.
 
 ## Open questions
 
-1. **Watcher (#325):** when a derived fact's fingerprint equals the latest
+1. ~~**Watcher (#325):** when a derived fact's fingerprint equals the latest
    revision's but `processor_version` differs, is the baseline's
-   `processor_version` refreshed? If not, every co-core bump silently absorbs
-   the next real change on each watched item; if so, a bump costs nothing unless
-   it coincides with a change (the residual Watcher already accepts).
+   `processor_version` refreshed?~~ **Answered 2026-10-02: yes** (watcher#325).
+   Watcher compares the fact's `processor_version` with
+   `WatchedItem.processor_version`, read before the fact updates it. An
+   equal-digest fact records the new version and does nothing else, so a
+   co-core bump costs nothing unless a real change coincides with it.
+   `ChangeRevision.processor_version` is never rewritten. `spec_fingerprint`
+   gets the same treatment.
 2. ~~**co-core-aio:** does `AsyncBusConsumer` expose a delivery count or a
    max-deliveries hook?~~ **Answered, no (0.19.4 through 0.19.7).** It offers
    primitives only: `ensure_group`, `read`, `ack`, `claim_stale` /
