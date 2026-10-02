@@ -37,7 +37,7 @@ async def test_one_command_round_trips_and_leaves_the_scratch_db_empty(tmp_path:
         await admin.aclose()
 
 
-@pytest.mark.parametrize("url", ["redis://broker:6379/0", "redis://100.97.91.19:6379/0"])
+@pytest.mark.parametrize("url", ["redis://broker:6379/0", "redis://192.0.2.10:6379/0"])
 async def test_refuses_anything_but_the_local_scratch_redis(tmp_path: Path, url: str) -> None:
     item = smoke_scratch_bus.export_item(smoke_scratch_bus.DEFAULT_DIGEST)
     with pytest.raises(ValueError, match="scratch"):
