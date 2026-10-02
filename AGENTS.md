@@ -39,6 +39,7 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 | Input | `gs://co-gcs-blobs` (Replicator's raw blobs), read-only |
 | Output | `gs://co-gcs-processor/blobs/<sha256>.bin`, write-if-absent, **never deleted** |
 | Node.js | 24 LTS from NodeSource apt, agent tooling only (mayfly, SocratiCode): `deploy/nodesource.sh install\|check`, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#nodejs-agent-tooling-only) |
+| CI | GitHub Actions [.github/workflows/ci.yml](.github/workflows/ci.yml): lint, then the full suite against `redis:7.0.15` (the broker's, not 7.2: CLIENT SETINFO). Keyless WIF to `co-pypi-reader` needs the org variable `GCP_WIF_PROVIDER` shared with this repo and a `roles/iam.workloadIdentityUser` binding for `principalSet://…/attribute.repository/CannObserv/processor` |
 | Service | systemd unit `processor` — [deploy/processor.service](deploy/processor.service), runbook [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (not yet installed) |
 
 **Tests never touch the real broker or real buckets.** Use the scratch Redis, co-core's `LocalBlobStore`, and fakes. Since #8 `broker` resolves on this VM, so a test that connects names `localhost` (or `broker.invalid` for name-resolution cases), never `broker`. `processor` cannot and must not `XADD content.process` on the broker.
