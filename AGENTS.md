@@ -24,7 +24,7 @@ Python 3.12, uv, hatchling src layout, pytest, ruff.
 
 ```bash
 uv run --no-project --no-config --with 'google-cloud-storage>=2,<4' python scripts/sync_wheelhouse.py  # mirror gs://co-gcs-pypi (needs co-pypi-reader ADC)
-set -a; . ./.env; set +a; scripts/build_wheelhouse.sh                                     # or: build from the cannobserv tag
+set -a; . ./.env; set +a; scripts/build_wheelhouse.sh                                                  # or: build from the cannobserv tag
 ```
 
 find-links locks by filename, not hash, so either source satisfies the same `uv.lock`. After the first `uv sync` in a fresh checkout, `uv sync --reinstall-package processor` if `import processor` fails.
