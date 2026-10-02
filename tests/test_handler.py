@@ -25,7 +25,7 @@ from google.cloud.storage.exceptions import DataCorruption
 from redis import exceptions as rx
 
 from processor.child import ChildResult, run_in_child
-from processor.handler import Deps, Disposition, handle
+from processor.handler import Deps, Disposition, handle, publish_gave_up
 from processor.processors.extract import PROCESSOR_VERSION, extract
 from processor.stores import Stores
 
@@ -347,3 +347,23 @@ async def test_every_disposition_carries_what_the_log_needs(h: Harness) -> None:
     assert {"read_ms", "extract_ms", "store_ms", "publish_ms", "total_ms"} <= set(
         disposition.timings
     )
+
+
+# --- the consumer's cap (#17) -----------------------------------------------------------
+
+
+async def test_publish_gave_up_publishes_one_terminal_extraction_error(h: Harness) -> None:
+    command = h.message(store=False).payload
+    await publish_gave_up(command, h.deps, "dead-lettered: gave up on attempt 3: " + "x" * 2000)
+
+    fact = h.only_failure()
+    assert fact.reason == "extraction_error"
+    assert fact.occurred_at == NOW
+    assert fact.detail.startswith("dead-lettered: gave up on attempt 3: x")
+    assert len(fact.detail) == 1000  # the same cap as every failure fact
+
+
+async def test_publish_gave_up_raises_what_the_publish_raises(h: Harness) -> None:
+    h.publisher.fail = rx.ResponseError("WRONGTYPE Operation against a key")
+    with pytest.raises(rx.ResponseError):
+        await publish_gave_up(h.message(store=False).payload, h.deps, "dead-lettered: x")
