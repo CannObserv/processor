@@ -398,7 +398,8 @@ async def test_an_escaping_exception_strikes_then_dead_letters(
     admin, bus, stores, monkeypatch
 ) -> None:
     # A bug outside the handler's own try (logging, building the failure fact) must
-    # not retry forever: it counts, and at the cap the entry goes to the DLQ.
+    # not retry forever: it counts, and at the cap the entry goes to the DLQ — with a
+    # terminal fact first, so Watcher is not left waiting on a command (#17).
     async def broken_handle(*_args, **_kwargs):
         raise KeyError("a bug outside the handler's try")
 
@@ -417,7 +418,10 @@ async def test_an_escaping_exception_strikes_then_dead_letters(
     assert meta.source_id == source_id
     assert "KeyError" in meta.reason and "attempt 3" in meta.reason
     assert (await group_info(admin))["pending"] == 0
-    assert await facts(admin) == []
+    (fact,) = await facts(admin)
+    assert isinstance(fact, ProcessingFailedEvent)
+    assert (fact.command_id, fact.reason, fact.terminal) == ("cmd-1", "extraction_error", True)
+    assert fact.detail.startswith("dead-lettered: gave up on attempt 3: KeyError")
 
 
 async def test_a_non_transient_publish_failure_dead_letters_at_the_cap(admin, bus, stores) -> None:
@@ -438,6 +442,113 @@ async def test_a_non_transient_publish_failure_dead_letters_at_the_cap(admin, bu
     _fields, meta = split_dead_letter({k.decode(): v.decode() for k, v in raw.items()})
     assert "gave up on attempt 3" in meta.reason and "WRONGTYPE" in meta.reason
     assert (await group_info(admin))["pending"] == 0
+
+
+async def test_a_refused_failure_fact_still_dead_letters(admin, bus, stores, caplog) -> None:
+    # The WRONGTYPE that caused the cap refuses the failure fact too: log, then DLQ.
+    async def publish(_effect):
+        raise ResponseError("WRONGTYPE Operation against a key holding the wrong kind")
+
+    consumer = make_consumer(bus, stores, publish=publish)
+    await consumer.start()
+    await issue(admin, stores)
+    caplog.set_level(logging.INFO, logger="processor.consumer")
+    for _ in range(2):
+        with pytest.raises(ResponseError):
+            await consumer.step()
+    await consumer.step()
+
+    assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 1
+    assert (await group_info(admin))["pending"] == 0
+    (refused,) = [r for r in caplog.records if r.getMessage().startswith("failure fact refused")]
+    assert refused.command_id == "cmd-1" and "WRONGTYPE" in refused.error
+
+
+async def test_a_transiently_refused_failure_fact_leaves_the_entry_pending(
+    admin, bus, stores, monkeypatch
+) -> None:
+    async def broken_handle(*_args, **_kwargs):
+        raise KeyError("a bug outside the handler's try")
+
+    monkeypatch.setattr("processor.consumer.handle", broken_handle)
+    publisher = AsyncBusPublisher(bus)
+    calls = itertools.count()
+
+    async def flaky_publish(effect):
+        if next(calls) == 0:
+            raise RedisConnectionError("broker unreachable")
+        return await publisher.execute(effect)
+
+    consumer = make_consumer(bus, stores, publish=flaky_publish)
+    await consumer.start()
+    await issue(admin, stores)
+    for _ in range(2):
+        with pytest.raises(KeyError):
+            await consumer.step()
+    with pytest.raises(RedisConnectionError):
+        await consumer.step()
+    assert (await group_info(admin))["pending"] == 1
+    assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 0
+    await consumer.step()  # still at the cap
+
+    assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 1
+    assert [f.reason for f in await facts(admin)] == ["extraction_error"]
+
+
+async def test_a_failure_fact_is_published_once_when_the_dead_letter_is_retried(
+    admin, bus, stores, monkeypatch
+) -> None:
+    async def broken_handle(*_args, **_kwargs):
+        raise KeyError("a bug outside the handler's try")
+
+    monkeypatch.setattr("processor.consumer.handle", broken_handle)
+    real_dead_letter = AsyncBusConsumer.dead_letter
+    calls = itertools.count()
+
+    async def flaky_dead_letter(self, *args, **kwargs):
+        if next(calls) == 0:
+            raise RedisConnectionError("broker unreachable")
+        return await real_dead_letter(self, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncBusConsumer, "dead_letter", flaky_dead_letter)
+    consumer = make_consumer(bus, stores)
+    await consumer.start()
+    await issue(admin, stores)
+    for _ in range(2):
+        with pytest.raises(KeyError):
+            await consumer.step()
+    with pytest.raises(RedisConnectionError):
+        await consumer.step()
+    await consumer.step()
+
+    assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 1
+    assert [f.reason for f in await facts(admin)] == ["extraction_error"]
+
+
+async def test_a_refused_ack_at_the_cap_adds_no_failure_fact(
+    admin, bus, stores, monkeypatch
+) -> None:
+    # Each attempt's complete fact went out before its ack was refused: a terminal
+    # failure on top would contradict them.
+    real_ack = AsyncBusConsumer.ack
+    calls = itertools.count()
+
+    async def refused_ack(self, message_id):
+        if next(calls) < 3:  # each attempt's ack; dead_letter's own ack lands
+            raise ResponseError("NOGROUP No such key or consumer group")
+        return await real_ack(self, message_id)
+
+    monkeypatch.setattr(AsyncBusConsumer, "ack", refused_ack)
+    consumer = make_consumer(bus, stores)
+    await consumer.start()
+    await issue(admin, stores)
+    for _ in range(2):
+        with pytest.raises(ResponseError):
+            await consumer.step()
+    await consumer.step()
+
+    assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 1
+    assert {type(f).__name__ for f in await facts(admin)} == {"ProcessingCompleteEvent"}
 
 
 async def test_a_transient_escape_is_never_dead_lettered(admin, bus, stores, monkeypatch) -> None:
