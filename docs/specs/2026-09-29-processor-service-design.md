@@ -325,7 +325,12 @@ Every item is external: drafted, then approved and posted one at a time.
 2. Infra: VM, bucket, service account, grants, broker ACL, tailnet rule.
 3. Processor v1 built on `co-processor`, deployed, group created, smoke-tested on
    a scratch Redis there (`processor` cannot and should not `XADD
-   content.process` on the real broker).
+   content.process` on the real broker). **Done 2026-10-02:**
+   - group created 22:09:41Z on 2026-10-01;
+   - deployed 23:27:27Z;
+   - `scripts/smoke_scratch_bus.py` passed 23:45:29Z: the scratch bus,
+     the production output store, and the digest equal to Watcher's recorded
+     fingerprint.
 4. Watcher #325 ships and runs **shadow**: Processor stores texts; Watcher's
    comparator counts mismatches.
 5. Watcher #326 switches on zero mismatches across a window with at least one
