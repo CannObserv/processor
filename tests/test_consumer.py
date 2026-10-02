@@ -462,6 +462,8 @@ async def test_a_refused_failure_fact_still_dead_letters(admin, bus, stores, cap
     assert (await group_info(admin))["pending"] == 0
     (refused,) = [r for r in caplog.records if r.getMessage().startswith("failure fact refused")]
     assert refused.command_id == "cmd-1" and "WRONGTYPE" in refused.error
+    (dead,) = [r for r in caplog.records if r.getMessage() == "dead-lettering"]
+    assert dead.failure_fact == "refused"
 
 
 async def test_a_transiently_refused_failure_fact_leaves_the_entry_pending(
@@ -526,7 +528,7 @@ async def test_a_failure_fact_is_published_once_when_the_dead_letter_is_retried(
 
 
 async def test_a_refused_ack_at_the_cap_adds_no_failure_fact(
-    admin, bus, stores, monkeypatch
+    admin, bus, stores, monkeypatch, caplog
 ) -> None:
     # Each attempt's complete fact went out before its ack was refused: a terminal
     # failure on top would contradict them.
@@ -549,6 +551,8 @@ async def test_a_refused_ack_at_the_cap_adds_no_failure_fact(
 
     assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 1
     assert {type(f).__name__ for f in await facts(admin)} == {"ProcessingCompleteEvent"}
+    (dead,) = [r for r in caplog.records if r.getMessage() == "dead-lettering"]
+    assert dead.failure_fact == "skipped"
 
 
 async def test_a_transient_escape_is_never_dead_lettered(admin, bus, stores, monkeypatch) -> None:
@@ -657,6 +661,7 @@ async def test_an_escape_logs_its_command(admin, bus, stores, monkeypatch, caplo
     ]
     assert all(r.info_source_id == "src-1" for r in outcomes)
     assert outcomes[-1].exc_info is not None  # the last attempt's traceback survives
+    assert outcomes[-1].failure_fact == "published"  # Watcher was told (#17)
 
 
 async def test_noperm_leaves_the_entry_pending(admin, stores) -> None:

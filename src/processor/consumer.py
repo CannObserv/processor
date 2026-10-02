@@ -28,6 +28,7 @@ max-deliveries hook, no loop (spec Open Question 2) — so the loop is here:
 import asyncio
 import logging
 import time
+from typing import Literal
 
 from co_core.effects.bus import BusMessage
 from co_core.pure.adapters.bus.exceptions import BusMessageAnomaly
@@ -206,15 +207,26 @@ class Consumer:
                 )
                 raise
             reason = f"gave up on attempt {attempt}: {detail}"
-            await self._publish_gave_up(message, reason, ids)
-            await self._dead_letter(message_id, dict(message.fields), reason, exc_info=True, **ids)
+            failure_fact = await self._publish_gave_up(message, reason, ids)
+            await self._dead_letter(
+                message_id,
+                dict(message.fields),
+                reason,
+                exc_info=True,
+                failure_fact=failure_fact,
+                **ids,
+            )
 
     async def _publish_gave_up(
         self, message: BusMessage, reason: str, ids: dict[str, object]
-    ) -> None:
+    ) -> Literal["published", "skipped", "refused"]:
+        """The terminal fact before a cap dead-letter; the outcome is logged with it.
+
+        ``skipped``: not a command, or this entry's fact already went out.
+        """
         command = message.payload
         if not isinstance(command, ContentProcessCommand) or message.message_id in self._fact_out:
-            return
+            return "skipped"
         try:
             await publish_gave_up(command, self._deps, f"dead-lettered: {reason}")
         except Exception as exc:
@@ -228,8 +240,9 @@ class Consumer:
                     **ids,
                 },
             )
-            return
+            return "refused"
         self._fact_out.add(message.message_id)
+        return "published"
 
     async def _act(self, message: BusMessage, attempt: int) -> None:
         message_id = message.message_id
