@@ -12,9 +12,9 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`. C
 | `processor.process` on `content.process` (the hard ordering) | broker | done 2026-10-01 22:09:41Z by `processor ensure-group`: stream empty, group at `0-0`, lag 0 |
 | Tailscale `--accept-dns=true`, and tailscaled's OOM drop-in | this VM | done 2026-10-01, [Tailscale DNS](#tailscale-dns) (#8) |
 | A direct tailnet path to the broker (still relayed via DERP `sea` on 2026-09-30, although this node advertises endpoints and its netcheck is clean) | tailnet / broker side | broker#75 finding |
-| Bucket `gs://co-gcs-processor`, UBLA, public access prevention, no lifecycle | GCP | spec §2, [GCP provisioning](#gcp-provisioning) |
-| SA `co-gcs-processor-writer`: `objectCreator` + `objectViewer` on `co-gcs-processor` (**no delete**), `objectViewer` on `co-gcs-blobs` | GCP | spec §2, [GCP provisioning](#gcp-provisioning) |
-| SA key at `/etc/processor/co-gcs-processor-writer.json` (600) | this VM | [GCP provisioning](#gcp-provisioning) |
+| Bucket `gs://co-gcs-processor`, UBLA, public access prevention, no lifecycle | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
+| SA `co-gcs-processor-writer`: `objectCreator` + `objectViewer` on `co-gcs-processor` (**no delete**), `objectViewer` on `co-gcs-blobs` | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
+| SA key at `/etc/processor/co-gcs-processor-writer.json` (600) | this VM | done 2026-10-02; the writer's preflight reached both buckets |
 | Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level. Proposed for `co-gcs-blob-reader`, the identity Watcher already reads `gs://` blobs with | GCP | watcher#325 (unconfirmed) |
 
 ### Broker credential handoff (hash-only, broker#75 as of 2026-09-30)
@@ -43,7 +43,7 @@ The URL names the broker, never its address: see [Tailscale DNS](#tailscale-dns)
 
 ### GCP provisioning
 
-This is a draft for the operator to run where `gcloud` is authenticated to project `co-gcs`; nothing in this repo runs it. It mirrors the cohort's other buckets (Replicator's `docs/INFRASTRUCTURE.md`): `US-WEST1`, `STANDARD`, uniform bucket-level access, and public access prevented. It sets no lifecycle rule, since the output is never deleted (spec D4), and keeps GCS's default 7-day soft delete, as on `co-gcs-replicator`. The writer holds no delete permission, so soft delete only guards against an admin's mistake.
+The operator ran this on 2026-10-02 where `gcloud` is authenticated to project `co-gcs`, and the preflight below passed on `co-processor`. It stays here as the record and for re-provisioning; nothing in this repo runs it. It mirrors the cohort's other buckets (Replicator's `docs/INFRASTRUCTURE.md`): `US-WEST1`, `STANDARD`, uniform bucket-level access, and public access prevented. It sets no lifecycle rule, since the output is never deleted (spec D4), and keeps GCS's default 7-day soft delete, as on `co-gcs-replicator`. The writer holds no delete permission, so soft delete only guards against an admin's mistake.
 
 ```bash
 PROJECT=co-gcs
