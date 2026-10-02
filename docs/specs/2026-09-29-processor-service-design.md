@@ -29,6 +29,8 @@ on `co-processor`.
 - Watcher's reader is `co-gcs-blob-reader` (Section 2).
 - Watcher no longer re-issues while Processor is down (Section 4).
 - The real parity samples are in the corpus: 9 HTML inputs, 9/9 (Section 7).
+- A command dead-lettered at the cap still gets a terminal fact first (Section 4,
+  processor#17).
 
 ---
 
