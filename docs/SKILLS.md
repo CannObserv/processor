@@ -34,7 +34,7 @@ The first session in a fresh clone or worktree fails the hook with exit 127 (hoo
 
 ## Selection
 
-**gregoryfoster-skills (11):** `curating-context`, `enforcing-architecture` (`reviewing-architecture` delegates to it), `init-socraticode`, `managing-skills`, `orchestrating-issue-backlog`, `reviewing-architecture`, `reviewing-code-python-fastapi`, `shipping-work-python-fastapi`, `using-git-worktrees`, `using-mayfly-chat`, `writing-plans`.
+**gregoryfoster-skills (12):** `auditing-ci-cost` (CI since #12), `curating-context`, `enforcing-architecture` (`reviewing-architecture` delegates to it), `init-socraticode`, `managing-skills`, `orchestrating-issue-backlog`, `reviewing-architecture`, `reviewing-code-python-fastapi`, `shipping-work-python-fastapi`, `using-git-worktrees`, `using-mayfly-chat`, `writing-plans`.
 
 **obra-superpowers (11 + override):** `dispatching-parallel-agents`, `executing-plans`, `finishing-a-development-branch`, `receiving-code-review`, `requesting-code-review`, `subagent-driven-development`, `systematic-debugging`, `test-driven-development`, `using-superpowers`, `verification-before-completion`, `writing-skills`; `brainstorming` as an override.
 
@@ -42,7 +42,7 @@ The first session in a fresh clone or worktree fails the hook with exit 127 (hoo
 - **`using-mayfly-chat` needs Node ≥ 18**; its wrapper exits 4 without it. co-processor has Node 24 LTS from NodeSource apt, installed 2026-09-30 (#6). Linked because the cohort adopts it together (gregoryfoster/skills#302). A channel URL is read/write/delete access: never commit one.
 - **Superpowers' `using-git-worktrees` and `writing-plans` are not linked**: gregoryfoster's own, same-named, win. So brainstorming's hand-off to `writing-plans` lands plans in `docs/plans/`. Its filename is `YYYY-MM-DD-<topic-slug>.md`: start the topic with the issue number, so the slug is AGENTS.md's `<issue>-<slug>` (e.g. `2026-09-29-1-processor-v1.md`).
 
-Not linked: `init-project-fastapi` (scaffolder), `vendoring-openapi-client` (no sibling HTTP API called), `auditing-ci-cost` (no CI), the other stack variants of review/ship, `diagnosing-superpowers` (no sibling links it). The daily refresh never adds symlinks, so a newly published skill is a manual link: diff `ls skills-vendor/*/skills/` against this list.
+Not linked: `init-project-fastapi` (scaffolder), `vendoring-openapi-client` (no sibling HTTP API called), the other stack variants of review/ship, `diagnosing-superpowers` (no sibling links it). The daily refresh never adds symlinks, so a newly published skill is a manual link: diff `ls skills-vendor/*/skills/` against this list.
 
 ## Overrides
 

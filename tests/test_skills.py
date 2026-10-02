@@ -105,3 +105,16 @@ def test_no_mayfly_channel_url_is_committable() -> None:
         if f.is_file() and not f.is_symlink() and CHANNEL_URL.search(f.read_text(errors="ignore"))
     ]
     assert not leaks, leaks
+
+
+def test_skills_md_inventory_matches_the_links() -> None:
+    doc = (ROOT / "docs" / "SKILLS.md").read_text()
+    heads = re.findall(
+        r"^\*\*(gregoryfoster-skills|obra-superpowers) \((\d+)[^)]*\):\*\*(.*)$", doc, re.M
+    )
+    names = {repo: set(re.findall(r"`([\w-]+)`", line)) for repo, _, line in heads}
+    assert set().union(*names.values()) == set(_names(SKILLS))
+    gf_count = next(int(n) for repo, n, _ in heads if repo == "gregoryfoster-skills")
+    assert gf_count == len(names["gregoryfoster-skills"])
+    (not_linked,) = re.findall(r"^Not linked: (.*)$", doc, re.M)
+    assert not set(re.findall(r"`([\w-]+)`", not_linked)) & set(_names(SKILLS))
