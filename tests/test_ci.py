@@ -11,6 +11,13 @@ WIF_SA = "co-pypi-reader@co-gcs.iam.gserviceaccount.com"
 # Not 7.2: redis-py sends CLIENT SETINFO there, which the broker's ACL cannot grant
 # until it upgrades, so a 7.2 container reports denials the broker never sees.
 BROKER_REDIS = "redis:7.0.15"
+# Node 24 majors: setup-uv@v5 and auth@v2 target Node 20, which GitHub deprecated
+# (run 36962791709 warned it was forcing them onto Node 24).
+ACTIONS = {
+    "actions/checkout": "v5",
+    "astral-sh/setup-uv": "v7",
+    "google-github-actions/auth": "v3",
+}
 
 
 @pytest.fixture(scope="module")
@@ -54,6 +61,14 @@ def test_checkout_brings_the_skill_submodules(ci: dict, name: str) -> None:
         s for s in _steps(ci["jobs"][name]) if s.get("uses", "").startswith("actions/checkout")
     ]
     assert checkout["with"]["submodules"] is True
+
+
+@pytest.mark.parametrize("name", ["lint", "test"])
+def test_actions_are_on_node_24_majors(ci: dict, name: str) -> None:
+    for step in _steps(ci["jobs"][name]):
+        if "uses" in step:
+            action, version = step["uses"].split("@")
+            assert ACTIONS[action] == version, step["uses"]
 
 
 def test_lint_gates(ci: dict) -> None:
