@@ -15,7 +15,7 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`. C
 | Bucket `gs://co-gcs-processor`, UBLA, public access prevention, no lifecycle | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
 | SA `co-gcs-processor-writer`: `objectCreator` + `objectViewer` on `co-gcs-processor` (**no delete**), `objectViewer` on `co-gcs-blobs` | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
 | SA key at `/etc/processor/co-gcs-processor-writer.json` (600) | this VM | done 2026-10-02; the writer's preflight reached both buckets |
-| Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level. Proposed for `co-gcs-blob-reader`, the identity Watcher already reads `gs://` blobs with | GCP | watcher#325 (unconfirmed) |
+| Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level, for `co-gcs-blob-reader`, the identity Watcher already reads `gs://` blobs with | GCP | done 2026-10-02 (in the bucket's IAM policy); watcher#325 has not yet confirmed that identity |
 
 ### Broker credential handoff (hash-only, broker#75 as of 2026-09-30)
 
@@ -68,7 +68,8 @@ gcloud storage buckets add-iam-policy-binding gs://co-gcs-blobs \
 
 # 4. Watcher's reader. Proposed: co-gcs-blob-reader, which Watcher already reads
 #    gs:// blobs with (GCS_BLOB_CREDENTIALS). It gains nothing new, since the text
-#    is derived from blobs that identity can read. Run once watcher#325 agrees.
+#    is derived from blobs that identity can read. Run 2026-10-02, ahead of
+#    watcher#325's answer; if Watcher names another identity, grant that one too.
 gcloud storage buckets add-iam-policy-binding gs://co-gcs-processor \
   --member="serviceAccount:co-gcs-blob-reader@${PROJECT}.iam.gserviceaccount.com" \
   --role=roles/storage.objectViewer
