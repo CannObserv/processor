@@ -104,7 +104,8 @@ def _real_raw(item: dict) -> bytes:
 
 
 def test_real_corpus_is_the_whole_export() -> None:
-    assert REAL_EXPORT["processor_version_local"] == PROCESSOR_VERSION
+    # No processor_version check: the export is history, and the pin test owns the
+    # version. A co-core bump must pass these unchanged, not edit the export.
     assert len(REAL_ITEMS) == 9
     blobs = {p.name.removesuffix(".bin.gz") for p in REAL.glob("*.bin.gz")}
     assert blobs == {item["input_digest"] for item in REAL_ITEMS}
