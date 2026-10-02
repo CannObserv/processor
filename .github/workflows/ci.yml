@@ -20,6 +20,8 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    # A run takes ~2 min; bound a hang well short of GitHub's 360-minute default.
+    timeout-minutes: 15
     # WIF: an OIDC token for google-github-actions/auth to impersonate the
     # read-only co-pypi-reader SA and pull the cannobserv wheelhouse, as in the
     # other cohort repos. Job-scoped, so no other step gains cloud access.
@@ -68,6 +70,7 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write

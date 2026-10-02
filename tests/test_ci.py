@@ -72,6 +72,12 @@ def test_actions_are_on_node_24_majors(ci: dict, name: str) -> None:
             assert ACTIONS[action] == version, step["uses"]
 
 
+@pytest.mark.parametrize("name", ["lint", "test"])
+def test_jobs_are_time_bounded(ci: dict, name: str) -> None:
+    # The integration suite blocks on Redis reads: a hang must not bill GitHub's 360.
+    assert 0 < ci["jobs"][name]["timeout-minutes"] <= 15
+
+
 def test_lint_gates(ci: dict) -> None:
     runs = _runs(ci["jobs"]["lint"])
     for gate in ("uv run ruff check .", "uv run ruff format --check .", "uv lock --locked"):
