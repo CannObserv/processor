@@ -146,6 +146,19 @@ sudo systemctl enable --now processor
 journalctl -u processor -f      # "starting", then "consuming"; one JSON record per command
 ```
 
+Then smoke-test the write path. The boot preflight only lists the buckets, and a refused write looks transient, so commands would sit pending with no alarm:
+
+```bash
+( set -a && . /etc/processor/.env && set +a && .venv/bin/python scripts/smoke_scratch_bus.py )
+```
+
+[scripts/smoke_scratch_bus.py](../scripts/smoke_scratch_bus.py):
+- **Bus:** the scratch Redis (db 14), never the broker.
+- **Command:** one real command through the real consumer loop and child.
+- **Input:** from the committed real corpus.
+- **Output:** the production bucket, write-if-absent, so a repeat run writes nothing new.
+- **Pass:** it prints `"result": "pass"` when the fact matches Watcher's recorded fingerprint, the entry is acked, and the object reads back intact.
+
 **Installed on `co-processor` 2026-10-02 23:27:27Z** (`main` at `6e518d8`): `starting`, then `consuming` within a second; 65 MB resident. A smoke test ran one real blob through `handler.handle` with the production stores and child, and its publish captured locally (never the broker). The blob was `2e38aa5e…`, from Watcher's real corpus.
 - Read 89 ms, extract 550 ms, store 102 ms.
 - The stored text's digest equals Watcher's recorded fingerprint, and it read back intact.
@@ -158,6 +171,7 @@ On boot, the service preflights both buckets and exits non-zero if either is unr
 
 ```bash
 git pull --ff-only && uv sync --frozen --no-dev && sudo systemctl restart processor
+( set -a && . /etc/processor/.env && set +a && .venv/bin/python scripts/smoke_scratch_bus.py )
 ```
 
 A restart lets the in-flight command finish (`KillMode=mixed`: SIGTERM reaches the consumer, not its extraction child; `TimeoutStopSec=240`, which must grow with `CO_PROCESSOR_EXTRACTION_TIMEOUT_S`). A stop mid-reclaim finishes the command in hand and leaves the rest pending. A command killed mid-flight stays pending, and the reclaim re-runs it after `reclaim_min_idle_ms`. That includes a stop during a GCS outage: the library's retries can push one command to about 435 s, past `TimeoutStopSec`, so systemd SIGKILLs it. This is safe (nothing was acked) and deliberate (a deploy never hangs for minutes).
