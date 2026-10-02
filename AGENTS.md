@@ -50,7 +50,7 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 
 **Extraction runs in a killable child process** (`python -I -m processor._child`: timeout, `RLIMIT_AS`, `oom_score_adj` 1000, scrubbed env, allowlisting unpickler for its result), never a thread. The child is untrusted: it parses untrusted documents. **Not a sandbox:** it runs as the service user and can read that user's secrets. This is accepted for the MVP, and containment is #2.
 
-**Parity goldens** come from Watcher's own code (`scripts/gen_parity_goldens.py`), never from Processor's. A failing parity test means output diverged from Watcher; do not regenerate the goldens to make it pass.
+**Parity goldens** come from Watcher's own code (`scripts/gen_parity_goldens.py`), never from Processor's. A failing parity test means output diverged from Watcher; do not regenerate the goldens to make it pass. The real corpus, `tests/fixtures/parity/real/` (#16), is Watcher's export verbatim and the only copy of its blobs (gone from `gs://co-gcs-blobs` after the TTL): never edit or regenerate it; a bump that moves its output says so in the bump note.
 
 ## Agent Skills
 
