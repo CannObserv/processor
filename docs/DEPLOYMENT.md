@@ -11,7 +11,7 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`. C
 | Tailnet `tag:processor` → `tag:broker` on 6379 | tailnet policy | done 2026-09-29 |
 | `processor.process` on `content.process` (the hard ordering) | broker | done 2026-10-01 22:09:41Z by `processor ensure-group`: stream empty, group at `0-0`, lag 0 |
 | Tailscale `--accept-dns=true`, and tailscaled's OOM drop-in | this VM | done 2026-10-01, [Tailscale DNS](#tailscale-dns) (#8) |
-| A direct tailnet path to the broker. On 2026-10-02 it formed under traffic (1 ms, a hairpin through the NAT both VMs share) and fell back to DERP `sea` (16–18 ms) after 150 s idle; on 2026-09-30 it never formed. Not a go-live blocker: only slower over DERP | tailnet / broker side | #15: confirm it holds while the service runs |
+| A direct tailnet path to the broker. On 2026-10-02 it formed under traffic (1 ms, a hairpin through the NAT both VMs share) and fell back to DERP `sea` (16–18 ms) after 150 s idle; on 2026-09-30 it never formed. Not a go-live blocker: only slower over DERP | tailnet / broker side | #15: holds under the running service (direct, 1 ms, through 5 min with no pings, 2026-10-02 23:35Z); re-check after a reboot of either node |
 | Bucket `gs://co-gcs-processor`, UBLA, public access prevention, no lifecycle | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
 | SA `co-gcs-processor-writer`: `objectCreator` + `objectViewer` on `co-gcs-processor` (**no delete**), `objectViewer` on `co-gcs-blobs` | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
 | SA key at `/etc/processor/co-gcs-processor-writer.json` (600) | this VM | done 2026-10-02; the writer's preflight reached both buckets |
@@ -145,6 +145,12 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now processor
 journalctl -u processor -f      # "starting", then "consuming"; one JSON record per command
 ```
+
+**Installed on `co-processor` 2026-10-02 23:27:27Z** (`main` at `6e518d8`): `starting`, then `consuming` within a second; 65 MB resident. A smoke test ran one real blob through `handler.handle` with the production stores and child, and its publish captured locally (never the broker). The blob was `2e38aa5e…`, from Watcher's real corpus.
+- Read 89 ms, extract 550 ms, store 102 ms.
+- The stored text's digest equals Watcher's recorded fingerprint, and it read back intact.
+- A second run was write-if-absent.
+- It left one permanent object, `gs://co-gcs-processor/blobs/b8f6d0f1ec63d0b4c0e20fec0052871704f2353b59663cb715ca3eb783600bdf.bin` (17,327 bytes): exactly what Watcher's command for that revision produces.
 
 On boot, the service preflights both buckets and exits non-zero if either is unreachable, and systemd restarts it. Broker outages do not stop the service: the loop backs off from 1 s up to 30 s and retries.
 
