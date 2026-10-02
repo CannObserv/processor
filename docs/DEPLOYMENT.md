@@ -11,7 +11,7 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`. C
 | Tailnet `tag:processor` → `tag:broker` on 6379 | tailnet policy | done 2026-09-29 |
 | `processor.process` on `content.process` (the hard ordering) | broker | done 2026-10-01 22:09:41Z by `processor ensure-group`: stream empty, group at `0-0`, lag 0 |
 | Tailscale `--accept-dns=true`, and tailscaled's OOM drop-in | this VM | done 2026-10-01, [Tailscale DNS](#tailscale-dns) (#8) |
-| A direct tailnet path to the broker (still relayed via DERP `sea` on 2026-09-30, although this node advertises endpoints and its netcheck is clean) | tailnet / broker side | broker#75 finding |
+| A direct tailnet path to the broker. On 2026-10-02 it formed under traffic (1 ms, a hairpin through the NAT both VMs share) and fell back to DERP `sea` (16–18 ms) after 150 s idle; on 2026-09-30 it never formed. Not a go-live blocker: only slower over DERP | tailnet / broker side | #15: confirm it holds while the service runs |
 | Bucket `gs://co-gcs-processor`, UBLA, public access prevention, no lifecycle | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
 | SA `co-gcs-processor-writer`: `objectCreator` + `objectViewer` on `co-gcs-processor` (**no delete**), `objectViewer` on `co-gcs-blobs` | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
 | SA key at `/etc/processor/co-gcs-processor-writer.json` (600) | this VM | done 2026-10-02; the writer's preflight reached both buckets |
