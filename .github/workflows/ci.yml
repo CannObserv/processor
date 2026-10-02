@@ -71,13 +71,15 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    # The broker's Redis (7.2); co-processor's scratch server is 7.0.15, so CI and
-    # the VM between them cover both. The integration suite runs here in full: it
-    # uses db 15, a throwaway ACL user, and briefly maxmemory, all of which a
-    # service container absorbs.
+    # The broker's exact Redis, 7.0.15 (broker deploy/redis-acl.conf), as on
+    # co-processor's scratch server. Not a newer 7.x: from 7.2 redis-py's CLIENT
+    # SETINFO is an ACL denial the broker's grant cannot cover until it upgrades
+    # (granting it is a required step of that upgrade, per the broker). The
+    # integration suite runs here in full: db 15, a throwaway ACL user, and briefly
+    # maxmemory, all of which a service container absorbs.
     services:
       redis:
-        image: redis:7.2
+        image: redis:7.0.15
         ports:
           - 6379:6379
         options: >-

@@ -7,7 +7,10 @@ import yaml
 
 WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
 WIF_SA = "co-pypi-reader@co-gcs.iam.gserviceaccount.com"
-BROKER_REDIS = "redis:7.2"  # the broker's version (broker docs/RESTART-WINDOW.md)
+# The broker's exact version (broker deploy/redis-acl.conf: "this broker is 7.0.15").
+# Not 7.2: redis-py sends CLIENT SETINFO there, which the broker's ACL cannot grant
+# until it upgrades, so a 7.2 container reports denials the broker never sees.
+BROKER_REDIS = "redis:7.0.15"
 
 
 @pytest.fixture(scope="module")
