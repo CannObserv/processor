@@ -1,0 +1,195 @@
+{
+ "generated_at": "2026-10-02",
+ "processor_version_local": "0.19.7+1",
+ "items": [
+  {
+   "watched_item_id": "01KRZ2DV43YCKB90AB5PFM55RD",
+   "input_digest": "6183927b4e5ac2f0a6758ecf3f8331e687f22e4b89a563a8efc2f22afe00823f",
+   "input_uri": "gs://co-gcs-blobs/blobs/6183927b4e5ac2f0a6758ecf3f8331e687f22e4b89a563a8efc2f22afe00823f.bin",
+   "blob_expires_at": "2026-10-08T21:05:01.683929+00:00",
+   "source_spec": {
+    "target": {
+     "url": "https://lcb.wa.gov/boardmeetings/board_meetings"
+    },
+    "extraction": {
+     "selector": "div.content",
+     "algorithm": "css"
+    },
+    "fingerprint": {},
+    "schema_version": 1
+   },
+   "spec_fingerprint": "spec1:sha256:01782fbbe89d912524c2e157bea5daf847d72109148457196e9a0f3e9b786818",
+   "media_type": "text/html",
+   "recorded_fingerprint": "sha256:3d24ab253b031dc47cfec3c4b15e46556f4ce57b4ac89e688b6c04995cdd9b4c",
+   "recorded_at": "2026-09-24T23:22:01.529446+00:00",
+   "recorded_processor_version": "0.19.4+1",
+   "local_reextract_matches": true
+  },
+  {
+   "watched_item_id": "01KRZ2DV43YCKB90AB5PFM55RD",
+   "input_digest": "9df7467d511631668dc82f6cefcfd33a6f35eaba4eb54d1e7a4e3c994329e219",
+   "input_uri": "gs://co-gcs-blobs/blobs/9df7467d511631668dc82f6cefcfd33a6f35eaba4eb54d1e7a4e3c994329e219.bin",
+   "blob_expires_at": "2026-10-08T22:06:01.691558+00:00",
+   "source_spec": {
+    "target": {
+     "url": "https://lcb.wa.gov/boardmeetings/board_meetings"
+    },
+    "extraction": {
+     "selector": "div.content",
+     "algorithm": "css"
+    },
+    "fingerprint": {},
+    "schema_version": 1
+   },
+   "spec_fingerprint": "spec1:sha256:01782fbbe89d912524c2e157bea5daf847d72109148457196e9a0f3e9b786818",
+   "media_type": "text/html",
+   "recorded_fingerprint": "sha256:530792dfa41cbab517eea2480fff75bcf0e1b0bd43c97a90d1863178ecc86177",
+   "recorded_at": "2026-10-01T22:06:02.168042+00:00",
+   "recorded_processor_version": "0.19.7+1",
+   "local_reextract_matches": true
+  },
+  {
+   "watched_item_id": "01KRZ2DV43YCKB90AB5PFM55RD",
+   "input_digest": "2e38aa5e980b7136376f80bccd6773bedb26c00aa381fd228e2e7daa57548492",
+   "input_uri": "gs://co-gcs-blobs/blobs/2e38aa5e980b7136376f80bccd6773bedb26c00aa381fd228e2e7daa57548492.bin",
+   "blob_expires_at": "2026-10-09T17:25:01.115041+00:00",
+   "source_spec": {
+    "target": {
+     "url": "https://lcb.wa.gov/boardmeetings/board_meetings"
+    },
+    "extraction": {
+     "selector": "div.content",
+     "algorithm": "css"
+    },
+    "fingerprint": {},
+    "schema_version": 1
+   },
+   "spec_fingerprint": "spec1:sha256:01782fbbe89d912524c2e157bea5daf847d72109148457196e9a0f3e9b786818",
+   "media_type": "text/html",
+   "recorded_fingerprint": "sha256:b8f6d0f1ec63d0b4c0e20fec0052871704f2353b59663cb715ca3eb783600bdf",
+   "recorded_at": "2026-10-01T23:07:01.538661+00:00",
+   "recorded_processor_version": "0.19.7+1",
+   "local_reextract_matches": true
+  },
+  {
+   "watched_item_id": "01KVBVV27ECJS6TMATK273MJB2",
+   "input_digest": "6abb3bf14eba7131833a56a2c9e2d8afa2a00d753273945dc51f09de1e5567bd",
+   "input_uri": "gs://co-gcs-blobs/blobs/6abb3bf14eba7131833a56a2c9e2d8afa2a00d753273945dc51f09de1e5567bd.bin",
+   "blob_expires_at": "2026-10-08T19:16:02.175068+00:00",
+   "source_spec": {
+    "extraction": {
+     "selector": "div.content",
+     "algorithm": "css"
+    },
+    "fingerprint": {},
+    "schema_version": 1
+   },
+   "spec_fingerprint": "spec1:sha256:9503548a9e9cfaa301197ed95b0744d46c34313835302055e98ea091a84cfaa8",
+   "media_type": "text/html",
+   "recorded_fingerprint": "sha256:4cc814c794ec78b4c9c9d707065ab625a2f15b2d28825c24281fde394e0dfd04",
+   "recorded_at": "2026-09-23T19:08:01.878373+00:00",
+   "recorded_processor_version": null,
+   "local_reextract_matches": true
+  },
+  {
+   "watched_item_id": "01KVP9BFKWZCXZ3EXKDHR8X95R",
+   "input_digest": "05b750679d010d6194a9c601b0ab34425ed76d99e544a9832e1ff4944206d21a",
+   "input_uri": "gs://co-gcs-blobs/blobs/05b750679d010d6194a9c601b0ab34425ed76d99e544a9832e1ff4944206d21a.bin",
+   "blob_expires_at": "2026-10-04T19:12:00.92775+00:00",
+   "source_spec": {
+    "extraction": {
+     "selector": "div.view-display-id-bill_action_notice_block",
+     "algorithm": "css"
+    },
+    "fingerprint": {},
+    "schema_version": 1
+   },
+   "spec_fingerprint": "spec1:sha256:013afac84b65d2e743e43319ce70261b41e6e220ad7b24aa5c293bb23bb6ebe6",
+   "media_type": "text/html",
+   "recorded_fingerprint": "sha256:36e8c9f2419169679c3a6b132a03b323deaae4f156ae3addfa4fc142179ea998",
+   "recorded_at": "2026-06-21T23:49:00.692699+00:00",
+   "recorded_processor_version": null,
+   "local_reextract_matches": true
+  },
+  {
+   "watched_item_id": "01KVP9BFKWZCXZ3EXKDHR8X95R",
+   "input_digest": "07ed6a673e5139c240a4baefb3b88b7810c1983467a6687706af87d266bd052a",
+   "input_uri": "gs://co-gcs-blobs/blobs/07ed6a673e5139c240a4baefb3b88b7810c1983467a6687706af87d266bd052a.bin",
+   "blob_expires_at": "2026-10-06T19:14:00.990184+00:00",
+   "source_spec": {
+    "extraction": {
+     "selector": "div.view-display-id-bill_action_notice_block",
+     "algorithm": "css"
+    },
+    "fingerprint": {},
+    "schema_version": 1
+   },
+   "spec_fingerprint": "spec1:sha256:013afac84b65d2e743e43319ce70261b41e6e220ad7b24aa5c293bb23bb6ebe6",
+   "media_type": "text/html",
+   "recorded_fingerprint": "sha256:36e8c9f2419169679c3a6b132a03b323deaae4f156ae3addfa4fc142179ea998",
+   "recorded_at": "2026-06-21T23:49:00.692699+00:00",
+   "recorded_processor_version": null,
+   "local_reextract_matches": true
+  },
+  {
+   "watched_item_id": "01KVP9BFKWZCXZ3EXKDHR8X95R",
+   "input_digest": "6adc7d33f44b171caf8313515063898fb8e40bda6416988cd405589936296580",
+   "input_uri": "gs://co-gcs-blobs/blobs/6adc7d33f44b171caf8313515063898fb8e40bda6416988cd405589936296580.bin",
+   "blob_expires_at": "2026-10-08T19:16:00.929012+00:00",
+   "source_spec": {
+    "extraction": {
+     "selector": "div.view-display-id-bill_action_notice_block",
+     "algorithm": "css"
+    },
+    "fingerprint": {},
+    "schema_version": 1
+   },
+   "spec_fingerprint": "spec1:sha256:013afac84b65d2e743e43319ce70261b41e6e220ad7b24aa5c293bb23bb6ebe6",
+   "media_type": "text/html",
+   "recorded_fingerprint": "sha256:36e8c9f2419169679c3a6b132a03b323deaae4f156ae3addfa4fc142179ea998",
+   "recorded_at": "2026-06-21T23:49:00.692699+00:00",
+   "recorded_processor_version": null,
+   "local_reextract_matches": true
+  },
+  {
+   "watched_item_id": "01KVP9BFKWZCXZ3EXKDHR8X95R",
+   "input_digest": "b9a15dc337125d5a35f541526232a3118860e74e01dbe355ae0dba9167704414",
+   "input_uri": "gs://co-gcs-blobs/blobs/b9a15dc337125d5a35f541526232a3118860e74e01dbe355ae0dba9167704414.bin",
+   "blob_expires_at": "2026-10-05T19:13:00.946433+00:00",
+   "source_spec": {
+    "extraction": {
+     "selector": "div.view-display-id-bill_action_notice_block",
+     "algorithm": "css"
+    },
+    "fingerprint": {},
+    "schema_version": 1
+   },
+   "spec_fingerprint": "spec1:sha256:013afac84b65d2e743e43319ce70261b41e6e220ad7b24aa5c293bb23bb6ebe6",
+   "media_type": "text/html",
+   "recorded_fingerprint": "sha256:36e8c9f2419169679c3a6b132a03b323deaae4f156ae3addfa4fc142179ea998",
+   "recorded_at": "2026-06-21T23:49:00.692699+00:00",
+   "recorded_processor_version": null,
+   "local_reextract_matches": true
+  },
+  {
+   "watched_item_id": "01KVTHYW0F9003JTFSX9MSRN89",
+   "input_digest": "908ffd540c669f0aa4220f7e06bdb7b10b25cd88ad2907cce2ae87c96d6787b2",
+   "input_uri": "gs://co-gcs-blobs/blobs/908ffd540c669f0aa4220f7e06bdb7b10b25cd88ad2907cce2ae87c96d6787b2.bin",
+   "blob_expires_at": "2026-10-08T19:16:01.34065+00:00",
+   "source_spec": {
+    "extraction": {
+     "selector": "div.content",
+     "algorithm": "css"
+    },
+    "fingerprint": {},
+    "schema_version": 1
+   },
+   "spec_fingerprint": "spec1:sha256:9503548a9e9cfaa301197ed95b0744d46c34313835302055e98ea091a84cfaa8",
+   "media_type": "text/html",
+   "recorded_fingerprint": "sha256:fbae5c98c0d6b95c500bc37437226ef312373309755c622ac3a82466b1334972",
+   "recorded_at": "2026-09-16T19:01:02.354344+00:00",
+   "recorded_processor_version": null,
+   "local_reextract_matches": true
+  }
+ ]
+}

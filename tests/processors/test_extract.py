@@ -6,6 +6,7 @@ so a pass here is cross-implementation parity, not a self-check.
 """
 
 import builtins
+import gzip
 import hashlib
 import json
 import socket
@@ -20,6 +21,13 @@ from processor.processors.extract import PROCESSOR_VERSION, ExtractOutcome, extr
 CORPUS = Path(__file__).resolve().parent.parent / "fixtures" / "parity"
 CASES = json.loads((CORPUS / "cases.json").read_text())
 GOLDENS = json.loads((CORPUS / "goldens.json").read_text())
+# Real inputs: Watcher's export (watcher#325 issuecomment-5958475061), verbatim, and
+# the raw blobs it names, copied from gs://co-gcs-blobs before Replicator's TTL took
+# them (#16). Fingerprints are Watcher's recorded ones, re-extracted by Watcher at
+# 0e14f39 (0.19.7+1) — never Processor's.
+REAL = CORPUS / "real"
+REAL_EXPORT = json.loads((REAL / "export.json").read_text())
+REAL_ITEMS = REAL_EXPORT["items"]
 EMPTY_SHA256 = "sha256:" + hashlib.sha256(b"").hexdigest()
 
 
@@ -89,3 +97,26 @@ def test_no_io(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_registry_routes_extract() -> None:
     assert TRANSFORMS == {"extract": extract}
+
+
+def _real_raw(item: dict) -> bytes:
+    return gzip.decompress((REAL / f"{item['input_digest']}.bin.gz").read_bytes())
+
+
+def test_real_corpus_is_the_whole_export() -> None:
+    assert REAL_EXPORT["processor_version_local"] == PROCESSOR_VERSION
+    assert len(REAL_ITEMS) == 9
+    blobs = {p.name.removesuffix(".bin.gz") for p in REAL.glob("*.bin.gz")}
+    assert blobs == {item["input_digest"] for item in REAL_ITEMS}
+
+
+@pytest.mark.parametrize("item", REAL_ITEMS, ids=[i["input_digest"][:12] for i in REAL_ITEMS])
+def test_parity_with_watcher_on_real_inputs(item: dict) -> None:
+    raw = _real_raw(item)
+    assert hashlib.sha256(raw).hexdigest() == item["input_digest"]
+
+    outcome = extract(raw, item["media_type"], item["source_spec"])
+
+    assert not outcome.empty
+    assert outcome.output_digest == item["recorded_fingerprint"]
+    assert outcome.spec_fingerprint == item["spec_fingerprint"]
