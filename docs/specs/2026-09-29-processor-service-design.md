@@ -259,11 +259,12 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
   `transient` token.
   - **The two timers** (measured with Watcher, watcher#325, 2026-10-03).
     Watcher re-issues after 1800 s (`WATCHER_PROCESS_COMMAND_TIMEOUT_SECONDS`,
-    its default). Processor retries a failed attempt from the PEL about
-    10–11 min later (`reclaim_min_idle_ms` 600 s, plus a walk every
-    `reclaim_interval_s` 60 s). So one failed attempt never triggers a
-    re-issue. Only a command failing transiently for over 30 min can be
-    answered twice; the original's fact then lands on an expired row and is
+    its default). Processor retries a failed attempt from the PEL 10–11 min
+    after it was delivered (`reclaim_min_idle_ms` 600 s, plus a walk every
+    `reclaim_interval_s` 60 s). So for a command Processor reaches promptly,
+    one failed attempt never triggers a re-issue. Only a command failing
+    transiently for over 30 min, or reached late (say behind a backlog), can
+    be answered twice; the original's fact then lands on an expired row and is
     dropped as `late`: duplicate work, not a wrong verdict.
 - **Order is store → publish → ack.** A transient publish failure leaves the entry
   unacked; the reclaim re-runs, the store write is a no-op, the publish lands.
