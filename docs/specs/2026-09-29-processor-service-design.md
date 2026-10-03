@@ -296,11 +296,12 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
     publishes another, which Watcher drops (first fact wins).
   - **A transient refusal** leaves the entry pending (uncapped); a non-transient
     one is logged, and the entry is dead-lettered anyway. That command gets no
-    fact, but it is not left open. Watcher re-issues it once Processor answers
-    a later command. In a quiet period, Watcher's hard limit (24 h,
-    `WATCHER_PROCESS_COMMAND_HARD_LIMIT_SECONDS`) expires it instead; after
-    cutover that fails the fetch with `processing_timeout` and sets the item to
-    ERROR, and the next scheduled fetch starts a fresh lineage.
+    fact, but it is not left open. Watcher re-issues it once it is past the
+    re-issue threshold and Processor has answered a later command. In a quiet
+    period, Watcher's hard limit (24 h, `WATCHER_PROCESS_COMMAND_HARD_LIMIT_SECONDS`)
+    expires it instead; after cutover that fails the fetch with
+    `processing_timeout` and sets the item to ERROR, and the next scheduled
+    fetch starts a fresh lineage.
   - **Failure, then success.** If the dead-letter does not land after the fact
     did (refused, transient or not, or a crash or restart in between), the entry
     stays pending and the reclaim runs the command again: still at the cap, or
