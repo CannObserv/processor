@@ -32,6 +32,16 @@ on `co-processor`.
 - A command dead-lettered at the cap still gets a terminal fact first (Section 4,
   processor#17).
 
+**Amended 2026-10-03 (Watcher's consumer rules, processor#20):**
+- Watcher re-issues a stuck command only once Processor has answered a command
+  published after it, not on any fact (Section 4).
+- The first terminal fact per `command_id` decides; later ones are logged and
+  dropped (Section 4).
+- A command that gets no fact is bounded by Watcher's 24 h hard limit (Section 4).
+- How Watcher's re-issue threshold and Processor's PEL retry interact (Section 4).
+- A command dead-lettered at the cap can get a failure fact, then a success;
+  the failure stands (Section 4, processor#17).
+
 ---
 
 ## Why a new service
@@ -236,20 +246,34 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
   command gets at most three more attempts. Too loose in practice → ask the
   broker for `+xpending`.
 - **Infrastructure failures are uncapped.** Publish nothing; the reclaim retries.
-  Watcher's reaper re-issues a stale command under a fresh id only while
-  Processor is consuming. Watcher infers that from any `content.derived` fact
-  arriving within its window (watcher#325, amended 2026-10-02). While Processor
-  is down, commands queue in `processor.process`; Watcher reports one
-  "Processor not consuming" signal and items as *processing delayed*. On
-  restart, Processor works through the backlog, superseded commands included.
-  Watcher discards a fact for a superseded or expired command, so they need no
-  special handling. An outage longer than Replicator's blob TTL yields
-  `input_unreadable`, then Watcher's capped re-fetch. v1 never publishes the
-  `transient` token.
+  Watcher's reaper re-issues a stale command under a fresh id only once
+  Processor has answered a command published after it (watcher#325, amended
+  2026-10-02 and 2026-10-03). A fact for just any command is not enough: a
+  Processor draining a backlog after an outage would trigger re-issues of
+  everything queued behind its first answer. While Processor is down, commands
+  queue in `processor.process`; Watcher reports one signal, `processor has not
+  reached held process commands — down, or draining its backlog`, and items as
+  *processing delayed*. On restart, Processor works through the backlog,
+  superseded commands included. Watcher discards a fact for a superseded or
+  expired command, so they need no special handling. An outage longer than
+  Replicator's blob TTL yields `input_unreadable`, then Watcher's capped
+  re-fetch. v1 never publishes the `transient` token.
+  - **The two timers** (measured with Watcher, watcher#325, 2026-10-03).
+    Watcher re-issues after 1800 s (`WATCHER_PROCESS_COMMAND_TIMEOUT_SECONDS`,
+    its default). Processor retries a failed attempt from the PEL 10–11 min
+    after it was delivered (`reclaim_min_idle_ms` 600 s, plus a walk every
+    `reclaim_interval_s` 60 s). So for a command Processor reaches promptly,
+    one failed attempt never triggers a re-issue. Only a command failing
+    transiently for over 30 min, or reached late (say behind a backlog), can
+    be answered twice; the original's fact then lands on an expired row and is
+    dropped as `late`: duplicate work, not a wrong verdict.
 - **Order is store → publish → ack.** A transient publish failure leaves the entry
   unacked; the reclaim re-runs, the store write is a no-op, the publish lands.
-  An ack failure after a successful publish yields a duplicate fact, which
-  Watcher's idempotent upsert on `command_id` absorbs.
+  An ack failure after a successful publish yields a duplicate fact. Watcher
+  dedupes on its `process_commands` row: the first terminal fact per
+  `command_id` decides, and later ones are logged and dropped (watcher#325,
+  amended 2026-10-03). So a success then a failure leaves the success standing,
+  and a duplicate success sends Archiver no second renewal.
 - **Reclaim idle time exceeds the extraction timeout**, so a slow command is not
   reclaimed from under itself.
 - **`OOMPolicy=continue`** on the unit: systemd's default stops the whole unit
@@ -262,13 +286,26 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
   dead-lettering a decodable command at the cap, Processor publishes
   `processing_failed` with `terminal=true`, `reason=extraction_error`, and
   `detail` = `dead-lettered: <the DLQ reason>`. Without it Watcher would wait on
-  the command. Its reaper re-issues only while other facts flow (watcher#325),
-  and its health reads a quiet Processor as down. Watcher closes the command
-  instead: in shadow only an audit entry, after cutover the item's failure path.
-  - **No second fact.** It is skipped when this entry's fact already went out:
-    a refused ack, or a dead-letter retried after the fact landed.
+  the command. Its reaper re-issues only once Processor answers a later command
+  (watcher#325, amended 2026-10-03), and its health reads a quiet Processor as
+  down. Watcher closes the command instead: in shadow only an audit entry,
+  after cutover the item's failure path.
+  - **No second failure fact.** It is skipped when this entry's fact already
+    went out: a refused ack, or a dead-letter retried after the fact landed.
   - **A transient refusal** leaves the entry pending (uncapped); a non-transient
-    one is logged, and the entry is dead-lettered anyway.
+    one is logged, and the entry is dead-lettered anyway. That command gets no
+    fact, but it is not left open. Watcher re-issues it once Processor answers
+    a later command. In a quiet period, Watcher's hard limit (24 h,
+    `WATCHER_PROCESS_COMMAND_HARD_LIMIT_SECONDS`) expires it instead; after
+    cutover that fails the fetch with `processing_timeout` and sets the item to
+    ERROR, and the next scheduled fetch starts a fresh lineage.
+  - **Failure, then success.** If the dead-letter does not land after the fact
+    did (a transient refusal, or a crash or restart in between), the entry
+    stays pending and the reclaim runs the command again: still at the cap, or
+    from attempt 1 after a restart, which forgets the strikes and that the
+    fact went out. A run that now succeeds publishes a success fact and acks,
+    and the entry never reaches the DLQ. Under first-fact-wins the failure
+    stands.
   - **Frames that are not commands** (undecodable, or foreign events) carry no
     `command_id`, so they get no fact.
 - **Every outcome logs** `command_id`, `info_source_id`, reason and timings.
@@ -432,7 +469,9 @@ chunk per blank page); when `empty`, `output_digest` and `output_uri` are `None`
 and `output_size_bytes` is `0`; `output_media_type` must be
 `CANONICAL_TEXT_MEDIA_TYPE`; `spec_fingerprint` is `None` if the derivation
 raises; a failure's `terminal` must agree with its reason. Idempotency keys:
-`command_id` (command), `command_id:occurred_at` (facts). `info_source_id` is
+`command_id` (command), `command_id:occurred_at` (facts; a duplicate fact
+differs in `occurred_at`, so Watcher settles on the first terminal fact per
+`command_id`, Section 4). `info_source_id` is
 echoed, reporting only.
 
 ## Open questions
