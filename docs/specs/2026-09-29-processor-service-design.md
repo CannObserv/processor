@@ -300,7 +300,7 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
     cutover that fails the fetch with `processing_timeout` and sets the item to
     ERROR, and the next scheduled fetch starts a fresh lineage.
   - **Failure, then success.** If the dead-letter does not land after the fact
-    did (a transient refusal, or a crash or restart in between), the entry
+    did (refused, transient or not, or a crash or restart in between), the entry
     stays pending and the reclaim runs the command again: still at the cap, or
     from attempt 1 after a restart, which forgets the strikes and that the
     fact went out. A run that now succeeds publishes a success fact and acks,
