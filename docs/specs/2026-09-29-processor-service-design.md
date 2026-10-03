@@ -288,18 +288,21 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
   (watcher#325, amended 2026-10-03), and its health reads a quiet Processor as
   down. Watcher closes the command instead: in shadow only an audit entry,
   after cutover the item's failure path.
-  - **No second fact.** It is skipped when this entry's fact already went out:
-    a refused ack, or a dead-letter retried after the fact landed.
+  - **No second failure fact.** It is skipped when this entry's fact already
+    went out: a refused ack, or a dead-letter retried after the fact landed.
   - **A transient refusal** leaves the entry pending (uncapped); a non-transient
     one is logged, and the entry is dead-lettered anyway. That command gets no
     fact, but it is not left open: past Watcher's hard limit (24 h,
     `WATCHER_PROCESS_COMMAND_HARD_LIMIT_SECONDS`), Watcher expires it and fails
     the fetch with `processing_timeout`. The next scheduled fetch starts a fresh
     lineage.
-  - **A crash between the fact and the dead-letter** leaves the entry pending
-    with its failure fact out, and the restart forgets both its strikes and
-    that fact. The reclaim re-runs it, and the re-run can succeed and publish a
-    success. Under first-fact-wins the failure stands.
+  - **Failure, then success.** If the dead-letter does not land after the fact
+    did (a transient refusal, or a crash or restart in between), the entry
+    stays pending and the reclaim runs the command again: still at the cap, or
+    from attempt 1 after a restart, which forgets the strikes and that the
+    fact went out. A run that now succeeds publishes a success fact and acks,
+    and the entry never reaches the DLQ. Under first-fact-wins the failure
+    stands.
   - **Frames that are not commands** (undecodable, or foreign events) carry no
     `command_id`, so they get no fact.
 - **Every outcome logs** `command_id`, `info_source_id`, reason and timings.
