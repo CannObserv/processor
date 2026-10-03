@@ -470,7 +470,9 @@ chunk per blank page); when `empty`, `output_digest` and `output_uri` are `None`
 and `output_size_bytes` is `0`; `output_media_type` must be
 `CANONICAL_TEXT_MEDIA_TYPE`; `spec_fingerprint` is `None` if the derivation
 raises; a failure's `terminal` must agree with its reason. Idempotency keys:
-`command_id` (command), `command_id:occurred_at` (facts). `info_source_id` is
+`command_id` (command), `command_id:occurred_at` (facts; a duplicate fact
+differs in `occurred_at`, so Watcher settles on the first terminal fact per
+`command_id`, Section 4). `info_source_id` is
 echoed, reporting only.
 
 ## Open questions
