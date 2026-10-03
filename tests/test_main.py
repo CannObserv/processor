@@ -6,9 +6,11 @@ import json
 import logging
 import os
 import signal
+import socket
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from co_core.pure.adapters.bus.dead_letter import dead_letter_fields
@@ -24,6 +26,7 @@ from processor.__main__ import main
 pytestmark = pytest.mark.integration
 
 URL = "redis://localhost:6379/15"
+SERVICE = Path(__file__).resolve().parent.parent / "deploy" / "processor.service"
 HTML = (Path(__file__).parent / "fixtures" / "parity" / "inputs" / "agenda.html").read_bytes()
 
 
@@ -158,6 +161,33 @@ def test_a_settings_error_is_one_json_record_and_exit_2(monkeypatch, capsys) -> 
     (record,) = [json.loads(line) for line in err.splitlines()]
     assert record["level"] == "ERROR" and "reclaim_min_idle_ms" in json.dumps(record)
     assert "hunter2" not in err and "redis://" not in err
+
+
+def test_a_store_preflight_failure_exits_1_inside_the_units_restart_budget(
+    env, monkeypatch, capsys
+) -> None:
+    # DEPLOYMENT.md "At boot" (#8, #15): a start whose preflight still fails after the
+    # storage client's own retries exits 1, and systemd restarts it. That needs a
+    # non-zero exit, Restart=on-failure, and retries that stay under systemd's default
+    # start limit (5 starts in 10 s), or the unit gives up for good.
+    class Unresolved:
+        def preflight(self) -> None:
+            raise socket.gaierror(-3, "Temporary failure in name resolution")
+
+    stores = SimpleNamespace(input=Unresolved(), output=Unresolved())
+    monkeypatch.setattr("processor.__main__.build_stores", lambda settings: stores)
+    assert main(["run"]) == 1
+    records = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    assert any(r["message"].startswith("store preflight failed") for r in records)
+
+    unit = dict(
+        ln.strip().split("=", 1)
+        for ln in SERVICE.read_text().splitlines()
+        if "=" in ln and not ln.lstrip().startswith("#")
+    )
+    assert unit["Restart"] == "on-failure"
+    assert not {"StartLimitBurst", "StartLimitIntervalSec"} & unit.keys()
+    assert float(unit["RestartSec"]) * 5 > 10
 
 
 def test_dlq_list_count_must_be_positive(capsys) -> None:

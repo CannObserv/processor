@@ -11,7 +11,7 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`. C
 | Tailnet `tag:processor` → `tag:broker` on 6379 | tailnet policy | done 2026-09-29 |
 | `processor.process` on `content.process` (the hard ordering) | broker | done 2026-10-01 22:09:41Z by `processor ensure-group`: stream empty, group at `0-0`, lag 0 |
 | Tailscale `--accept-dns=true`, and tailscaled's OOM drop-in | this VM | done 2026-10-01, [Tailscale DNS](#tailscale-dns) (#8) |
-| A direct tailnet path to the broker. On 2026-10-02 it formed under traffic (1 ms, a hairpin through the NAT both VMs share) and fell back to DERP `sea` (16–18 ms) after 150 s idle; on 2026-09-30 it never formed. Not a go-live blocker: only slower over DERP | tailnet / broker side | #15: holds under the running service (direct, 1 ms, through 5 min with no pings, 2026-10-02 23:35Z); re-check after a reboot of either node |
+| A direct tailnet path to the broker. On 2026-10-02 it formed under traffic (1 ms, a hairpin through the NAT both VMs share) and fell back to DERP `sea` (16–18 ms) after 150 s idle; on 2026-09-30 it never formed. Not a go-live blocker: only slower over DERP | tailnet / broker side | #15, done for this node: holds under the running service (direct, 1 ms, through 5 min with no pings, 2026-10-02 23:35Z), and through a reboot of `co-processor` (2026-10-03 16:53Z: direct on the first ping, still direct after 5 idle minutes). A broker reboot is the broker's to schedule and is untested |
 | Bucket `gs://co-gcs-processor`, UBLA, public access prevention, no lifecycle | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
 | SA `co-gcs-processor-writer`: `objectCreator` + `objectViewer` on `co-gcs-processor` (**no delete**), `objectViewer` on `co-gcs-blobs` | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
 | SA key at `/etc/processor/co-gcs-processor-writer.json` (600) | this VM | done 2026-10-02; the writer's preflight reached both buckets |
@@ -243,6 +243,14 @@ The hard reset skips the stop hook, so tailscaled's own file and its backup were
 - The boot's journal has no name-resolution error.
 
 The second unit polled every 0.25 s, starting 0.32 s (reboot) and 0.44 s (reset) after tailscaled, so the lookup times are upper bounds.
+
+**With the unit installed, a graceful reboot on 2026-10-03 (#15)** (the first boot since the 2026-10-02 install):
+
+- The stop hook restored exe.dev's resolver at 16:53:14Z. tailscaled and `processor` started together at 16:53:19.4–19.7Z, and tailscaled took the file over at 19.4 + 1.35 s.
+- So the GCS preflight resolved through exe.dev's resolver. `starting` came at 21.74 and `consuming` at 21.76, about 1 s after `broker` became resolvable.
+- `NRestarts=0`. No backoff warning, no preflight failure, and no name-resolution error in the boot's journal.
+- The broker path was direct on the first ping and still direct after 5 idle minutes.
+- `tests/test_main.py` pins the restart path: preflight failure exits 1, `Restart=on-failure`, inside the default start limit.
 
 On both paths, tailnet names such as `broker` don't resolve until tailscaled takes the file over, 1.5–1.6 s after it starts; public names do. The bus loop backs off and retries a name that does not resolve yet, as it does for any broker fault (`tests/test_consumer.py`). The GCS preflight's listing retries a connection error for up to 120 s (the storage client's `DEFAULT_RETRY`). A start that still fails exits 1, and systemd restarts it 5 s later.
 
