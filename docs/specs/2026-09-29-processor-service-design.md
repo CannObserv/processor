@@ -248,17 +248,16 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
 - **Infrastructure failures are uncapped.** Publish nothing; the reclaim retries.
   Watcher's reaper re-issues a stale command under a fresh id only once
   Processor has answered a command published after it (watcher#325, amended
-  2026-10-02 and 2026-10-03). Any fact is not enough: a Processor draining a
-  backlog after an outage would trigger re-issues of everything queued behind
-  its first answer. While Processor is down, commands queue in
-  `processor.process`; Watcher reports one signal, `processor has not reached
-  held process commands — down, or draining its backlog`, and items as
+  2026-10-02 and 2026-10-03). A fact for just any command is not enough: a
+  Processor draining a backlog after an outage would trigger re-issues of
+  everything queued behind its first answer. While Processor is down, commands
+  queue in `processor.process`; Watcher reports one signal, `processor has not
+  reached held process commands — down, or draining its backlog`, and items as
   *processing delayed*. On restart, Processor works through the backlog,
-  superseded commands included.
-  Watcher discards a fact for a superseded or expired command, so they need no
-  special handling. An outage longer than Replicator's blob TTL yields
-  `input_unreadable`, then Watcher's capped re-fetch. v1 never publishes the
-  `transient` token.
+  superseded commands included. Watcher discards a fact for a superseded or
+  expired command, so they need no special handling. An outage longer than
+  Replicator's blob TTL yields `input_unreadable`, then Watcher's capped
+  re-fetch. v1 never publishes the `transient` token.
   - **The two timers** (measured with Watcher, watcher#325, 2026-10-03).
     Watcher re-issues after 1800 s (`WATCHER_PROCESS_COMMAND_TIMEOUT_SECONDS`,
     its default). Processor retries a failed attempt from the PEL 10–11 min
