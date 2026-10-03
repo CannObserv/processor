@@ -227,8 +227,9 @@ async def _read_input(command: ContentProcessCommand, deps: Deps, timer: _Timer)
 async def publish_gave_up(command: ContentProcessCommand, deps: Deps, detail: str) -> None:
     """Publish a terminal ``extraction_error`` for a command about to be dead-lettered.
 
-    Without a fact, Watcher waits on the command: its reaper re-issues only while
-    other facts flow, and its health reads the silence as Processor down (#17).
+    Without a fact, Watcher waits on the command: its reaper re-issues only once a
+    later command is answered, and its health reads the silence as Processor down
+    (#17, #20).
     Raises whatever the publish raises; the consumer decides.
     """
     fact = _failed(command, deps, "extraction_error", detail)
