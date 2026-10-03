@@ -39,6 +39,8 @@ on `co-processor`.
   dropped (Section 4).
 - A command that gets no fact is bounded by Watcher's 24 h hard limit (Section 4).
 - How Watcher's re-issue threshold and Processor's PEL retry interact (Section 4).
+- A command dead-lettered at the cap can get a failure fact, then a success;
+  the failure stands (Section 4, processor#17).
 
 ---
 
