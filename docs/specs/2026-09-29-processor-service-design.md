@@ -311,7 +311,12 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
     stands.
   - **Frames that are not commands** (undecodable, or foreign events) carry no
     `command_id`, so they get no fact.
-- **Every outcome logs** `command_id`, `info_source_id`, reason and timings.
+- **Every outcome logs** `command_id`, `info_source_id`, reason and timings. It also logs
+  `input_digest` once it is a valid fingerprint, so an `invalid_input` record has none.
+  Once a complete fact exists, it adds `output_digest` (absent when `empty`),
+  `output_size_bytes`, `empty` and `processor_version`, taken from that fact (#26).
+  Whether the store wrote a new object is not logged: co-core's write-if-absent
+  swallows the 412.
 
 These answer the two points broker#62 left for the consumer to state: `NOPERM`
 is transient, and under `maxmemory` a refused `XADD` is transient, with the
