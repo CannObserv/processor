@@ -292,8 +292,8 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
   after cutover the item's failure path.
   - **No second failure fact.** It is skipped when this entry's fact already
     went out: a refused ack, or a dead-letter retried after the fact landed.
-    That memory is per process: after a restart, a re-run that fails again
-    publishes another, which Watcher drops (first fact wins).
+    That memory is per process: after a restart, a re-run that reaches the cap
+    again publishes another, which Watcher drops (first fact wins).
   - **A transient refusal** leaves the entry pending (uncapped); a non-transient
     one is logged, and the entry is dead-lettered anyway. That command gets no
     fact, but it is not left open. Watcher re-issues it once it is past the
