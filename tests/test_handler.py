@@ -349,6 +349,59 @@ async def test_every_disposition_carries_what_the_log_needs(h: Harness) -> None:
     )
 
 
+# --- what the outcome record says it read and published (#26) ------------------------
+
+
+async def test_a_complete_record_names_its_input_and_the_published_output(h: Harness) -> None:
+    expected = extract(HTML, "text/html", SPEC)
+    disposition = await h.run(h.message())
+    assert disposition.fields == {
+        "input_digest": hashlib.sha256(HTML).hexdigest(),  # bare hex, as on the wire
+        "output_digest": expected.output_digest,  # sha256:<hex>, as on the wire
+        "output_size_bytes": len(expected.text),
+        "empty": False,
+        "processor_version": PROCESSOR_VERSION,
+    }
+
+
+async def test_an_empty_record_has_no_output_digest(h: Harness) -> None:
+    disposition = await h.run(h.message(BLANK_PDF, media_type="application/pdf", source_spec={}))
+    assert disposition.fields == {
+        "input_digest": hashlib.sha256(BLANK_PDF).hexdigest(),
+        "output_size_bytes": 0,
+        "empty": True,
+        "processor_version": PROCESSOR_VERSION,
+    }
+
+
+async def test_a_terminal_failure_record_names_its_input(h: Harness) -> None:
+    disposition = await h.run(h.message(store=False))  # input_unreadable
+    assert (disposition.action, disposition.reason) == ("ack", "input_unreadable")
+    assert disposition.fields == {"input_digest": hashlib.sha256(HTML).hexdigest()}
+
+
+async def test_an_input_digest_that_fails_validation_is_not_logged(h: Harness) -> None:
+    disposition = await h.run(h.message(store=False, input_digest="../" + "a" * 61))
+    assert disposition.reason == "invalid_input"
+    assert disposition.fields == {}
+    assert "../" in disposition.detail  # the rejected value is still in the record
+
+
+async def test_a_strike_record_names_the_input_that_struck(h: Harness) -> None:
+    h.run_child = fixed_child(ChildResult(kind="timeout", detail="120 s"))
+    disposition = await h.run(h.message(), attempt=1)
+    assert disposition.action == "strike"
+    assert disposition.fields == {"input_digest": hashlib.sha256(HTML).hexdigest()}
+
+
+async def test_a_publish_failure_record_names_the_stored_output(h: Harness) -> None:
+    h.publisher.fail = rx.ConnectionError("Connection reset by peer")
+    disposition = await h.run(h.message())
+    assert disposition.action == "leave_pending"
+    assert disposition.fields["output_digest"] == extract(HTML, "text/html", SPEC).output_digest
+    assert disposition.fields["input_digest"] == hashlib.sha256(HTML).hexdigest()
+
+
 # --- the consumer's cap (#17) -----------------------------------------------------------
 
 

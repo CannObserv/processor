@@ -62,6 +62,10 @@ class Disposition:
     command_id: str | None = None
     info_source_id: str | None = None
     timings: dict[str, float] = field(default_factory=dict)
+    # What the command read and published, in wire form (#26): ``input_digest`` once
+    # valid; from a complete fact, ``output_digest`` (absent when empty),
+    # ``output_size_bytes``, ``empty`` and ``processor_version``.
+    fields: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -116,6 +120,7 @@ async def handle(message: BusMessage, *, attempt: int, deps: Deps) -> Dispositio
 
     timer = _Timer()
     ids = {"command_id": command.command_id, "info_source_id": command.info_source_id}
+    fields = input_fields(command)
     try:
         fact = await _derive(command, deps, timer)
     except _Terminal as exc:
@@ -123,10 +128,17 @@ async def handle(message: BusMessage, *, attempt: int, deps: Deps) -> Dispositio
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
         if is_transient(exc):
-            return Disposition("leave_pending", "transient", detail, timings=timer.total(), **ids)
+            return Disposition(
+                "leave_pending", "transient", detail, timings=timer.total(), fields=fields, **ids
+            )
         if attempt < deps.max_attempts:
-            return Disposition("strike", "strike", detail, timings=timer.total(), **ids)
+            return Disposition(
+                "strike", "strike", detail, timings=timer.total(), fields=fields, **ids
+            )
         fact = _failed(command, deps, "extraction_error", f"gave up on attempt {attempt}: {detail}")
+
+    if isinstance(fact, ProcessingCompleteEmit):
+        fields = {**fields, **_output_fields(fact)}
 
     since = time.monotonic()
     try:
@@ -139,12 +151,36 @@ async def handle(message: BusMessage, *, attempt: int, deps: Deps) -> Dispositio
         # Nothing published; the reclaim re-runs the command. Never a strike: the
         # work succeeded, and the broker is what failed.
         detail = f"publish failed: {type(exc).__name__}: {exc}"
-        return Disposition("leave_pending", "transient", detail, timings=timer.total(), **ids)
+        return Disposition(
+            "leave_pending", "transient", detail, timings=timer.total(), fields=fields, **ids
+        )
     timer.lap("publish_ms", since)
 
     reason = "complete" if isinstance(fact, ProcessingCompleteEmit) else fact.reason
     detail = "" if isinstance(fact, ProcessingCompleteEmit) else (fact.detail or "")
-    return Disposition("ack", reason, detail, timings=timer.total(), **ids)
+    return Disposition("ack", reason, detail, timings=timer.total(), fields=fields, **ids)
+
+
+def input_fields(command: ContentProcessCommand) -> dict[str, str]:
+    """``input_digest`` for an outcome record, once it is a valid fingerprint (#26).
+
+    Before validation it is untrusted input; an ``invalid_input`` record's ``detail``
+    carries the rejected value instead.
+    """
+    try:
+        return {"input_digest": validate_fingerprint(command.input_digest)}
+    except ValueError:
+        return {}
+
+
+def _output_fields(fact: ProcessingCompleteEmit) -> dict[str, object]:
+    # From the fact, so the record says what was published. An empty one has no digest.
+    digest = {} if fact.output_digest is None else {"output_digest": fact.output_digest}
+    return digest | {
+        "output_size_bytes": fact.output_size_bytes,
+        "empty": fact.empty,
+        "processor_version": fact.processor_version,
+    }
 
 
 async def _derive(

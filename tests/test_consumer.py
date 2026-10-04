@@ -11,6 +11,7 @@ commands. Two tests narrow the grant or cap memory on purpose to show ``NOPERM``
 import asyncio
 import hashlib
 import itertools
+import json
 import logging
 import socket
 from datetime import UTC, datetime, timedelta
@@ -36,7 +37,8 @@ from processor import consumer as consumer_module
 from processor.child import ChildResult, run_in_child
 from processor.consumer import GROUP, Consumer, redis_client
 from processor.handler import Deps
-from processor.processors.extract import extract
+from processor.logging import JsonFormatter
+from processor.processors.extract import PROCESSOR_VERSION, extract
 from processor.stores import Stores
 
 pytestmark = pytest.mark.integration
@@ -177,6 +179,37 @@ async def test_a_command_becomes_one_fact_and_is_acked(admin, bus, stores) -> No
     assert stores.output.exists(fact.output_digest.removeprefix("sha256:"))
     info = await group_info(admin)
     assert (info["pending"], info["lag"]) == (0, 0)
+
+
+async def test_a_complete_record_names_what_it_read_and_published(
+    admin, bus, stores, caplog
+) -> None:
+    # The journal alone answers "what was your output_digest?" (#26).
+    consumer = make_consumer(bus, stores)
+    await consumer.start()
+    await issue(admin, stores)
+    caplog.set_level(logging.INFO, logger="processor.consumer")
+    await consumer.step()
+
+    (record,) = [r for r in caplog.records if r.getMessage() == "ack: complete"]
+    logged = json.loads(JsonFormatter().format(record))
+    (fact,) = await facts(admin)
+    expected = extract(HTML, "text/html", SPEC)
+    assert {
+        "timestamp", "level", "logger", "message",
+        "message_id", "attempt", "action", "reason", "detail", "command_id", "info_source_id",
+        "read_ms", "extract_ms", "store_ms", "publish_ms", "total_ms",
+    } <= set(logged)  # fmt: skip
+    assert (logged["action"], logged["reason"], logged["command_id"]) == (
+        "ack",
+        "complete",
+        "cmd-1",
+    )
+    assert logged["input_digest"] == hashlib.sha256(HTML).hexdigest()
+    assert logged["output_digest"] == fact.output_digest == expected.output_digest
+    assert logged["output_size_bytes"] == len(expected.text)
+    assert logged["empty"] is False
+    assert logged["processor_version"] == PROCESSOR_VERSION
 
 
 async def test_an_undecodable_frame_is_dead_lettered(admin, bus, stores) -> None:
@@ -660,6 +693,7 @@ async def test_an_escape_logs_its_command(admin, bus, stores, monkeypatch, caplo
         ("dead_letter", 3),
     ]
     assert all(r.info_source_id == "src-1" for r in outcomes)
+    assert all(r.input_digest == hashlib.sha256(HTML).hexdigest() for r in outcomes)  # #26
     assert outcomes[-1].exc_info is not None  # the last attempt's traceback survives
     assert outcomes[-1].failure_fact == "published"  # Watcher was told (#17)
 
