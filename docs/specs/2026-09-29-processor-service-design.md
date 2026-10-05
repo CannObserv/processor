@@ -6,7 +6,8 @@ Observo session); this document is the founding spec for `CannObserv/processor`.
 private; GitHub refuses a private → public transfer). **Supersedes:** #629's
 premise that Observo is the processor.
 **Contract of record:** co-core `docs/CHANGE_BUS.md` § *Watcher-issued processing
-— the `content.process` pair* (cannobserv v0.19.4), and Watcher's
+— the `content.process` pair* (cannobserv v0.19.4; on `main` since split out to
+`docs/change_bus/process.md`), and Watcher's
 `docs/plans/2026-09-24-observo-extraction-and-diff-design.md` Section 1. The
 co-core deltas that shaped the wire types:
 cannobserv `docs/plans/2026-09-24-content-process-contract-co-core-deltas.md`.
@@ -354,22 +355,21 @@ reclaim re-running (not re-publishing) the extraction.
   it. No automatic lock refresh; dependency bots skip co-core. A bump is planned
   with Watcher: the golden-digest corpus passes unchanged on the new version
   before deploy, and the bump note says whether output moved. During the shadow
-  window both repos move together or neither does.
+  window both repos move together or neiEvery item is external: drafted, then approved and posted one at a time.
+Status re-checked against each repo on 2026-10-05 (#23).
 
-## Section 6 — cross-repo changes and cutover
+| Where | Change | Status |
+|---|---|---|
+| observo | #629 recreated as processor#1 (body plus its co-core and broker comments) and closed with a pointer — a private → public transfer is refused. This spec is committed there as the decision record. Remove `CO_OBSERVO_BROKER_TOKEN` from `/etc/observo/.env` once the broker strips `observo`. No code change. | **Done.** observo#629 closed 2026-09-29; the token removed 2026-10-01 (observo#652). |
+| processor | Founding spec (this file, at the same path), `AGENTS.md`, #1 (from observo#629). | **Done.** |
+| broker | New issue: ACL user `processor` (Section 2); strip `observo`'s grants; probe watches `processor.process`; participants table and `docs/STREAMS.md`; `docs/NETWORK-PATHS.md` client cells from `co-processor`. | **Done:** broker#75, closed 2026-10-05. |
+| watcher | On #325 or a design-doc PR: Section 3's processor is Processor; output root `gs://co-gcs-processor`; the reader grant; the `WATCHER_EXTRACT_MODE` value `observo` (rename is Watcher's call); the Section 5 question below; the lockstep bump policy. | **Done:** watcher#325, closed 2026-10-03. |
+| cannobserv | Doc-only issue: the `content.process` contract named Observo / `observo.process` as the processor. The stale text was in `docs/change_bus/process.md`, not `CHANGE_BUS.md`. | **Resolved upstream:** cannobserv#503 (closed 2026-10-05) names the group `processor.process`. No issue filed from here. |
+| replicator | Amend #69's roles charter (closed), if it names Observo as the processor. | **Moot, no post.** The committed charter (`docs/contracts/replicator-boundaries.md`, "The successor question left this repo") keeps Replicator out of processing, points to archiver#179 and names no home. "Leaning Observo" survives only in #69's closing comment, which points to archiver#179, so the archiver comment corrects the chain. |
+| archiver | Informational comment on #179: the processor is Processor. | **Done:** [archiver#179 comment](https://github.com/CannObserv/archiver/issues/179#issuecomment-6002156775), 2026-10-05. |
+| GCP / tailnet | Bucket, service account and grants (Section 2); the tailnet rule. Operator acts. | **Done** in #14. |
 
-Every item is external: drafted, then approved and posted one at a time.
-
-| Where | Change |
-|---|---|
-| observo | #629 recreated as processor#1 (body plus its co-core and broker comments) and closed with a pointer — a private → public transfer is refused. This spec is committed there as the decision record. Remove `CO_OBSERVO_BROKER_TOKEN` from `/etc/observo/.env` once the broker strips `observo`. No code change. |
-| processor | Founding spec (this file, at the same path), `AGENTS.md`, #1 (from observo#629). |
-| broker | New issue: ACL user `processor` (Section 2); strip `observo`'s grants; probe watches `processor.process`; participants table and `docs/STREAMS.md`; `docs/NETWORK-PATHS.md` client cells from `co-processor`. |
-| watcher | On #325 or a design-doc PR: Section 3's processor is Processor; output root `gs://co-gcs-processor`; the reader grant; the `WATCHER_EXTRACT_MODE` value `observo` (rename is Watcher's call); the Section 5 question below; the lockstep bump policy. |
-| cannobserv | Doc-only issue: `CHANGE_BUS.md` names Observo / `observo.process` as the processor. |
-| replicator | New issue amending #69's roles charter (closed): "Observo transforms" becomes Observo = stream transforms and interpretation, Processor = discrete transforms. |
-| archiver | Informational comment on #179: the processor is Processor. |
-| GCP / tailnet | Bucket, service account and grants (Section 2); the tailnet rule. Operator acts. |
+nd grants (Section 2); the tailnet rule. Operator acts. |
 
 **Cutover order:**
 
