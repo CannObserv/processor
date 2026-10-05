@@ -14,8 +14,8 @@ An outcome record carries `command_id`, `info_source_id`, `reason`, `detail` and
 
 Only add keys. The four-key floor and every existing key stay as they are. Review and decisions: [#26 comment](https://github.com/CannObserv/processor/issues/26#issuecomment-5984746918).
 
-- `Disposition` gains `fields: dict[str, object]`, which `_log` spreads alongside `timings`.
-- **`input_digest`** comes from `command_fields(command)` in `handler.py`: `command_id`, `info_source_id`, and `input_digest` only once `validate_fingerprint` accepts it. Both `handle()` and `consumer._command_ids` use it, so every outcome record that names a command also names its input: complete, terminal, strike, leave_pending, `strike: escaped` and `dead-lettering`. A malformed `input_digest` is left out, and its `invalid_input` record's `detail` already quotes it. An `invalid_input` for a foreign `input_uri` still logs the digest, which is valid.
+- `Disposition` gains `log_fields: dict[str, object]`, which `_log` spreads alongside `timings`. It is named `log_fields` because `fields` already means a stream entry's wire field map in both modules (CR 3).
+- **`input_digest`** comes from `input_log_fields(command)` in `handler.py`: `input_digest`, only once `validate_fingerprint` accepts it. Both `handle()` and `consumer._command_log_fields` use it, so every outcome record that names a command also names its input: complete, terminal, strike, leave_pending, `strike: escaped` and `dead-lettering`. A malformed `input_digest` is left out, and its `invalid_input` record's `detail` already quotes it. An `invalid_input` for a foreign `input_uri` still logs the digest, which is valid.
 - **Output fields** come from the published `ProcessingCompleteEmit`, not from `_derive`: `output_digest` (omitted when empty), `output_size_bytes`, `empty`, `processor_version`. They are set once the fact exists, which includes the publish-failure `leave_pending` (stored, not yet published).
 - Digests keep their wire form: `input_digest` is bare hex and `output_digest` is `sha256:<hex>`.
 - **`stored` is dropped.** co-core 0.19.7's GCS `_create` swallows the write-if-absent 412, so "new or already present" isn't observable without an extra racy round trip or a lockstep co-core change.
@@ -23,7 +23,7 @@ Only add keys. The four-key floor and every existing key stay as they are. Revie
 ## Steps
 
 1. Handler tests (red): complete, empty, terminal failure, `invalid_input`, strike, and the publish-failure `leave_pending` each carry exactly their fields.
-2. `command_fields`, `Disposition.fields` and the fact's output fields (green).
+2. `input_log_fields`, `Disposition.log_fields` and the fact's output fields (green).
 3. Consumer tests (red, then green): the `ack: complete` record, as the formatter emits it, carries the new keys and keeps the old ones; escape and dead-lettering records carry `input_digest`.
 4. Docs: spec §4's "Every outcome logs …", DEPLOYMENT's **Logs** bullet, and AGENTS.md's **Logging** convention.
 5. PR. After the FF merge, deploy (`uv sync --frozen --no-dev && sudo systemctl restart processor`) and check a live shadow record.

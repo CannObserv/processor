@@ -40,7 +40,7 @@ from redis.asyncio.retry import Retry
 from redis.backoff import NoBackoff
 
 from processor.errors import is_transient
-from processor.handler import Deps, Disposition, handle, input_fields, publish_gave_up
+from processor.handler import Deps, Disposition, handle, input_log_fields, publish_gave_up
 
 GROUP = group_name(CONTENT_PROCESS, "processor")
 
@@ -192,7 +192,7 @@ class Consumer:
             # the DLQ, since it could not even fail cleanly. Nothing more is published,
             # but a fact published before a refused ack stands (one per attempt).
             detail = f"{type(exc).__name__}: {exc}"
-            ids = {"attempt": attempt, **_command_ids(message)}
+            ids = {"attempt": attempt, **_command_log_fields(message)}
             if attempt < self._deps.max_attempts:
                 self._strikes[message_id] = attempt
                 logger.warning(
@@ -295,13 +295,13 @@ def _undecodable(anomaly: BusMessageAnomaly) -> str:
     return f"undecodable: {type(anomaly).__name__}: {anomaly}"
 
 
-def _command_ids(message: BusMessage) -> dict[str, str | None]:
+def _command_log_fields(message: BusMessage) -> dict[str, str | None]:
     # None for a frame whose payload is not a command; input_digest once valid (#26).
     payload = message.payload
     return {
         "command_id": getattr(payload, "command_id", None),
         "info_source_id": getattr(payload, "info_source_id", None),
-        **(input_fields(payload) if isinstance(payload, ContentProcessCommand) else {}),
+        **(input_log_fields(payload) if isinstance(payload, ContentProcessCommand) else {}),
     }
 
 
@@ -331,6 +331,6 @@ def _log(disposition: Disposition, message_id: str, attempt: int) -> None:
             "command_id": disposition.command_id,
             "info_source_id": disposition.info_source_id,
             **disposition.timings,
-            **disposition.fields,
+            **disposition.log_fields,
         },
     )
