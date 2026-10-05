@@ -699,6 +699,38 @@ async def test_a_failed_dead_letter_at_the_cap_keeps_the_count(
     assert fact.detail == f"dead-lettered: {meta.reason}"  # the DLQ and the fact agree
 
 
+async def test_a_give_up_retried_after_a_refused_failure_fact_keeps_the_traceback(
+    admin, bus, stores, monkeypatch, caplog
+) -> None:
+    # The fact's transient refusal comes before any dead-lettering record, and the
+    # retry raises nothing of its own: the record must still carry the bug's traceback.
+    counting_handle, _calls = escaping_handle(times=3)
+    monkeypatch.setattr("processor.consumer.handle", counting_handle)
+    publisher = AsyncBusPublisher(bus)
+    publishes = itertools.count()
+
+    async def flaky_publish(effect):
+        if next(publishes) == 0:
+            raise RedisConnectionError("broker unreachable")
+        return await publisher.execute(effect)
+
+    consumer = make_consumer(bus, stores, publish=flaky_publish)
+    await consumer.start()
+    await issue(admin, stores)
+    caplog.set_level(logging.INFO, logger="processor.consumer")
+    for _ in range(2):
+        with pytest.raises(KeyError):
+            await consumer.step()
+    with pytest.raises(RedisConnectionError):
+        await consumer.step()
+    await consumer.step()
+
+    assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 1
+    (dead,) = [r for r in caplog.records if r.getMessage() == "dead-lettering"]
+    assert (dead.handle_skipped, dead.failure_fact) == (True, "published")
+    assert dead.exc_info and dead.exc_info[0] is KeyError  # the escape, not the refusal
+
+
 async def test_a_dead_letter_refused_every_time_never_reruns_the_command(
     admin, bus, stores, monkeypatch, caplog
 ) -> None:

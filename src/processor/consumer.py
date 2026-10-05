@@ -104,9 +104,10 @@ class Consumer:
         # Entries whose fact is on content.derived but not yet acked: at the cap they
         # get no failure fact on top (a refused ack, or a dead-letter retried).
         self._fact_out: set[str] = set()
-        # Entries that gave up at the cap, with the reason, until the dead-letter lands:
-        # a retry re-runs the give-up only, never the command (#28).
-        self._gave_up: dict[str, str] = {}
+        # Entries that gave up at the cap, with the reason and the escape (its traceback
+        # goes on every dead-lettering record), until the dead-letter lands: a retry
+        # re-runs the give-up only, never the command (#28).
+        self._gave_up: dict[str, tuple[str, Exception]] = {}
         self._stop: asyncio.Event | None = None
 
     async def start(self) -> None:
@@ -186,11 +187,11 @@ class Consumer:
     async def _process(self, message: BusMessage) -> None:
         message_id = message.message_id
         attempt = self._strikes.get(message_id, 0) + 1
-        if (reason := self._gave_up.get(message_id)) is not None:
-            # The dead-letter did not land last time. The command already escaped
+        if (gave_up := self._gave_up.get(message_id)) is not None:
+            # The give-up did not finish last time. The command already escaped
             # max_attempts times and its failure fact may be out: no re-run.
             ids = {"attempt": attempt, **_command_log_fields(message)}
-            await self._give_up(message, reason, ids, handle_skipped=True)
+            await self._give_up(message, *gave_up, ids, handle_skipped=True)
             return
         try:
             await self._act(message, attempt)
@@ -217,11 +218,17 @@ class Consumer:
                 )
                 raise
             reason = f"gave up on attempt {attempt}: {detail}"
-            self._gave_up[message_id] = reason
-            await self._give_up(message, reason, ids, handle_skipped=False)
+            self._gave_up[message_id] = (reason, exc)
+            await self._give_up(message, reason, exc, ids, handle_skipped=False)
 
     async def _give_up(
-        self, message: BusMessage, reason: str, ids: dict[str, object], *, handle_skipped: bool
+        self,
+        message: BusMessage,
+        reason: str,
+        escape: Exception,
+        ids: dict[str, object],
+        *,
+        handle_skipped: bool,
     ) -> None:
         """The failure fact, then the dead-letter; a retry adds no strike."""
         failure_fact = await self._publish_gave_up(message, reason, ids)
@@ -229,7 +236,7 @@ class Consumer:
             message.message_id,
             dict(message.fields),
             reason,
-            exc_info=not handle_skipped,  # a retry has no exception of its own
+            exc_info=escape,  # a retry has no exception of its own
             failure_fact=failure_fact,
             handle_skipped=handle_skipped,
             **ids,
@@ -298,7 +305,7 @@ class Consumer:
         fields: dict[str, str],
         reason: str,
         *,
-        exc_info: bool = False,
+        exc_info: bool | Exception = False,
         **extra: object,
     ) -> None:
         fields_logged = {"message_id": message_id, "action": "dead_letter", "reason": reason}
