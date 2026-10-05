@@ -355,7 +355,11 @@ reclaim re-running (not re-publishing) the extraction.
   it. No automatic lock refresh; dependency bots skip co-core. A bump is planned
   with Watcher: the golden-digest corpus passes unchanged on the new version
   before deploy, and the bump note says whether output moved. During the shadow
-  window both repos move together or neiEvery item is external: drafted, then approved and posted one at a time.
+  window both repos move together or neither does.
+
+## Section 6 — cross-repo changes and cutover
+
+Every item is external: drafted, then approved and posted one at a time.
 Status re-checked against each repo on 2026-10-05 (#23).
 
 | Where | Change | Status |
@@ -369,7 +373,6 @@ Status re-checked against each repo on 2026-10-05 (#23).
 | archiver | Informational comment on #179: the processor is Processor. | **Done:** [archiver#179 comment](https://github.com/CannObserv/archiver/issues/179#issuecomment-6002156775), 2026-10-05. |
 | GCP / tailnet | Bucket, service account and grants (Section 2); the tailnet rule. Operator acts. | **Done** in #14. |
 
-nd grants (Section 2); the tailnet rule. Operator acts. |
 
 **Cutover order:**
 
