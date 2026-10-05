@@ -6,7 +6,7 @@ Observo session); this document is the founding spec for `CannObserv/processor`.
 private; GitHub refuses a private → public transfer). **Supersedes:** #629's
 premise that Observo is the processor.
 **Contract of record:** co-core `docs/CHANGE_BUS.md` § *Watcher-issued processing
-— the `content.process` pair* (cannobserv v0.19.4; on `main` since split out to
+— the `content.process` pair* (cannobserv v0.19.4; by v0.19.7, the pinned version,
 `docs/change_bus/process.md`), and Watcher's
 `docs/plans/2026-09-24-observo-extraction-and-diff-design.md` Section 1. The
 co-core deltas that shaped the wire types:
