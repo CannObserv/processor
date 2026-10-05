@@ -18,7 +18,9 @@ max-deliveries hook, no loop (spec Open Question 2) — so the loop is here:
   (#17), so Watcher closes it instead of waiting; a refused one is logged and the
   entry dead-lettered anyway.
 - A strike count clears only once the entry's ack or dead-letter lands, so a failed
-  one on the last attempt does not restart the count.
+  one on the last attempt does not restart the count. A dead-letter at the cap that
+  does not land is retried alone (#28): the command never runs again in this
+  process, so no success follows its failure fact.
 - ``run``: ``step`` until stopped, backing off on any exception (connection loss,
   ``NOPERM``, ``OOM``), never exiting on one. A stop also ends a reclaim between
   messages: the in-flight command finishes, and the rest of a backlog stays pending
@@ -102,6 +104,9 @@ class Consumer:
         # Entries whose fact is on content.derived but not yet acked: at the cap they
         # get no failure fact on top (a refused ack, or a dead-letter retried).
         self._fact_out: set[str] = set()
+        # Entries that gave up at the cap, with the reason, until the dead-letter lands:
+        # a retry re-runs the give-up only, never the command (#28).
+        self._gave_up: dict[str, str] = {}
         self._stop: asyncio.Event | None = None
 
     async def start(self) -> None:
@@ -170,8 +175,7 @@ class Consumer:
                     return  # claimed, not run: pending until the next reclaim
                 await self._process(message)
             for message_id in page.deleted:
-                self._strikes.pop(message_id, None)
-                self._fact_out.discard(message_id)
+                self._forget(message_id)
             cursor = page.cursor
             if cursor == "0-0":
                 return
@@ -182,6 +186,12 @@ class Consumer:
     async def _process(self, message: BusMessage) -> None:
         message_id = message.message_id
         attempt = self._strikes.get(message_id, 0) + 1
+        if (reason := self._gave_up.get(message_id)) is not None:
+            # The dead-letter did not land last time. The command already escaped
+            # max_attempts times and its failure fact may be out: no re-run.
+            ids = {"attempt": attempt, **_command_log_fields(message)}
+            await self._give_up(message, reason, ids, handle_skipped=True)
+            return
         try:
             await self._act(message, attempt)
         except Exception as exc:
@@ -207,15 +217,23 @@ class Consumer:
                 )
                 raise
             reason = f"gave up on attempt {attempt}: {detail}"
-            failure_fact = await self._publish_gave_up(message, reason, ids)
-            await self._dead_letter(
-                message_id,
-                dict(message.fields),
-                reason,
-                exc_info=True,
-                failure_fact=failure_fact,
-                **ids,
-            )
+            self._gave_up[message_id] = reason
+            await self._give_up(message, reason, ids, handle_skipped=False)
+
+    async def _give_up(
+        self, message: BusMessage, reason: str, ids: dict[str, object], *, handle_skipped: bool
+    ) -> None:
+        """The failure fact, then the dead-letter; a retry adds no strike."""
+        failure_fact = await self._publish_gave_up(message, reason, ids)
+        await self._dead_letter(
+            message.message_id,
+            dict(message.fields),
+            reason,
+            exc_info=not handle_skipped,  # a retry has no exception of its own
+            failure_fact=failure_fact,
+            handle_skipped=handle_skipped,
+            **ids,
+        )
 
     async def _publish_gave_up(
         self, message: BusMessage, reason: str, ids: dict[str, object]
@@ -253,7 +271,7 @@ class Consumer:
             self._strikes[message_id] = attempt
         elif disposition.action == "dead_letter":
             await self._bus.dead_letter(message_id, dict(message.fields), reason=disposition.reason)
-            self._strikes.pop(message_id, None)
+            self._forget(message_id)
         elif disposition.action == "ack":
             self._fact_out.add(message_id)
             try:
@@ -264,8 +282,7 @@ class Consumer:
                     extra={"message_id": message_id, "command_id": disposition.command_id},
                 )
                 raise
-            self._strikes.pop(message_id, None)
-            self._fact_out.discard(message_id)
+            self._forget(message_id)
 
     async def _dead_letter_unread(self, anomaly: BusMessageAnomaly) -> None:
         # read(count=1) raised on this one frame; it is in our PEL. Its raw fields
@@ -287,8 +304,13 @@ class Consumer:
         fields_logged = {"message_id": message_id, "action": "dead_letter", "reason": reason}
         logger.error("dead-lettering", exc_info=exc_info, extra={**extra, **fields_logged})
         await self._bus.dead_letter(message_id, fields, reason=reason)
+        self._forget(message_id)
+
+    def _forget(self, message_id: str) -> None:
+        # Once the entry left the PEL (acked, dead-lettered, deleted from the stream).
         self._strikes.pop(message_id, None)
         self._fact_out.discard(message_id)
+        self._gave_up.pop(message_id, None)
 
 
 def _undecodable(anomaly: BusMessageAnomaly) -> str:
