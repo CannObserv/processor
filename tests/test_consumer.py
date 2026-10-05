@@ -641,19 +641,41 @@ async def test_a_failed_ack_at_the_cap_keeps_the_count(admin, bus, stores, monke
     ]
 
 
-async def test_a_failed_dead_letter_at_the_cap_keeps_the_count(
-    admin, bus, stores, monkeypatch
-) -> None:
-    async def broken_handle(*_args, **_kwargs):
-        raise KeyError("a bug outside the handler's try")
+def escaping_handle(times: int):
+    """A ``handle`` that escapes ``times`` times, then runs the real one; and its calls."""
+    real_handle = consumer_module.handle
+    calls: list[int] = []
 
-    monkeypatch.setattr("processor.consumer.handle", broken_handle)
+    async def counting_handle(message, *, attempt, deps):
+        calls.append(attempt)
+        if len(calls) <= times:
+            raise KeyError("a bug outside the handler's try")
+        return await real_handle(message, attempt=attempt, deps=deps)
+
+    return counting_handle, calls
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        RedisConnectionError("broker unreachable"),
+        ResponseError("WRONGTYPE Operation against a key holding the wrong kind"),
+    ],
+    ids=["transient", "non-transient"],
+)
+async def test_a_failed_dead_letter_at_the_cap_keeps_the_count(
+    admin, bus, stores, monkeypatch, refusal
+) -> None:
+    # The retry goes straight to the DLQ (#28): no attempt 1 again, and no re-run of
+    # the untrusted parser that would now succeed behind the published failure.
+    counting_handle, calls = escaping_handle(times=3)
+    monkeypatch.setattr("processor.consumer.handle", counting_handle)
     real_dead_letter = AsyncBusConsumer.dead_letter
-    calls = itertools.count()
+    dead_letters = itertools.count()
 
     async def flaky_dead_letter(self, *args, **kwargs):
-        if next(calls) == 0:
-            raise RedisConnectionError("broker unreachable")
+        if next(dead_letters) == 0:
+            raise refusal
         return await real_dead_letter(self, *args, **kwargs)
 
     monkeypatch.setattr(AsyncBusConsumer, "dead_letter", flaky_dead_letter)
@@ -663,12 +685,55 @@ async def test_a_failed_dead_letter_at_the_cap_keeps_the_count(
     for _ in range(2):
         with pytest.raises(KeyError):
             await consumer.step()
-    with pytest.raises(RedisConnectionError):
+    with pytest.raises(type(refusal)):
         await consumer.step()
-    await consumer.step()  # still at the cap: straight to the DLQ, not attempt 1 again
+    await consumer.step()
 
-    assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 1
+    assert calls == [1, 2, 3]
+    ((_id, raw),) = await admin.xrange(dlq_name(CONTENT_PROCESS))
+    _fields, meta = split_dead_letter({k.decode(): v.decode() for k, v in raw.items()})
+    assert meta.reason.startswith("gave up on attempt 3: KeyError")
     assert (await group_info(admin))["pending"] == 0
+    (fact,) = await facts(admin)
+    assert fact.reason == "extraction_error"
+    assert fact.detail == f"dead-lettered: {meta.reason}"  # the DLQ and the fact agree
+
+
+async def test_a_dead_letter_refused_every_time_never_reruns_the_command(
+    admin, bus, stores, monkeypatch, caplog
+) -> None:
+    # A broken DLQ: each reclaim retries the dead-letter alone, logs it, publishes
+    # nothing more, and leaves the entry pending as the visible signal (#28).
+    counting_handle, calls = escaping_handle(times=3)
+    monkeypatch.setattr("processor.consumer.handle", counting_handle)
+
+    async def refused_dead_letter(self, *_args, **_kwargs):
+        raise ResponseError("WRONGTYPE Operation against a key holding the wrong kind")
+
+    monkeypatch.setattr(AsyncBusConsumer, "dead_letter", refused_dead_letter)
+    consumer = make_consumer(bus, stores)
+    await consumer.start()
+    await issue(admin, stores)
+    caplog.set_level(logging.INFO, logger="processor.consumer")
+    for _ in range(2):
+        with pytest.raises(KeyError):
+            await consumer.step()
+    for _ in range(3):  # the give-up, then two retries
+        with pytest.raises(ResponseError):
+            await consumer.step()
+
+    assert calls == [1, 2, 3]
+    assert (await group_info(admin))["pending"] == 1
+    assert [f.reason for f in await facts(admin)] == ["extraction_error"]
+    dead = [r for r in caplog.records if r.getMessage() == "dead-lettering"]
+    assert [(r.levelno, r.attempt, r.handle_skipped) for r in dead] == [
+        (logging.ERROR, 3, False),
+        (logging.ERROR, 3, True),
+        (logging.ERROR, 3, True),
+    ]
+    assert len({r.reason for r in dead}) == 1  # the original reason, not a new one
+    assert [r.failure_fact for r in dead] == ["published", "skipped", "skipped"]
+    assert all(r.input_digest == hashlib.sha256(HTML).hexdigest() for r in dead)  # #26
 
 
 async def test_an_escape_logs_its_command(admin, bus, stores, monkeypatch, caplog) -> None:
