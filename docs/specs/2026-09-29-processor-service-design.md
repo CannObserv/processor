@@ -302,10 +302,11 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
     expires it instead; after cutover that fails the fetch with
     `processing_timeout` and sets the item to ERROR, and the next scheduled
     fetch starts a fresh lineage.
-  - **No re-run after giving up** (amended 2026-10-05, #28). If the dead-letter
-    does not land (a refusal of either kind), the entry stays pending and the
-    next reclaim retries the give-up only: the failure fact if it has not gone
-    out, then the dead-letter, with the original reason. The command does not
+  - **No re-run after giving up** (amended 2026-10-05, #28). If the give-up
+    does not finish (the failure fact refused transiently, or the dead-letter
+    refused either way), the entry stays pending and the next reclaim retries
+    the give-up only: the failure fact if it has not gone out, then the
+    dead-letter, with the original reason and traceback. The command does not
     run again, so no success fact can follow the failure, and the untrusted
     parser (#2) never sees that input again. A dead-letter refused every time
     (say `WRONGTYPE` on `content.process.dlq`) leaves the entry pending: each

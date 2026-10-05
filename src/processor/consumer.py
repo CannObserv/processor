@@ -18,9 +18,10 @@ max-deliveries hook, no loop (spec Open Question 2) — so the loop is here:
   (#17), so Watcher closes it instead of waiting; a refused one is logged and the
   entry dead-lettered anyway.
 - A strike count clears only once the entry's ack or dead-letter lands, so a failed
-  one on the last attempt does not restart the count. A dead-letter at the cap that
-  does not land is retried alone (#28): the command never runs again in this
-  process, so no success follows its failure fact.
+  one on the last attempt does not restart the count. A give-up at the cap that does
+  not finish (the failure fact or the dead-letter refused) is retried alone (#28):
+  the command never runs again in this process, so no success follows its failure
+  fact.
 - ``run``: ``step`` until stopped, backing off on any exception (connection loss,
   ``NOPERM``, ``OOM``), never exiting on one. A stop also ends a reclaim between
   messages: the in-flight command finishes, and the rest of a backlog stays pending
@@ -236,7 +237,7 @@ class Consumer:
             message.message_id,
             dict(message.fields),
             reason,
-            exc_info=escape,  # a retry has no exception of its own
+            exc_info=escape,  # a retry raised nothing of its own
             failure_fact=failure_fact,
             handle_skipped=handle_skipped,
             **ids,
