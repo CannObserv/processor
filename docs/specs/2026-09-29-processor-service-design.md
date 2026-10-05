@@ -234,9 +234,9 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
 | Bytes hash ≠ `input_digest` | `input_digest_mismatch`, terminal | yes |
 | Extractor raises, including `MemoryError` under `RLIMIT_AS` | `extraction_error`, terminal | yes |
 | Child timeout or crash | — | no; the 3rd attempt publishes `extraction_error`, terminal, and acks |
-| A non-transient exception escaping the handler (a bug, or an ack or dead-letter refused), amended 2026-09-30 and 2026-10-02 | at the cap, `extraction_error`, terminal, unless this entry's fact already went out (a fact published before a refused ack stands) | no; counted like a strike, and the 3rd attempt publishes, then dead-letters the entry with the exception as its reason |
+| A non-transient exception escaping the handler (a bug, or an ack or dead-letter refused), amended 2026-09-30, 2026-10-02 and 2026-10-05 | at the cap, `extraction_error`, terminal, unless this entry's fact already went out (a fact published before a refused ack stands) | no; counted like a strike, and the 3rd attempt publishes, then dead-letters the entry with the exception as its reason. A dead-letter that does not land is retried alone, without running the command again (#28) |
 | GCS 5xx / 429 / timeout / auth; broker `NOPERM`; broker `OOM command not allowed`; broker `MISCONF` / `BUSY` / `MASTERDOWN` / `TRYAGAIN` / `CLUSTERDOWN` / `NOREPLICAS` (amended 2026-09-30) | — | no; the entry is reclaimed |
-| A non-transient publish failure (e.g. `WRONGTYPE`, or a bug in serialization), amended 2026-09-30 and 2026-10-02 | at the cap, `extraction_error`, terminal, best effort (the same refusal usually refuses it too) | no; counted like a strike, and the 3rd attempt dead-letters the entry |
+| A non-transient publish failure (e.g. `WRONGTYPE`, or a bug in serialization), amended 2026-09-30, 2026-10-02 and 2026-10-05 | at the cap, `extraction_error`, terminal, best effort (the same refusal usually refuses it too) | no; counted like a strike, and the 3rd attempt dead-letters the entry (retried alone if it does not land, #28) |
 
 - **`unsupported_media_type` is never emitted in v1** — `extractor_for_essence`
   is total (HTML for anything unknown).
@@ -302,13 +302,18 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
     expires it instead; after cutover that fails the fetch with
     `processing_timeout` and sets the item to ERROR, and the next scheduled
     fetch starts a fresh lineage.
-  - **Failure, then success.** If the dead-letter does not land after the fact
-    did (a refusal of either kind, or a crash or restart in between), the entry
-    stays pending and the reclaim runs the command again: still at the cap, or
-    from attempt 1 after a restart, which forgets the strikes and that the
-    fact went out. A run that now succeeds publishes a success fact and acks,
-    and the entry never reaches the DLQ. Under first-fact-wins the failure
-    stands.
+  - **No re-run after giving up** (amended 2026-10-05, #28). If the dead-letter
+    does not land (a refusal of either kind), the entry stays pending and the
+    next reclaim retries the give-up only: the failure fact if it has not gone
+    out, then the dead-letter, with the original reason. The command does not
+    run again, so no success fact can follow the failure, and the untrusted
+    parser (#2) never sees that input again. A dead-letter refused every time
+    (say `WRONGTYPE` on `content.process.dlq`) leaves the entry pending: each
+    reclaim, about every 11 min, logs one `dead-lettering` record at ERROR
+    (`handle_skipped` true) and runs nothing. That memory is per process, like
+    the strikes: after a restart the command runs again from attempt 1, and a
+    run that now succeeds publishes a success fact and acks. Under
+    first-fact-wins the failure stands.
   - **Frames that are not commands** (undecodable, or foreign events) carry no
     `command_id`, so they get no fact.
 - **Every outcome logs** `command_id`, `info_source_id`, reason and timings. It also logs
