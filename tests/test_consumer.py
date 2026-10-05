@@ -704,7 +704,7 @@ async def test_a_give_up_retried_after_a_refused_failure_fact_keeps_the_tracebac
 ) -> None:
     # The fact's transient refusal comes before any dead-lettering record, and the
     # retry raises nothing of its own: the record must still carry the bug's traceback.
-    counting_handle, _calls = escaping_handle(times=3)
+    counting_handle, calls = escaping_handle(times=3)
     monkeypatch.setattr("processor.consumer.handle", counting_handle)
     publisher = AsyncBusPublisher(bus)
     publishes = itertools.count()
@@ -725,6 +725,7 @@ async def test_a_give_up_retried_after_a_refused_failure_fact_keeps_the_tracebac
         await consumer.step()
     await consumer.step()
 
+    assert calls == [1, 2, 3]  # the retry re-ran the give-up, not the command
     assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 1
     (dead,) = [r for r in caplog.records if r.getMessage() == "dead-lettering"]
     assert (dead.handle_skipped, dead.failure_fact) == (True, "published")
