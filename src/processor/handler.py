@@ -164,8 +164,8 @@ async def handle(message: BusMessage, *, attempt: int, deps: Deps) -> Dispositio
 def input_fields(command: ContentProcessCommand) -> dict[str, str]:
     """``input_digest`` for an outcome record, once it is a valid fingerprint (#26).
 
-    Before validation it is untrusted input; an ``invalid_input`` record's ``detail``
-    carries the rejected value instead.
+    Before validation it is untrusted input. A malformed one is left out, and its
+    ``invalid_input`` record's ``detail`` quotes it.
     """
     try:
         return {"input_digest": validate_fingerprint(command.input_digest)}

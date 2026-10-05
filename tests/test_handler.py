@@ -387,6 +387,13 @@ async def test_an_input_digest_that_fails_validation_is_not_logged(h: Harness) -
     assert "../" in disposition.detail  # the rejected value is still in the record
 
 
+async def test_an_invalid_input_with_a_valid_digest_still_names_it(h: Harness) -> None:
+    # invalid_input for a foreign input_uri: the digest itself passed validation.
+    disposition = await h.run(h.message(store=False, input_uri="gs://elsewhere/blob.bin"))
+    assert disposition.reason == "invalid_input"
+    assert disposition.fields == {"input_digest": hashlib.sha256(HTML).hexdigest()}
+
+
 async def test_a_strike_record_names_the_input_that_struck(h: Harness) -> None:
     h.run_child = fixed_child(ChildResult(kind="timeout", detail="120 s"))
     disposition = await h.run(h.message(), attempt=1)
