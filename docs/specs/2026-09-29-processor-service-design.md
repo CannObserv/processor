@@ -373,7 +373,6 @@ Status re-checked against each repo on 2026-10-05 (#23).
 | archiver | Informational comment on #179: the processor is Processor. | **Done:** [archiver#179 comment](https://github.com/CannObserv/archiver/issues/179#issuecomment-6002156775), 2026-10-05. |
 | GCP / tailnet | Bucket, service account and grants (Section 2); the tailnet rule. Operator acts. | **Done.** GCP: #14; the tailnet rule 2026-09-29 ([DEPLOYMENT.md](../DEPLOYMENT.md) prerequisites). |
 
-
 **Cutover order:**
 
 1. This spec approved; the external drafts approved.
