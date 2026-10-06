@@ -41,6 +41,7 @@ from co_core.pure.util.blobstore import validate_fingerprint
 from co_core.pure.util.hashing import bare_sha256
 from google.cloud.storage.exceptions import DataCorruption
 
+from processor._contain import Containment
 from processor.child import ChildResult, transform_target
 from processor.errors import is_transient
 from processor.processors import TRANSFORMS
@@ -79,6 +80,7 @@ class Deps:
     extraction_timeout_s: float
     rlimit_as_bytes: int
     max_attempts: int
+    containment: Containment
 
 
 class _Terminal(Exception):
@@ -208,6 +210,7 @@ async def _derive(
         (raw, command.media_type, command.source_spec),
         timeout_s=deps.extraction_timeout_s,
         rlimit_as_bytes=deps.rlimit_as_bytes,
+        containment=deps.containment,
     )
     since = timer.lap("extract_ms", since)
     if result.kind == "raised":

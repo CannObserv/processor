@@ -24,6 +24,7 @@ from google.auth import exceptions as gauth
 from google.cloud.storage.exceptions import DataCorruption
 from redis import exceptions as rx
 
+from processor._contain import Containment, strongest_available
 from processor.child import ChildResult, run_in_child
 from processor.handler import Deps, Disposition, handle, publish_gave_up
 from processor.processors.extract import PROCESSOR_VERSION, extract
@@ -97,6 +98,7 @@ class Harness:
     output: LocalBlobStore
     publisher: FakePublisher = field(default_factory=FakePublisher)
     run_child: object = inprocess_child
+    containment: Containment = field(default_factory=strongest_available)
     input_override: object = None
     output_override: object = None
 
@@ -112,6 +114,7 @@ class Harness:
             extraction_timeout_s=120,
             rlimit_as_bytes=3 * GiB,
             max_attempts=3,
+            containment=self.containment,
         )
 
     def message(self, raw: bytes = HTML, *, store: bool = True, **overrides) -> BusMessage:
@@ -427,3 +430,15 @@ async def test_publish_gave_up_raises_what_the_publish_raises(h: Harness) -> Non
     h.publisher.fail = rx.ResponseError("WRONGTYPE Operation against a key")
     with pytest.raises(rx.ResponseError):
         await publish_gave_up(h.message(store=False).payload, h.deps, "dead-lettered: x")
+
+
+async def test_the_child_runs_under_the_configured_containment(h: Harness) -> None:
+    seen: list[object] = []
+
+    async def recording_child(target: str, args: tuple, **kwargs: object) -> ChildResult:
+        seen.append(kwargs["containment"])
+        return await inprocess_child(target, args)
+
+    h.run_child, h.containment = recording_child, "off"
+    await h.run(h.message())
+    assert seen == ["off"]

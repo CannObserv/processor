@@ -1,31 +1,67 @@
-"""The killable child: timeout, ``RLIMIT_AS``, hard exits, a clean result channel (spec §3)."""
+"""The killable child: timeout, ``RLIMIT_AS``, hard exits, a clean result channel, and
+its containment (spec §3, #2).
+
+Every child here runs under ``CONTAINMENT``: ``required`` where the kernel offers it
+(``co-processor`` always does), ``off`` elsewhere, as the report header says. The
+containment tests run ``required`` and pair each denial with an ``off`` control that
+succeeds, so a pass is never a missing file or a dead listener.
+"""
 
 import asyncio
+import errno
+import gzip
 import json
 import os
 import signal
+import socket
 import time
 from pathlib import Path
 
 import pytest
 
+from processor._contain import REQUIRED_ABI, Containment, landlock_abi, strongest_available
 from processor.child import ChildResult, run_in_child, transform_target
 from processor.processors import TRANSFORMS
 from processor.processors.extract import extract
 
 TESTS = str(Path(__file__).resolve().parent)
+REPO = Path(TESTS).parent
 GiB = 1024**3
+CONTAINMENT = strongest_available()
+ABI = landlock_abi()
+needs_landlock = pytest.mark.skipif(
+    ABI < REQUIRED_ABI,
+    reason=f"Landlock ABI {ABI} < {REQUIRED_ABI}: child containment untested here",
+)
 
 
-async def _run(name: str, *args, timeout_s: float = 30, rlimit: int = 2 * GiB) -> ChildResult:
-    return await _run_target(f"child_targets:{name}", *args, timeout_s=timeout_s, rlimit=rlimit)
+async def _run(
+    name: str,
+    *args,
+    timeout_s: float = 30,
+    rlimit: int = 2 * GiB,
+    containment: Containment = CONTAINMENT,
+) -> ChildResult:
+    return await _run_target(
+        f"child_targets:{name}", *args, timeout_s=timeout_s, rlimit=rlimit, containment=containment
+    )
 
 
 async def _run_target(
-    target: str, *args, timeout_s: float = 30, rlimit: int = 2 * GiB
+    target: str,
+    *args,
+    timeout_s: float = 30,
+    rlimit: int = 2 * GiB,
+    containment: Containment = CONTAINMENT,
+    sys_path: tuple[str, ...] = (TESTS,),
 ) -> ChildResult:
     return await run_in_child(
-        target, args, timeout_s=timeout_s, rlimit_as_bytes=rlimit, sys_path=(TESTS,)
+        target,
+        args,
+        timeout_s=timeout_s,
+        rlimit_as_bytes=rlimit,
+        containment=containment,
+        sys_path=sys_path,
     )
 
 
@@ -55,7 +91,8 @@ async def test_allocation_under_the_limit_succeeds() -> None:
 async def test_timeout_kills_the_child(tmp_path: Path) -> None:
     pid_file = tmp_path / "pid"
     started = time.monotonic()
-    result = await _run("pid_then_sleep", str(pid_file), 60, timeout_s=2)
+    # "off": the target writes a pid file, which containment refuses.
+    result = await _run("pid_then_sleep", str(pid_file), 60, timeout_s=2, containment="off")
     assert result.kind == "timeout"
     assert time.monotonic() - started < 10
     pid = int(pid_file.read_text())
@@ -113,16 +150,40 @@ def test_transform_target_names_an_importable_function() -> None:
     assert transform_target(TRANSFORMS["extract"]) == "processor.processors.extract:extract"
 
 
-async def test_parity_corpus_is_identical_through_the_child() -> None:
+def _whole_corpus() -> list[tuple[str, tuple]]:
     corpus = Path(TESTS) / "fixtures" / "parity"
-    for case in json.loads((corpus / "cases.json").read_text()):
-        raw = (corpus / "inputs" / case["input"]).read_bytes()
-        args = (raw, case["media_type"], case["source_spec"])
-        result = await run_in_child(
-            transform_target(extract), args, timeout_s=60, rlimit_as_bytes=3 * GiB
+    jobs = [
+        (
+            case["id"],
+            (
+                (corpus / "inputs" / case["input"]).read_bytes(),
+                case["media_type"],
+                case["source_spec"],
+            ),
         )
-        assert result.kind == "ok", (case["id"], result.detail)
-        assert result.value == extract(*args), case["id"]
+        for case in json.loads((corpus / "cases.json").read_text())
+    ]
+    for item in json.loads((corpus / "real" / "export.json").read_text())["items"]:
+        raw = gzip.decompress((corpus / "real" / f"{item['input_digest']}.bin.gz").read_bytes())
+        jobs.append((item["input_digest"][:12], (raw, item["media_type"], item["source_spec"])))
+    return jobs
+
+
+async def test_the_whole_parity_corpus_is_identical_through_the_child() -> None:
+    # cases.json and real/ (#16), under CONTAINMENT: the allowlist must cover every
+    # import and data file an extractor reaches for (#2).
+    jobs = _whole_corpus()
+    assert len(jobs) > len(json.loads((Path(TESTS) / "fixtures/parity/cases.json").read_text()))
+    for job_id, args in jobs:
+        result = await run_in_child(
+            transform_target(extract),
+            args,
+            timeout_s=60,
+            rlimit_as_bytes=3 * GiB,
+            containment=CONTAINMENT,
+        )
+        assert result.kind == "ok", (job_id, result.detail)
+        assert result.value == extract(*args), job_id
 
 
 async def test_a_compromised_child_cannot_run_code_in_the_parent(tmp_path: Path) -> None:
@@ -142,7 +203,8 @@ async def test_only_allowlisted_globals_decode() -> None:
 async def test_the_child_volunteers_as_the_oom_victim() -> None:
     # If the host does reach the OOM killer, the child dies, not the consumer: the
     # unit's OOMPolicy=continue keeps the service up and the loss is a counted crash.
-    result = await _run("oom_score_adj")
+    # "off": the target reads /proc, which containment refuses (the write is before it).
+    result = await _run("oom_score_adj", containment="off")
     assert (result.kind, result.value) == ("ok", "1000")
 
 
@@ -151,7 +213,7 @@ async def test_a_terminal_interrupt_lets_the_child_finish(tmp_path: Path) -> Non
     # "finish the in-flight command"; a KeyboardInterrupt in the child would instead
     # come back as "raised", a terminal extraction_error for a healthy document.
     pid_file = tmp_path / "pid"
-    task = asyncio.create_task(_run("pid_then_sleep", str(pid_file), 1.5))
+    task = asyncio.create_task(_run("pid_then_sleep", str(pid_file), 1.5, containment="off"))
     for _ in range(100):
         if pid_file.exists() and pid_file.read_text():
             break
@@ -159,3 +221,124 @@ async def test_a_terminal_interrupt_lets_the_child_finish(tmp_path: Path) -> Non
     os.kill(int(pid_file.read_text()), signal.SIGINT)
     result = await task
     assert (result.kind, result.value) == ("ok", None)
+
+
+# --- containment (#2) ---------------------------------------------------------
+
+
+def test_the_suite_runs_the_strongest_containment_the_kernel_offers() -> None:
+    assert CONTAINMENT == ("required" if ABI >= REQUIRED_ABI else "off")
+
+
+async def test_a_child_that_cannot_contain_itself_never_runs_the_target(tmp_path: Path) -> None:
+    # Fails closed on any kernel: "/" on sys.path is refused (or the ABI is), and the
+    # child exits 70 before it reads its request, a strike rather than a verdict.
+    marker = tmp_path / "ran"
+    result = await _run_target(
+        "child_targets:try_write", str(marker), containment="required", sys_path=(TESTS, "/")
+    )
+    assert (result.kind, result.returncode) == ("crashed", 70)
+    assert "child containment failed" in result.detail
+    assert not marker.exists()
+
+
+async def _denied(target: str, *args) -> None:
+    """``required`` refuses it; ``off``, the control, allows it."""
+    contained = await _run(target, *args, containment="required")
+    control = await _run(target, *args, containment="off")
+    assert control.kind == "ok" and control.value[0] == "ok", control
+    assert contained.kind == "ok", contained.detail
+    assert contained.value[0] == "denied", contained.value
+    assert contained.value[1] in (errno.EACCES, errno.EPERM), contained.value
+
+
+def _secret(path: Path) -> Path:
+    if not os.access(path, os.R_OK):
+        pytest.skip(f"{path} absent or unreadable here; nothing to deny")
+    return path
+
+
+@needs_landlock
+async def test_the_child_cannot_read_a_file_outside_its_allowlist(tmp_path: Path) -> None:
+    # Stands in for the env file, the GCS key and the credentials directory.
+    secret = tmp_path / "secret.json"
+    secret.write_text('{"private_key": "x"}')
+    await _denied("try_read", str(secret))
+
+
+@needs_landlock
+@pytest.mark.parametrize(
+    "path",
+    ["/etc/processor/.env", "/etc/processor/co-gcs-processor-writer.json", str(REPO / ".env")],
+)
+async def test_the_child_cannot_read_the_real_secrets(path: str) -> None:
+    await _denied("try_read", str(_secret(Path(path))))
+
+
+@needs_landlock
+async def test_the_child_cannot_read_the_parents_environment() -> None:
+    await _denied("try_read", f"/proc/{os.getpid()}/environ")
+
+
+@needs_landlock
+async def test_the_child_cannot_read_the_service_users_home() -> None:
+    home = Path.home()
+    readable = [p for p in sorted(home.glob(".*")) if p.is_file() and os.access(p, os.R_OK)]
+    if not readable:
+        pytest.skip(f"no readable file in {home}")
+    await _denied("try_read", str(readable[0]))
+
+
+@needs_landlock
+async def test_the_child_cannot_write(tmp_path: Path) -> None:
+    await _denied("try_write", str(tmp_path / "dropped"))
+
+
+@pytest.fixture
+def tcp_listener():
+    server = socket.create_server(("127.0.0.1", 0))
+    yield server.getsockname()[1]
+    server.close()
+
+
+@needs_landlock
+async def test_the_child_cannot_open_a_tcp_connection(tcp_listener: int) -> None:
+    await _denied("try_connect", "AF_INET", ["127.0.0.1", tcp_listener])
+
+
+@needs_landlock
+async def test_the_child_cannot_reach_the_scratch_redis_port() -> None:
+    # The broker's port; the scratch redis-server stands in for it (no control:
+    # it may not be running here, and the socket is refused before any connect).
+    result = await _run("try_connect", "AF_INET", ["127.0.0.1", 6379], containment="required")
+    assert result.value == ["denied", errno.EPERM]
+
+
+@needs_landlock
+async def test_the_child_cannot_reach_a_unix_socket(tmp_path: Path) -> None:
+    path = tmp_path / "s.sock"
+    with socket.socket(socket.AF_UNIX) as server:
+        server.bind(str(path))
+        server.listen()
+        await _denied("try_connect", "AF_UNIX", str(path))
+
+
+@needs_landlock
+@pytest.mark.parametrize("path", ["/run/docker.sock", "/run/tailscale/tailscaled.sock"])
+async def test_the_child_cannot_reach_the_hosts_sockets(path: str) -> None:
+    # docker.sock means root through the docker group; tailscaled's is 0666. Both are
+    # refused at socket(), before any connect (#2, #5's docker.socket box).
+    if not os.path.exists(path):
+        pytest.skip(f"{path} absent here")
+    result = await _run("try_connect", "AF_UNIX", path, containment="required")
+    assert result.value == ["denied", errno.EPERM]
+
+
+@needs_landlock
+async def test_the_child_cannot_signal_its_parent() -> None:
+    await _denied("try_signal_parent")
+
+
+@needs_landlock
+async def test_the_child_cannot_run_a_program() -> None:
+    await _denied("try_exec", "/bin/sh")

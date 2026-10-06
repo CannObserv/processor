@@ -15,6 +15,8 @@ from pydantic import ValidationError
 from redis.asyncio import Redis
 
 from processor import dlq
+from processor._contain import landlock_abi, make_undumpable, unavailable_reason
+from processor.build import build_id
 from processor.child import run_in_child
 from processor.consumer import GROUP, Consumer, group_reader, redis_client
 from processor.handler import Deps
@@ -83,6 +85,16 @@ async def _ensure_group(settings: Settings) -> int:
 
 
 async def _run(settings: Settings) -> int:
+    # First: the env file's credential has been in our environment since exec, and
+    # the extraction child shares our uid (#2).
+    make_undumpable()
+    if settings.child_containment == "required" and (reason := unavailable_reason()):
+        logger.error(
+            "child containment unavailable",
+            extra={"reason": reason, "landlock_abi": landlock_abi()},
+        )
+        return 1
+
     try:
         stores = await asyncio.to_thread(build_stores, settings)
         await asyncio.to_thread(stores.input.preflight)
@@ -100,6 +112,7 @@ async def _run(settings: Settings) -> int:
         extraction_timeout_s=settings.extraction_timeout_s,
         rlimit_as_bytes=settings.rlimit_as_bytes,
         max_attempts=settings.max_attempts,
+        containment=settings.child_containment,
     )
     consumer = Consumer(
         client,
@@ -118,6 +131,9 @@ async def _run(settings: Settings) -> int:
         "starting",
         extra={
             "processor_version": PROCESSOR_VERSION,
+            "build": build_id(),
+            "child_containment": settings.child_containment,
+            "landlock_abi": landlock_abi(),
             "group": GROUP,
             "consumer_name": settings.consumer_name,
             "store_backend": settings.store_backend,

@@ -5,6 +5,8 @@ import io
 import os
 import pickle
 import signal
+import socket
+import subprocess
 import sys
 import time
 from collections import OrderedDict
@@ -96,3 +98,50 @@ def forge_protocol(kind, payload) -> None:
     channel.write(pickle.dumps((kind, payload)))
     channel.flush()
     os._exit(0)
+
+
+# What a child compromised by a document would try (#2). Each answers ["ok", detail]
+# or ["denied", errno], so a test can tell a refusal from a missing target.
+
+
+def _attempt(action) -> list:
+    try:
+        return ["ok", action()]
+    except OSError as exc:
+        return ["denied", exc.errno]
+
+
+def try_read(path: str) -> list:
+    def read() -> int:
+        with open(path, "rb") as f:
+            return len(f.read(64))
+
+    return _attempt(read)
+
+
+def try_write(path: str) -> list:
+    def write() -> int:
+        with open(path, "w") as f:
+            return f.write("written by the child")
+
+    return _attempt(write)
+
+
+def try_connect(family: str, address) -> list:
+    def connect() -> str:
+        with socket.socket(getattr(socket, family)) as s:
+            s.connect(tuple(address) if isinstance(address, list) else address)
+        return "connected"
+
+    return _attempt(connect)
+
+
+def try_signal_parent() -> list:
+    return _attempt(lambda: os.kill(os.getppid(), 0))
+
+
+def try_exec(path: str) -> list:
+    def run() -> int:
+        return subprocess.run([path, "-c", "exit 0"], check=False).returncode
+
+    return _attempt(run)

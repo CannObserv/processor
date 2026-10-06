@@ -5,16 +5,20 @@ its exit status reported on a crash, ``RLIMIT_AS`` set before the extractors loa
 A thread cannot be killed, and one PDF that wedges pypdf would stall the consumer
 forever. At ≤ ~100 commands/day the start-up cost is noise.
 
-The child parses untrusted documents, so it is treated as untrusted too: it gets a
-scrubbed environment (never the broker credential or the GCS key), and its result is
-decoded by an unpickler that resolves no global but ``ExtractOutcome`` — a child
-compromised by a document cannot make the parent run code.
+The child parses untrusted documents, so it is treated as untrusted too:
 
-**Not a sandbox.** The child runs as the service user, so a child compromised by a
-parser bug can still read what that user can (the env file, the GCS key, the
-parent's ``/proc/<pid>/environ``) and open connections. Accepted for the MVP
-(2026-09-30); containment — Landlock, a non-dumpable parent, a dedicated service
-user — is processor#2.
+- a scrubbed environment (never the broker credential or the GCS key);
+- under ``containment="required"`` (production's default), it contains itself
+  before it reads its request: Landlock and seccomp (``processor._contain``, #2). It
+  can then read only the interpreter, its libraries and the code, write nothing,
+  open no socket, and signal nothing outside itself;
+- its result is decoded by an unpickler that resolves no global but
+  ``ExtractOutcome``, so a child compromised by a document cannot make the parent
+  run code.
+
+A child that cannot contain itself exits 70 before it runs anything: a crash (a
+strike), never a terminal verdict. ``processor run`` refuses to start where that
+would happen, so in production it is a backstop.
 """
 
 import asyncio
@@ -25,6 +29,8 @@ import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
+
+from processor._contain import Containment
 
 ChildKind = Literal["ok", "raised", "timeout", "crashed"]
 
@@ -71,14 +77,19 @@ async def run_in_child(
     *,
     timeout_s: float,
     rlimit_as_bytes: int,
+    containment: Containment,
     sys_path: Sequence[str] = (),
 ) -> ChildResult:
-    """Run ``target(*args)`` in a child; never raises for the child's own failures."""
+    """Run ``target(*args)`` in a child; never raises for the child's own failures.
+
+    ``containment`` has no default: every caller says which mode it runs.
+    """
     proc = await asyncio.create_subprocess_exec(
         sys.executable,
         "-I",
         "-m",
         "processor._child",
+        containment,
         str(rlimit_as_bytes),
         *sys_path,
         stdin=asyncio.subprocess.PIPE,

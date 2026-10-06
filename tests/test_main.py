@@ -22,6 +22,8 @@ from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 from processor.__main__ import main
+from processor._contain import landlock_abi, strongest_available
+from processor.build import build_id
 
 pytestmark = pytest.mark.integration
 
@@ -62,6 +64,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
         "CO_PROCESSOR_LOCAL_INPUT_ROOT": str(tmp_path / "in"),
         "CO_PROCESSOR_LOCAL_OUTPUT_ROOT": str(tmp_path / "out"),
         "CO_PROCESSOR_READ_BLOCK_MS": "200",
+        "CO_PROCESSOR_CHILD_CONTAINMENT": strongest_available(),
     }
     for key, value in values.items():
         monkeypatch.setenv(key, value)
@@ -107,6 +110,10 @@ async def test_run_processes_a_command_and_stops_on_sigterm(admin, env, tmp_path
     (outcome,) = [r for r in records if r.get("command_id") == "e2e-1"]
     assert (outcome["action"], outcome["reason"], outcome["level"]) == ("ack", "complete", "INFO")
     assert outcome["info_source_id"] == "src-1" and "total_ms" in outcome
+    (starting,) = [r for r in records if r["message"] == "starting"]
+    assert starting["child_containment"] == env["CO_PROCESSOR_CHILD_CONTAINMENT"]
+    assert starting["landlock_abi"] == landlock_abi()
+    assert starting["build"] == build_id()
 
 
 async def _seed_dlq(admin: Redis) -> str:
@@ -195,3 +202,48 @@ def test_dlq_list_count_must_be_positive(capsys) -> None:
         main(["dlq", "list", "--count", "0"])
     assert exc.value.code == 2
     assert "--count" in capsys.readouterr().err
+
+
+def test_run_refuses_to_start_without_the_containment_it_requires(env, monkeypatch, capsys) -> None:
+    # Fail closed at boot (#2): a unit that flaps says so once, where every command
+    # striking three times and dead-lettering would say it a hundred times, later.
+    monkeypatch.setenv("CO_PROCESSOR_CHILD_CONTAINMENT", "required")
+    monkeypatch.setattr("processor.__main__.unavailable_reason", lambda: "Landlock ABI 0 < 6")
+
+    def never(settings):
+        raise AssertionError("the stores were built before the containment check")
+
+    monkeypatch.setattr("processor.__main__.build_stores", never)
+    assert main(["run"]) == 1
+    (record,) = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    assert (record["level"], record["message"]) == ("ERROR", "child containment unavailable")
+    assert record["reason"] == "Landlock ABI 0 < 6"
+
+
+def test_off_starts_where_containment_is_unavailable(env, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("CO_PROCESSOR_CHILD_CONTAINMENT", "off")
+    monkeypatch.setattr("processor.__main__.unavailable_reason", lambda: "Landlock ABI 0 < 6")
+    monkeypatch.setattr("processor.__main__.make_undumpable", lambda: None)
+
+    def unreachable(settings):
+        raise OSError("past the containment check")
+
+    monkeypatch.setattr("processor.__main__.build_stores", unreachable)
+    assert main(["run"]) == 1
+    messages = [json.loads(line)["message"] for line in capsys.readouterr().err.splitlines()]
+    assert messages[-1].startswith("store preflight failed")
+
+
+def test_run_is_undumpable_before_it_reads_anything(env, monkeypatch) -> None:
+    # The env file's credential is in this process's environment from exec on;
+    # /proc/<pid>/environ closes before the first store or bus client exists (#2).
+    order: list[str] = []
+    monkeypatch.setattr("processor.__main__.make_undumpable", lambda: order.append("undumpable"))
+
+    def build(settings):
+        order.append("stores")
+        raise OSError("stop here")
+
+    monkeypatch.setattr("processor.__main__.build_stores", build)
+    assert main(["run"]) == 1
+    assert order == ["undumpable", "stores"]

@@ -34,6 +34,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import ResponseError
 
 from processor import consumer as consumer_module
+from processor._contain import strongest_available
 from processor.child import ChildResult, run_in_child
 from processor.consumer import GROUP, Consumer, redis_client
 from processor.handler import Deps
@@ -122,6 +123,7 @@ def make_consumer(client: Redis, stores: Stores, *, run_child=run_in_child, publ
         extraction_timeout_s=60,
         rlimit_as_bytes=3 * GiB,
         max_attempts=3,
+        containment=strongest_available(),
     )
     # min-idle 0 and a zero interval: every step reclaims whatever is pending.
     return Consumer(client, deps, consumer_name=name, read_block_ms=100,

@@ -10,6 +10,8 @@ from typing import Literal
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from processor._contain import Containment
+
 GiB = 1024**3
 
 # What a command may spend after its extraction before it counts as idle: the
@@ -41,6 +43,9 @@ class Settings(BaseSettings):
     # The child (spec §3) and the retry cap (spec §4).
     extraction_timeout_s: float = Field(default=120, gt=0)
     rlimit_as_bytes: int = Field(default=3 * GiB, ge=0)  # 0: no limit
+    # required: `processor run` refuses to start where the child cannot contain
+    # itself (Landlock ABI >= 6, a known seccomp arch). off: dev and CI only (#2).
+    child_containment: Containment = "required"
     max_attempts: int = Field(default=3, ge=1)
     reclaim_min_idle_ms: int = 600_000
     reclaim_interval_s: float = Field(default=60, gt=0)

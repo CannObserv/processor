@@ -14,7 +14,8 @@ What is real, and what is not:
   and so is a db already holding the streams. The script deletes its streams
   afterwards.
 - **Loop:** the real ``Consumer``: ``ensure_group``, read, ``handle`` in the real
-  child, store, publish, ack.
+  child under the configured ``CO_PROCESSOR_CHILD_CONTAINMENT`` (``required`` unless
+  the env file says otherwise, #2), store, publish, ack.
 - **Input:** a blob from the committed real corpus (``tests/fixtures/parity/real/``,
   watcher#325's export) in a temporary local store. It never expires, unlike
   ``gs://co-gcs-blobs``; the boot preflight covers the input bucket.
@@ -44,6 +45,8 @@ from co_core.pure.util.hashing import bare_sha256
 from co_core_aio.bus import AsyncBusPublisher
 from co_core_sync.drivers.blobstore.local import LocalBlobStore
 
+from processor._contain import Containment
+from processor.build import build_id
 from processor.child import run_in_child
 from processor.consumer import Consumer, redis_client
 from processor.handler import Deps
@@ -64,7 +67,9 @@ def export_item(digest: str) -> dict:
     return next(item for item in items if item["input_digest"] == digest)
 
 
-async def smoke(redis_url: str, output, item: dict) -> ProcessingCompleteEvent:
+async def smoke(
+    redis_url: str, output, item: dict, *, containment: Containment
+) -> ProcessingCompleteEvent:
     """Run ``item`` through the consumer on ``redis_url``; return its verified fact."""
     if urlparse(redis_url).hostname not in _LOCAL_HOSTS:
         raise ValueError(f"not the scratch redis-server: {redis_url!r}")
@@ -73,14 +78,16 @@ async def smoke(redis_url: str, output, item: dict) -> ProcessingCompleteEvent:
         if await client.exists(*_STREAMS):
             raise RuntimeError(f"scratch db not empty: it already holds {_STREAMS}")
         try:
-            return await _round_trip(client, output, item)
+            return await _round_trip(client, output, item, containment)
         finally:
             await client.delete(*_STREAMS)
     finally:
         await client.aclose()
 
 
-async def _round_trip(client, output, item: dict) -> ProcessingCompleteEvent:
+async def _round_trip(
+    client, output, item: dict, containment: Containment
+) -> ProcessingCompleteEvent:
     digest = item["input_digest"]
     raw = gzip.decompress((REAL / f"{digest}.bin.gz").read_bytes())
     with tempfile.TemporaryDirectory() as tmp:
@@ -94,6 +101,7 @@ async def _round_trip(client, output, item: dict) -> ProcessingCompleteEvent:
             extraction_timeout_s=120,
             rlimit_as_bytes=3 * GiB,
             max_attempts=3,
+            containment=containment,
         )
         consumer = Consumer(
             client,
@@ -146,8 +154,10 @@ def main() -> int:
     parser.add_argument("--digest", default=DEFAULT_DIGEST, help="a real-corpus input_digest")
     parser.add_argument("--bus-url", default=SCRATCH_URL, help="the scratch redis-server")
     args = parser.parse_args()
-    output = build_stores(Settings()).output
-    fact = asyncio.run(smoke(args.bus_url, output, export_item(args.digest)))
+    settings = Settings()
+    output = build_stores(settings).output
+    item = export_item(args.digest)
+    fact = asyncio.run(smoke(args.bus_url, output, item, containment=settings.child_containment))
     print(
         json.dumps(
             {
@@ -155,6 +165,8 @@ def main() -> int:
                 "output_uri": fact.output_uri,
                 "output_size_bytes": fact.output_size_bytes,
                 "processor_version": fact.processor_version,
+                "build": build_id(),
+                "child_containment": settings.child_containment,
             }
         )
     )

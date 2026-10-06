@@ -30,6 +30,7 @@ def test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.reclaim_min_idle_ms == 600_000
     assert s.reclaim_interval_s == 60
     assert s.max_attempts == 3
+    assert s.child_containment == "required"  # production fails closed (#2)
 
 
 def test_env_prefix_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -87,4 +88,13 @@ def test_knobs_out_of_range_are_refused(
     monkeypatch.setenv("CO_PROCESSOR_BUS_URL", URL)
     monkeypatch.setenv(f"CO_PROCESSOR_{name}", value)
     with pytest.raises(ValidationError, match=name.lower()):
+        Settings()
+
+
+def test_child_containment_is_required_or_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CO_PROCESSOR_BUS_URL", URL)
+    monkeypatch.setenv("CO_PROCESSOR_CHILD_CONTAINMENT", "off")
+    assert Settings().child_containment == "off"
+    monkeypatch.setenv("CO_PROCESSOR_CHILD_CONTAINMENT", "best_effort")
+    with pytest.raises(ValidationError):
         Settings()
