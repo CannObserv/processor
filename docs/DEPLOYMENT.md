@@ -171,7 +171,7 @@ Status's CI gate (status#11) and drift check (status#12) aren't adopted yet. Eac
 
 ## Deploy a change: `scripts/deploy.sh`
 
-Run as `exedev`, from `~/processor`, after the PR merges. The script fetches `origin` itself:
+Run as `exedev`, from `~/processor`, after the PR merges. It needs `git`, `uv`, `jq` and `flock` (util-linux) on the `PATH`, plus `sudo` for `systemctl`, `systemd-run` and the unit file; `co-processor` has all of them. The script fetches `origin` itself:
 
 ```bash
 cd ~/processor && git pull --ff-only     # for the skills hook; the deploy fetches on its own
@@ -223,6 +223,7 @@ The extraction child is assumed compromised by the document it parses (spec §3,
   - `docker.socket` disabled. It is enabled by default on exeuntu, and `/run/docker.sock` meant root to the `docker` group; the child can't reach any socket now, but `processor` isn't in that group either.
 - **Fail closed.** Under `CO_PROCESSOR_CHILD_CONTAINMENT=required` (the default), `processor run` exits 1 with `child containment unavailable` where the kernel can't contain the child, and systemd restarts it, so the unit flaps visibly.
 - **The boot canary.** Before it takes any command, `processor run` makes one real extraction (a tiny HTML page) through the child, under the configured containment. It exits 1 with `child canary failed` (`kind`, `detail`) if that fails. This covers what the ABI check can't see, such as a library outside the allowlist after a host update, which would otherwise crash every command three times and publish a terminal `extraction_error` for each. A child that fails to contain itself exits 70 before it reads its request, which counts as a strike.
+- **Debugging the parent.** Being undumpable means no core dump, and `py-spy dump` or `gdb -p` need root (`sudo py-spy dump --pid <pid>`). The child is still dumpable, and its environment holds only `PATH` and `LANG`.
 - **What the child can still reach:**
   - the kernel's other syscalls;
   - its own code, the stdlib and the shared libraries;
