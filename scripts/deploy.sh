@@ -321,13 +321,16 @@ if ((units_ok)) && restart_and_verify "$build"; then
 else
   if [[ -z "$previous" ]]; then
     # A first deploy: nothing to switch back to. The unit it replaced goes back,
-    # but the install's other steps (the user, /etc/processor) are the
-    # operator's to undo: DEPLOYMENT.md § Rollback.
+    # and the service restarts on it: left alone, the process that failed the
+    # verify would keep running the new release, consuming, under a unit file
+    # that no longer describes it (CR 3). The install's other steps (the user,
+    # /etc/processor) are the operator's to undo: DEPLOYMENT.md § Rollback.
     restore_unit
     sudo systemctl reset-failed "$UNIT" || true
-    logger -t processor-deploy "live failed on $build; no previous release" || true
+    sudo systemctl restart "$UNIT" || note "systemctl restart $UNIT failed on the restored unit"
+    logger -t processor-deploy "live failed on $build; no previous release; restarted on the unit it replaced" || true
     dead "live failed on $build, and there is no previous release to return to;" \
-      "the unit it replaced is back. docs/DEPLOYMENT.md § Rollback"
+      "restarted on the unit it replaced. docs/DEPLOYMENT.md § Rollback"
   fi
   if [[ "$previous" == "$build" ]]; then
     [[ -f "$backup/$UNIT.service" || -f "$backup/$UNIT.service.added" ]] ||

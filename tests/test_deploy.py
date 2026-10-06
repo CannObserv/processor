@@ -292,6 +292,11 @@ def test_a_first_deploy_that_fails_puts_the_old_unit_back_and_exits_4(w: Env) ->
     assert result.returncode == 4
     assert "no previous release" in result.stderr
     assert w.installed_unit.read_text() == "[Service]\nUser=exedev\n"
+    # CR 3: and the service is restarted onto it, never left on the failed build.
+    calls = w.log("systemctl").splitlines()
+    restore = calls.index("daemon-reload", calls.index("restart processor"))
+    assert "restart processor" in calls[restore:]
+    assert "restarted on the unit it replaced" in result.stderr
 
 
 def test_when_the_old_build_fails_too_it_exits_4(w: Env) -> None:

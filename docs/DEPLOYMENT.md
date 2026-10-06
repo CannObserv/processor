@@ -196,7 +196,7 @@ A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pypr
      - **Pass:** it prints `"result": "pass"` when the fact matches Watcher's recorded fingerprint, the entry is acked, and the object reads back intact.
 5. **On failure:** switch back (the unit too), restart, and prove the old build the same way.
    - Exit 1 when the old build answers.
-   - Exit 4 when nothing answers: the old build failed too, or there was nothing to switch back to. On a first deploy, the unit it replaced goes back, and § Rollback applies.
+   - Exit 4 when nothing answers: the old build failed too, or there was nothing to switch back to. On a first deploy, the unit it replaced goes back and the service restarts on it, and § Rollback applies.
 
 Then the host configs under `deploy/` (tailscaled's drop-in, NodeSource's apt files) are compared with their installed copies. A difference is a note, never an install. The deploy keeps the 5 most recently deployed releases plus `live`.
 
