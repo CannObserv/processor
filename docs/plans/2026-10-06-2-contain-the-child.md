@@ -1,7 +1,7 @@
 ---
 title: Contain the extraction child (#2)
 date: 2026-10-06
-status: draft for gate 2 (the operator approves the deploy and install changes before building); per #2 and its hand-off from epic #24 (2026-10-05)
+status: draft for gate 2 (the operator approves the deploy and install changes before building); per #2 and its hand-off from epic #24 (2026-10-05); Layer 3 follows the cohort deploy standard (broker#22, status#9 R1–R13), revised 2026-10-06
 ---
 
 # Contain the extraction child
@@ -77,25 +77,60 @@ Add a new module, `src/processor/_contain.py`. It is stdlib only (`ctypes`, `os`
 - `run_in_child(..., containment=…)` is a **required** keyword, so every caller says which mode it runs. `Deps.containment` carries it, and `handler` passes it on.
 - **Failing closed at boot.** Under `required`, `_run` exits 1 before the store preflight if `landlock_abi() < 6` or the arch is unsupported. It logs `"child containment unavailable"` with the ABI. systemd then restarts it and the unit visibly flaps. That beats every command striking three times and dead-lettering. The `starting` record gains `child_containment` and `landlock_abi`.
 
-## Layer 3: a dedicated user and a root-owned tree (trap 1, option a)
+## Layer 3: a dedicated user, and releases that follow the cohort's deploy standard (trap 1)
 
 **The deploy model changes; gate 2 approves this section.**
 
+**The standard followed.** broker#22 is the cohort design: production runs a deploy of a pushed commit, never the dev tree. Its first shipped pilot is CannObserv/status#9: spec `docs/specs/2026-09-30-deploy-releases-design.md`, decisions R1–R13, `scripts/deploy.sh` with 59 tests, and `docs/DEPLOYMENT.md`. Status then added:
+- the CI gate, #11;
+- a drift check, #12;
+- unit installs on every deploy, #18.
+
+Provisioner#23 plans its own deploy on this repo's `DEPLOYMENT.md`, so processor matches Status's names and contract rather than inventing a third shape. Where processor deviates, the table says why. The deviations are feedback for the cohort skill (§ Feedback for the cohort deploy skill).
+
+| Status | Processor | Why it differs |
+|---|---|---|
+| R1: every unit runs an immutable release, never a checkout | same | |
+| R2: `/srv/status/releases/<build>/`, `live` and `dev` links, owned by `exedev`, `chmod -R a-w` | `/srv/processor/releases/<build>/` and `live`, owned by `exedev`, `a-w`, **`o+rX`** | No `dev` target (R12). The release must be readable by `processor`. **With a dedicated service user, exedev-owned read-only releases are a real boundary.** `processor` is not the owner, so it can't `chmod` them back. That is goal 5 without status#14's root ownership, and the build needs no sudo. |
+| R3: `git archive <sha>` after `git fetch`; live must be an ancestor of `origin/main` | same | |
+| R4: build in place; `uv sync --locked --no-dev --compile-bytecode`; `REVISION` last; a directory without it is rebuilt; a linked release is never rebuilt | same, plus `--no-editable`, `--python /usr/bin/python3.12` and `UV_PYTHON_DOWNLOADS=never`, plus the wheelhouse copied in | **Non-editable:** `sys.path` (and so the child's Landlock allowlist) then holds only the stdlib and `site-packages`. **The system interpreter:** `processor` can't read anything under `/home` (`/home/exedev` is 0750, and the unit sets `ProtectHome=yes`), so a uv-managed Python there would not start. **The wheelhouse:** co-core is private, and `find-links = ["./.wheelhouse"]` is relative (broker#22 Q5). |
+| R5: units run `uv run --frozen --no-sync` | `ExecStart=/srv/processor/live/.venv/bin/processor run` | The venv's entry point never syncs either, and it needs no uv and no uv cache for a user with no home. A test holds that no unit runs `uv`. |
+| R6: per target: migrate, switch, install units, restart, verify, switch back on failure | switch, install units, `reset-failed`, restart, verify, switch back on failure | There is no database, and no HTTP endpoint (see verify, below). |
+| R7–R9: expand-only migrations, the schema check, skip the migration when the database is ahead | n/a | No database. |
+| R10: build id from `REVISION` | the `starting` record carries `build`, which is `REVISION`, or `dev` when there is none | Only a long-running process, so its start record is the one place to report it. |
+| R11: env from `/etc/<svc>/` only | same, plus `LoadCredential=` for the key | See secrets, below. |
+| R12: dev is deployed too | **no dev target** | Processor has no dev service. The rehearsal is the smoke run on the scratch bus, which is part of verify. |
+| R13: runs as `exedev`; sudo only for systemctl and unit files; `flock`; keeps 5 releases plus the linked ones | same, plus sudo for the smoke's `systemd-run` | |
+| #11 CI gate, #12 drift check | **deferred to a follow-up issue** | They are separable, and Status deferred them from #9 the same way. Processor is public, so the gate would need no token. |
+| #18: units installed from the release; host configs compared, never installed | same: `processor.service` is installed; `deploy/tailscaled.service.d/*` is compared and warns | |
+
+**The pieces:**
+
 - **User:** `useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin processor`. It gets no sudo and is not in group `docker`.
-- **Tree:** `/opt/processor/releases/<sha>/`, holding a `git archive` of the commit plus its own `.venv`:
-  - built with `uv sync --frozen --no-dev --no-editable --compile-bytecode --python /usr/bin/python3.12`, so `sys.path` holds no `src/` and no interpreter from under `/home`;
-  - owned by `root:root` and not writable by anyone else.
+- **`scripts/deploy.sh [<ref>]`** (new). It runs as `exedev` from any checkout. Status's interface and names apply: `<ref>` defaults to `origin/main`, a rollback is `scripts/deploy.sh <old build>`, and `journalctl -t processor-deploy` records each switch. Variables: `PROCESSOR_DEPLOY_ROOT=/srv/processor`, `PROCESSOR_DEPLOY_ETC=/etc`, `PROCESSOR_DEPLOY_KEEP=5` and `PROCESSOR_DEPLOY_VERIFY_SECONDS=300`.
+  1. Refuse to run as root, or while another deploy holds the lock (`flock`).
+  2. `git fetch --prune origin`. Resolve `<ref>`, and require it to be an ancestor of `origin/main`.
+  3. Build `releases/<build>`, `<build>` being the 12-character short SHA, unless a complete one exists whose venv imports `processor`:
+     - `git archive`;
+     - copy in `.wheelhouse`;
+     - `uv sync` (R4, above);
+     - write `REVISION`;
+     - `chmod -R a-w,o+rX`.
+  4. Record the old `live`, then switch it: `ln -s` to a temporary name, then `mv -T`.
+  5. Install `deploy/processor.service` from the release if it differs from the installed copy: `sudo install -m 644`, then `daemon-reload`. Compare the host configs and warn.
+  6. `sudo systemctl reset-failed processor`, then `sudo systemctl restart processor`. The restart waits for the in-flight command, up to `TimeoutStopSec=240`.
+  7. **Verify:**
+     - within the verify budget, the new `MainPID` logs `starting` with `build` equal to `<build>` and `child_containment: required`, then `consuming`;
+     - then the **smoke**, run through `systemd-run --pipe --wait`:
+       - as `processor`;
+       - with the unit's `EnvironmentFile=`, `LoadCredential=`, `ProtectHome=` and `NoNewPrivileges=`;
+       - running `scripts/smoke_scratch_bus.py` from the release: the scratch bus, and the production bucket, write-if-absent.
 
-  `/opt/processor/current` is a symlink to the live release. Switching it is atomic: `ln -sfn` to a temporary name, then `mv -T`.
-- **`deploy/deploy.sh`** (new; run with `sudo` from `~/processor` after `git pull --ff-only`):
-  1. Refuse unless `HEAD` equals `origin/main`. `--rev <sha>` is the escape hatch for a rollback.
-  2. The build runs as `$SUDO_USER`, so neither uv nor hatchling ever runs as root. It extracts `git archive`, copies in `.wheelhouse`, and runs `uv sync`, into a release directory that root created and handed to `$SUDO_USER`.
-  3. `chown -R root:root`, then `chmod -R go-w`.
-  4. Repoint `current`, then `systemctl restart processor`.
-  5. Keep the current release and the two before it; delete older ones.
-
-  A release that already exists is reused, which makes a rollback instant: `sudo deploy/deploy.sh --rev <old sha>`.
-- **`deploy/smoke.sh`** (new): runs `scripts/smoke_scratch_bus.py` from `current`, **as `processor`**, through `systemd-run --pipe --wait`. It passes the same `User=`, `EnvironmentFile=`, `LoadCredential=` and containment as the unit, so the smoke test exercises the contained child under the real identity.
+     So every deploy runs the contained child under the real identity.
+  8. **On failure:** switch back, restore the replaced unit and `daemon-reload`, `reset-failed`, restart, and prove the old build the same way.
+     - Exit 1 when the old build answers.
+     - Exit 4 when nothing answers. That includes a first deploy, which has nothing to switch back to.
+  9. Prune old releases (R13).
 - **Secrets:**
   - `/etc/processor` becomes `root:root 700`, and `.env` and the key `root 600`.
   - systemd reads `EnvironmentFile=` before it switches users, so the service user never reads the file.
@@ -104,47 +139,44 @@ Add a new module, `src/processor/_contain.py`. It is stdlib only (`ctypes`, `os`
   - Under `/run/credentials/processor.service/` the key is readable by the service's uid, and so by the child's. Landlock denies the child that path.
 - **Unit:**
   - `User=processor`, `Group=processor`;
-  - `WorkingDirectory=/opt/processor/current`;
-  - `ExecStart=/opt/processor/current/.venv/bin/processor run`;
+  - `WorkingDirectory=/srv/processor/live`;
+  - `ExecStart=/srv/processor/live/.venv/bin/processor run`. The venv's scripts carry the release's physical path, so a later switch can't mix releases in a running process or its children;
   - `LoadCredential=` and `Environment=` as above;
-  - adds `ProtectHome=yes` and `ProtectSystem=strict`. Nothing in the service writes outside `PrivateTmp`, and bytecode is compiled at build time.
-
-  These two are one line each, and the new layout makes them free. The rest of #5's hardening stays out of scope.
+  - adds `ProtectHome=yes` and `ProtectSystem=strict`. Nothing in the service writes outside `PrivateTmp`, and bytecode is compiled at build time. The rest of #5's hardening stays out of scope.
 - **What the change does to the docs' invariants:**
-  - "Code on `main` is the deployed code" becomes: **the deployed release is `readlink /opt/processor/current`, and it carries no runtime diff from `origin/main`**.
-  - `~/processor` stays the operator's clone (the skills hook still pushes from it), but it is no longer the unit's `WorkingDirectory`.
+  - "Code on `main` is the deployed code" becomes: **what runs is `/srv/processor/live/REVISION`, a commit on `origin/main`, put there by `scripts/deploy.sh`**.
+  - `~/processor` stays the operator's clone, and the skills hook still pushes from it. `git pull --ff-only` after a merge then serves the hook, not the deploy, and nothing needs `.skills/worktree_venv=none` any more (skills#345 notes the same).
+- **Packaging:** set `.skills/deploy_command` to `scripts/deploy.sh` if gregoryfoster/skills#345 lands first. Until then, AGENTS.md says that shipping means `scripts/deploy.sh`, as Status's does.
 - **The epic's verify recipe, new step 3:**
 
   ```bash
-  rel=$(basename "$(readlink /opt/processor/current)")
-  git -C ~/processor diff --quiet "$rel" origin/main -- src deploy pyproject.toml uv.lock && echo deployed
+  git -C ~/processor diff --quiet "$(cat /srv/processor/live/REVISION)" origin/main -- src deploy scripts/deploy.sh pyproject.toml uv.lock && echo deployed
   ```
 
-  A docs-only merge then needs no redeploy, as it does today.
+  A docs-only merge then needs no deploy, as today.
 
 ## Rollout and rollback (gate 3)
 
 The rollout runs in two stages, so each risk is taken on its own during shadow (a failed command stays pending, and Watcher doesn't act on it).
 
 - **Stage A (after the FF merge; the existing deploy path, the old unit):** `git pull --ff-only && uv sync --frozen --no-dev && sudo systemctl restart processor`.
-  - Layers 1 and 2 go live while the service still runs as `exedev`. In that layout `src/` is on the allowlist and the repo root is not.
-  - Check: `starting` shows `child_containment: required`, `landlock_abi: 6`, and the smoke test passes. Then wait for the next shadow command: it must be `ack: complete` with #26's digests.
+  - Layers 1 and 2 go live while the service still runs as `exedev` from `~/processor`. In that layout `src/` is on the allowlist and the repo root is not.
+  - Check: `starting` shows `child_containment: required` and `landlock_abi: 6`, and the smoke test passes. Then wait for the next shadow command: it must be `ack: complete` with #26's digests.
   - **Rollback A:** add `CO_PROCESSOR_CHILD_CONTAINMENT=off` to the env file and restart. No code revert is needed.
 - **Stage B (the operator's install):**
   1. Back up `/etc/systemd/system/processor.service` and `/etc/processor/` to `/var/backups/processor/2/`.
   2. `useradd`.
-  3. `chown`, `chmod` and the `sed` that drops `GOOGLE_APPLICATION_CREDENTIALS` from `.env`.
-  4. `install` the new unit, then `daemon-reload`.
-  5. `sudo deploy/deploy.sh`, which builds and restarts.
-  6. `deploy/smoke.sh`.
-  7. Live checks:
+  3. `sudo install -d -o exedev -g exedev -m 755 /srv/processor`.
+  4. `chown`, `chmod` and the `sed` that drops `GOOGLE_APPLICATION_CREDENTIALS` from `.env`.
+  5. `scripts/deploy.sh`. It builds the first release, installs the new unit, restarts and verifies. A first deploy has nothing to switch back to, so a failure exits 4 and Rollback B applies.
+  6. Live checks:
      - the main PID's user is `processor`;
      - `/proc/<pid>/status` shows `NoNewPrivs: 1`, and `sudo -u processor cat /proc/<pid>/environ` is refused (the parent is undumpable);
      - `sudo -u processor cat /etc/processor/.env` is refused;
      - `systemctl is-enabled docker.socket` says `disabled`.
-  8. The next shadow command is `ack: complete` with its digests, and Watcher still reports a match.
+  7. The next shadow command is `ack: complete` with its digests, and Watcher still reports a match.
 
-  **Rollback B:** restore the backed-up unit and `/etc/processor` (ownership and the removed line), `daemon-reload`, then restart. That returns to Stage A: `exedev` and `~/processor`. `/opt/processor` and the user can stay.
+  **Rollback B:** restore the backed-up unit and `/etc/processor` (ownership and the removed line), `daemon-reload`, then restart. That returns to Stage A: `exedev` and `~/processor`. `/srv/processor` and the user can stay.
 
 ## Tests (TDD, red first)
 
@@ -175,30 +207,42 @@ Every denial test has a positive control: the same target under `off` succeeds. 
 `tests/test_main.py`:
 - `_run` makes the process undumpable before the preflight;
 - under `required` with the ABI faked to 0, it exits 1 and logs `child containment unavailable`;
-- `starting` carries the two new fields.
+- `starting` carries `child_containment`, `landlock_abi` and `build` (from `REVISION`, or `dev`).
 
 `tests/test_settings.py`: the default is `required`, and `off` parses.
 
-Unit-file assertions, in `test_main.py`'s existing parsing:
+`tests/deploy/test_units.py`, following Status's `test_release_units.py`:
+- no unit names `/home`, and none runs `uv`;
 - `User=processor`;
-- no `/home` path anywhere;
+- `WorkingDirectory=` and `ExecStart=` resolve into `/srv/processor/live`;
 - `LoadCredential=` together with `GOOGLE_APPLICATION_CREDENTIALS=%d/…`;
-- `ProtectHome=yes` and `ProtectSystem=strict`.
+- `ProtectHome=yes` and `ProtectSystem=strict`;
+- every file under `deploy/` is either a unit or a known host config.
 
-`deploy/*.sh`: `bash -n`, plus a test that `deploy.sh` refuses when `HEAD` ≠ `origin/main` (run with no sudo; it refuses before doing anything).
+`tests/deploy/test_deploy.py`, following Status's `test_deploy.py`. It runs `scripts/deploy.sh` end to end against a throwaway root and a temporary origin, with stub `uv`, `sudo`, `systemctl`, `systemd-run`, `journalctl` and `logger` on `PATH`. It covers:
+- refusing root, a held lock, and a ref that is not on `origin/main`;
+- `REVISION` written last, and an interrupted build rebuilt;
+- a linked release never rebuilt;
+- `a-w,o+rX` after a build;
+- the atomic switch;
+- the unit installed only when it differs;
+- the verify failure paths: no `starting` with the build, and a failed smoke, each switching back (exit 1);
+- a first deploy with nothing to switch back to (exit 4);
+- retention.
 
 ## Steps
 
 1. This plan → gate 2.
 2. `_contain` and its tests.
-3. Child wiring, settings, `Deps`, the boot check, dumpable; the child and main tests; the corpus through the contained child.
-4. Unit, `deploy.sh`, `smoke.sh` and their tests.
+3. Child wiring, settings, `Deps`, the boot check, dumpable and `build`; the child and main tests; the corpus through the contained child.
+4. The unit, `scripts/deploy.sh` and their tests.
 5. Docs:
    - spec §3: the "Known limitation" paragraph becomes **Containment**, covering the layers, what stays reachable, and the limits;
-   - DEPLOYMENT: prerequisites (the user, `docker.socket`), the env file and credential, build/install/deploy for `/opt`, rollback, and a new **Containment** check list;
-   - AGENTS.md: the child paragraph ("not a sandbox" goes), the Service and VM rows, and "Code on `main` is the deployed code" and the checkout notes;
+   - DEPLOYMENT, restructured on Status's: releases, `scripts/deploy.sh`, rollback, units, the user and secrets, plus a **Containment** check list;
+   - AGENTS.md: the child paragraph ("not a sandbox" goes); the Service and VM rows; "Code on `main` is the deployed code"; the checkout notes; "shipping means `scripts/deploy.sh`";
    - the `child.py` and `_child.py` docstrings.
 6. Full suite, ruff, PR, CR → FF merge → Stage A → Stage B (gate 3) → the closing comment, with each box's evidence and one live record.
+7. File the follow-ups: the CI gate and the drift check (Status's #11 and #12, for processor).
 
 ## Known limits (for the closing comment)
 
@@ -207,9 +251,29 @@ Unit-file assertions, in `test_main.py`'s existing parsing:
 - It can spend CPU up to the timeout and memory up to `RLIMIT_AS`.
 - It decides its own command's output. That can't be avoided; Watcher's shadow comparison is the check on it.
 - It shares the service's uid. Landlock (filesystem, signal scope, ptrace) and the parent's non-dumpable flag carry that, not uid separation.
+- `exedev` owns the releases and has sudo. As in Status's R2, that boundary is between the service and its code, not between the operator and production.
+
+## Feedback for the cohort deploy skill
+
+These points are gathered for the upstream skills issue that Provisioner#23 will file to share the release structure. Each is what processor needed beyond Status's R1–R13.
+
+1. **A dedicated service user settles status#14 without root.** Releases owned by `exedev` and `a-w` are a real boundary once the unit runs as its own user, since that user can't `chmod` them back. The skill should make "dedicated service user + exedev-owned read-only releases" the default answer to goal 5, and require `o+rX` on the release and a traversable root.
+2. **The interpreter lives outside `/home`.** A user with no home, or `ProtectHome=yes`, can't run a uv-managed Python under `~/.local/share/uv`. On exe.dev `/home/exedev` is 0750 as well. The build should pin `--python /usr/bin/python3.X` with `UV_PYTHON_DOWNLOADS=never`, and a test should check that `pyvenv.cfg`'s `home` isn't under `/home`.
+3. **Launcher:** treat the venv's entry point as equal to `uv run --frozen --no-sync`. `uv run` needs uv and a writable cache for the service user. The invariant worth testing is "no unit syncs" (no unit runs `uv sync`, or `uv run` without `--no-sync`), not the exact launcher.
+4. **Private wheels** (broker#22 Q5): the build needs a hook to put the project's private index or wheelhouse into the release before `uv sync`. Processor copies `.wheelhouse`, because its `find-links` is relative.
+5. **Non-editable releases:** worth considering as the default. An editable install puts `<release>/src` on `sys.path`; anything that derives a sandbox or allowlist from `sys.path` then has to reason about the repo layout.
+6. **Verify is a per-repo hook.** `/ready` and `/health` assume an HTTP API. A bus consumer verifies by its start record (`build`, then "consuming" from the new `MainPID`) plus a smoke command. The script's skeleton (resolve, build, switch, units, verify, switch back, exits 1 and 4) is shared; the verify, and any pre-switch step such as a migration, are per repo.
+7. **`dev` is optional.** R12 assumes a dev service. A service without one names its rehearsal instead: for processor, the scratch-bus smoke.
+8. **Restart budget:** a unit with `KillMode=mixed` and a long `TimeoutStopSec` (processor: 240 s, so an in-flight command can finish) blocks `systemctl restart` for up to that long. The verify budget has to be derived from the unit, not fixed at 60 s.
+9. **Secrets by credential, not by path in the env file.** Use `LoadCredential=` plus `Environment=…=%d/<name>` for key files, with `/etc/<svc>` root-owned 700: systemd reads `EnvironmentFile=` before the user switch. **Trap:** `EnvironmentFile=` overrides `Environment=`, so a migration must delete the old path line from the env file. Provisioner's reader key and PAT fit this shape.
+10. **Hardening the layout unlocks:** once no unit reads `/home` and bytecode is compiled at build, `ProtectHome=yes` and `ProtectSystem=strict` cost nothing. They belong in the unit template.
+11. **Ship the script, don't copy it.** Status's `deploy.sh` is 644 lines and 59 tests, and five CR rounds (CR 1–36) taught it about exit codes, joining a oneshot mid-pass, `reset-failed`, never rebuilding a linked release, and restoring links exactly. A copy per repo relearns each of those lessons. The skill should vendor the skeleton, with per-repo hooks: pre-switch, verify, the unit-to-target mapping and the host configs.
+12. **Variable names:** fix a convention. Status uses `STATUS_DEPLOY_*`; processor's settings use `CO_PROCESSOR_*`, and pydantic-settings must ignore the deploy variables. This plan uses `PROCESSOR_DEPLOY_*` to mirror Status.
+13. **"Deployed" in verify recipes and drift checks:** "live's `REVISION` has no runtime diff from `origin/main`", over a per-repo list of runtime paths. That is the same list Status's drift check means by "code (not docs or tests)", and a coordinator's recipe can read it from the repo instead of restating it.
 
 ## Out of scope
 
 - #5, except its `docker.socket` box. Ticking that box on #5 is a GitHub edit, made at ship time with approval.
 - #29 and #21.
 - A Landlock audit log (6.12 has none).
+- Processor's CI gate and drift check (step 7).
