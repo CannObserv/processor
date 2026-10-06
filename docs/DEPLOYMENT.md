@@ -264,7 +264,8 @@ sudo useradd --system --user-group --no-create-home --home-dir /nonexistent \
   --shell /usr/sbin/nologin processor
 sudo install -d -o exedev -g exedev -m 755 /srv/processor
 sudo sed -i '/^GOOGLE_APPLICATION_CREDENTIALS=/d' /etc/processor/.env
-sudo chown -R root:root /etc/processor && sudo chmod 700 /etc/processor && sudo chmod 600 /etc/processor/*
+sudo chown -R root:root /etc/processor && sudo chmod 700 /etc/processor
+sudo chmod 600 /etc/processor/.env /etc/processor/co-gcs-processor-writer.json   # by name: a glob is expanded as exedev, and * skips .env
 cd ~/processor && git pull --ff-only && scripts/deploy.sh   # builds, installs the unit, restarts, verifies
 ```
 
