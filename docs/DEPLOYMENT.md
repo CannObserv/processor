@@ -155,7 +155,7 @@ processor_cli() {   # e.g. processor_cli dlq list; processor_cli ensure-group
 - **`<build>` is the commit's 12-character short SHA.** `REVISION` holds it. A directory without `REVISION` is an interrupted build, and the next deploy rebuilds it. The `starting` record reports the build, from `REVISION` (`dev` outside a release).
 - **Nothing done in a checkout reaches the unit.** Branches, uncommitted edits, `uv sync` and the skills hook's commits all stay in the checkout. `~/processor` stays the operator's clone, and `scripts/deploy.sh` builds from it.
 - **The venv:**
-  - built with `uv sync --locked --no-dev --no-editable --compile-bytecode --python /usr/bin/python3.12`, inside the release;
+  - built with `uv sync --locked --no-dev --no-editable --compile-bytecode --python /usr/bin/python3.12`, inside the release, with `UV_LINK_MODE=copy`. uv's Linux default hardlinks from `~/.cache/uv`, which would make every release file the same inode as the cache's and each dev venv's. The release's `chmod` would then reach them, and an edit to any of them would reach production (CR 11);
   - never synced at start: the unit runs the venv's own `processor` entry point;
   - non-editable, so `sys.path`, and with it the child's allowlist, holds only the stdlib and `site-packages`;
   - on the system interpreter, because `processor` can't read anything under `/home` (`/home/exedev` is 0750, and the unit sets `ProtectHome=yes`).

@@ -125,8 +125,11 @@ build_release() {
   cp -rL "$SRC/.wheelhouse" "$release/.wheelhouse"
   # Built where it will run: a uv venv embeds its absolute path in its scripts.
   # Non-editable: sys.path, and so the child's Landlock allowlist, then holds the
-  # stdlib and site-packages alone (#2).
-  (cd "$release" && UV_PYTHON_DOWNLOADS=never uv sync --locked --no-dev --no-editable \
+  # stdlib and site-packages alone (#2). Copied, never hardlinked from ~/.cache/uv:
+  # a hardlink is the same inode as the cache's and every dev venv's, so the chmod
+  # below would reach them, and an edit to any of them would reach production
+  # (CR 11).
+  (cd "$release" && UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never uv sync --locked --no-dev --no-editable \
     --compile-bytecode --python "$PYTHON" --quiet) ||
     die "uv sync failed for $build; nothing switched"
   local home

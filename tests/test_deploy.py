@@ -24,7 +24,7 @@ UNIT = (REPO / "deploy" / "processor.service").read_text()
 
 STUBS = {
     "uv": r"""#!/usr/bin/env bash
-echo "$PWD $*" >>"$STATE/uv.log"
+echo "$PWD UV_LINK_MODE=${UV_LINK_MODE:-} UV_PYTHON_DOWNLOADS=${UV_PYTHON_DOWNLOADS:-} $*" >>"$STATE/uv.log"
 [[ "${STUB_UV_FAIL:-}" == 1 ]] && exit 1
 mkdir -p .venv/bin
 printf 'home = %s\n' "${STUB_PY_HOME:-/usr/bin}" >.venv/pyvenv.cfg
@@ -189,6 +189,15 @@ def test_the_build_is_non_editable_against_the_system_python(w: Env) -> None:
     for flag in ("sync --locked", "--no-dev", "--no-editable", "--compile-bytecode",
                  "--python /usr/bin/python3.12"):  # fmt: skip
         assert flag in line
+
+
+def test_the_build_copies_never_hardlinks_from_the_uv_cache(w: Env) -> None:
+    # CR 11: on Linux uv hardlinks from ~/.cache/uv, which shares each inode with the
+    # cache and every dev venv (measured: 4 links on lxml/__init__.py). The release's
+    # chmod would reach them, and an edit to any of them would reach production.
+    assert w.deploy().returncode == 0
+    (line,) = w.log("uv").splitlines()
+    assert "UV_LINK_MODE=copy" in line and "UV_PYTHON_DOWNLOADS=never" in line
 
 
 def test_a_venv_on_an_interpreter_under_home_is_refused(w: Env) -> None:

@@ -263,6 +263,7 @@ Gate 2 approved the text above. Where the build or the review on PR #33 changed 
 - **Single-threaded only** (CR 4, 65182fd). `contain()` refuses a process with a second thread, which would escape both layers.
 - **The deploy's verify** reads the new MainPID's records from this boot since the restart (CR 5). A failed first deploy restarts the service on the unit it restored (CR 3).
 - **The key's live check** (CR 9). After the install the key is `/run/credentials/processor.service/gcs-writer-key`, readable by the service's uid through an ACL. DEPLOYMENT § Containment pairs a control (readable) with the contained read (denied).
+- **Releases are copied, never hardlinked** (CR 11): `UV_LINK_MODE=copy`. uv's Linux default shares inodes with `~/.cache/uv` and every dev venv.
 - **Tests are flat:** `tests/test_units.py` and `tests/test_deploy.py`, the repo's layout.
 
 ## Feedback for the cohort deploy skill
@@ -282,6 +283,7 @@ These points are gathered for the upstream skills issue that Provisioner#23 will
 11. **Ship the script, don't copy it.** Status's `deploy.sh` is 644 lines and 59 tests, and five CR rounds (CR 1–36) taught it about exit codes, joining a oneshot mid-pass, `reset-failed`, never rebuilding a linked release, and restoring links exactly. A copy per repo relearns each of those lessons. The skill should vendor the skeleton, with per-repo hooks: pre-switch, verify, the unit-to-target mapping and the host configs.
 12. **Variable names:** fix a convention. Status uses `STATUS_DEPLOY_*`; processor's settings use `CO_PROCESSOR_*`, and pydantic-settings must ignore the deploy variables. This plan uses `PROCESSOR_DEPLOY_*` to mirror Status.
 13. **"Deployed" in verify recipes and drift checks:** "live's `REVISION` has no runtime diff from `origin/main`", over a per-repo list of runtime paths. That is the same list Status's drift check means by "code (not docs or tests)", and a coordinator's recipe can read it from the repo instead of restating it.
+14. **Releases must be copied, not hardlinked, from the uv cache.** On Linux, `uv sync`'s default link mode is `hardlink`. When `~/.cache/uv` and the deploy root share a filesystem (on exe.dev, `/`), every release file is the same inode as the cache's and every dev venv's. Measured on `co-processor`: 4 links on one lxml file. So R4's `chmod -R a-w` changes modes outside the release, and an edit to a cached or dev-venv file changes production without a deploy, which is what R1 forbids. The fix is `UV_LINK_MODE=copy` at build time; a real build here then had no file with more than one link. Status's R4 build looks exposed to this too.
 
 ## Out of scope
 
