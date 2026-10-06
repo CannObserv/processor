@@ -24,7 +24,8 @@ UNIT = (REPO / "deploy" / "processor.service").read_text()
 
 STUBS = {
     "uv": r"""#!/usr/bin/env bash
-echo "$PWD UV_LINK_MODE=${UV_LINK_MODE:-} UV_PYTHON_DOWNLOADS=${UV_PYTHON_DOWNLOADS:-} $*" >>"$STATE/uv.log"
+echo "$PWD UV_LINK_MODE=${UV_LINK_MODE:-}" \
+  "UV_PYTHON_DOWNLOADS=${UV_PYTHON_DOWNLOADS:-} $*" >>"$STATE/uv.log"
 [[ "${STUB_UV_FAIL:-}" == 1 ]] && exit 1
 mkdir -p .venv/bin
 printf 'home = %s\n' "${STUB_PY_HOME:-/usr/bin}" >.venv/pyvenv.cfg
