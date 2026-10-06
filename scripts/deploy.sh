@@ -140,6 +140,12 @@ github() { # <path>: GitHub's JSON answer, or a refusal naming GitHub's message
   local out
   if out="$(curl -sS --fail-with-body --max-time 10 \
     -H 'Accept: application/vnd.github+json' "$GITHUB_API/$1")"; then
+    # A JSON object, or refused: jq reads an empty body as no input at all,
+    # prints nothing and exits 0, so an empty jobs answer listed no failed job
+    # and passed (#34 CR 5).
+    jq -e 'type == "object"' <<<"$out" >/dev/null 2>&1 ||
+      die "GitHub's answer about $build's CI is not the JSON expected; nothing was built." \
+        "Deploy again later, or pass --skip-ci."
     printf '%s\n' "$out"
     return
   fi

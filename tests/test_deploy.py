@@ -755,19 +755,21 @@ class TestTheCIGate:
         assert "Nothing was built" in result.stderr and "--skip-ci" in result.stderr
         assert_nothing_built(w)
 
-    @pytest.mark.parametrize("body", ["<html>unicorn</html>", '{"total_count":0}'])
+    @pytest.mark.parametrize("body", ["<html>unicorn</html>", '{"total_count":0}', "", " \n"])
     def test_a_runs_answer_that_is_not_json_refuses_the_deploy(self, w: Env, body: str) -> None:
-        """CR 4: JSON without workflow_runs fails the same way as no JSON at all."""
+        """CR 4: JSON without workflow_runs fails the same way as no JSON at all.
+        CR 5: so does an empty body, which jq reads as no input, not as a run."""
         w.ci_answers(body)
-        result = w.deploy()
+        result = w.deploy(PROCESSOR_DEPLOY_CI_WAIT_SECONDS="0")
         assert result.returncode == 1
         assert "not the JSON expected" in result.stderr and "nothing was built" in result.stderr
         assert_nothing_built(w)
 
-    @pytest.mark.parametrize("body", ["<html>unicorn</html>", '{"total_count":0}'])
+    @pytest.mark.parametrize("body", ["<html>unicorn</html>", '{"total_count":0}', "", " \n"])
     def test_a_jobs_answer_that_is_not_json_refuses_the_deploy(self, w: Env, body: str) -> None:
         """jq alone exits 5, and says neither that nothing was built nor --skip-ci
-        (status#11, CR 10)."""
+        (status#11, CR 10). CR 5: an empty body passed the gate: jq given no input
+        prints nothing and exits 0, so no job looked failed."""
         w.ci_answers([ci_run(7, w.head())])
         (w.ci / "jobs-7.json").write_text(body)
         result = w.deploy()
