@@ -209,8 +209,10 @@ connection. Now, in layers:
 1. **The child contains itself** (`processor._contain`, stdlib `ctypes`, no
    binding) after `RLIMIT_AS` and before it reads its request:
    - *Landlock* (ABI ≥ 6): read and execute only on a derived allowlist (each
-     `sys.path` entry, the stdlib, the shared-library directory,
-     `/etc/ld.so.cache`, and the mime-types files co-core reads at import).
+     `sys.path` entry, the stdlib, the directories of the shared libraries
+     already loaded (the loader's, so libgcc_s beside libc is found; Python's
+     `LIBDIR` is not the system's on CI), `/etc/ld.so.cache`, and the
+     mime-types files co-core reads at import).
      It writes nothing, and reads nothing under `/proc`, `/etc/processor`,
      `/run/credentials` or a home directory. No TCP bind or connect. Abstract
      unix sockets and signals are scoped to its own domain. An allowlist

@@ -27,7 +27,7 @@ from processor._contain import (
     landlock_abi,
     read_allowlist,
     seccomp_program,
-    shared_library_dir,
+    shared_library_dirs,
     strongest_available,
     unavailable_reason,
 )
@@ -110,18 +110,27 @@ def test_off_contains_nothing() -> None:
 def test_the_allowlist_is_derived_from_the_interpreter() -> None:
     allowed = read_allowlist(sys.path)
     expected = {os.path.realpath(p) for p in sys.path if p and os.path.exists(p)}
-    expected |= {
-        os.path.realpath(sysconfig.get_paths()["stdlib"]),
-        os.path.realpath(shared_library_dir()),
-    }
-    expected |= {"/etc/ld.so.cache"} & {p for p in ["/etc/ld.so.cache"] if os.path.exists(p)}
+    expected |= {os.path.realpath(sysconfig.get_paths()["stdlib"]), *shared_library_dirs()}
+    expected |= {p for p in ["/etc/ld.so.cache"] if os.path.exists(p)}
     assert expected <= set(allowed)
     if os.path.exists("/etc/mime.types"):  # co-core reads it at import (measured 2026-10-06)
         assert "/etc/mime.types" in allowed
 
 
-def test_the_shared_library_dir_holds_libc() -> None:
-    assert any(Path(shared_library_dir()).glob("libc.so*"))
+def _mapped(name: str) -> str:
+    for line in Path("/proc/self/maps").read_text().splitlines():
+        path = line.split()[-1]
+        if os.path.basename(path).startswith(name):
+            return os.path.realpath(path)
+    raise AssertionError(f"{name} is not mapped")
+
+
+def test_the_shared_library_dirs_are_the_loaders_not_pythons() -> None:
+    # CI's Python (setup-python) has a LIBDIR of its own, and libgcc_s, which an
+    # extractor loads later, sits beside libc: the directory the loader uses.
+    dirs = shared_library_dirs()
+    assert os.path.dirname(_mapped("libc.so")) in dirs
+    assert all(os.path.isabs(d) and os.path.isdir(d) for d in dirs)
 
 
 def test_missing_and_empty_entries_are_skipped(tmp_path: Path) -> None:

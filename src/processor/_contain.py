@@ -5,7 +5,7 @@ its request, it restricts itself (``contain``), so a parser bug that gives it co
 execution reaches only:
 
 - **Files:** read (and execute) on a derived allowlist: each ``sys.path`` entry, the
-  stdlib, the shared-library directory, ``/etc/ld.so.cache`` and the mime-types
+  stdlib, the loaded shared libraries' directories, ``/etc/ld.so.cache`` and the mime-types
   files co-core reads at import. No write anywhere; nothing under ``/proc``,
   ``/etc/processor``, ``/run/credentials`` or a home directory.
 - **Network:** no TCP bind or connect (Landlock), and no socket of any family at all
@@ -140,17 +140,24 @@ def _is_within(path: str, root: str) -> bool:
     return path == root or path.startswith(root.rstrip("/") + "/")
 
 
-def shared_library_dir() -> str:
-    """Where the extension modules' shared libraries are: ``LIBDIR``, multiarch-qualified.
+def shared_library_dirs() -> list[str]:
+    """The directories of the shared objects mapped now: libc's, ld.so's, libpython's.
 
-    Debian's ``LIBDIR`` already ends in the multiarch triplet; a plain build's is
-    ``/usr/lib``, with the triplet beneath it.
+    The dynamic loader's, not Python's: an extractor loads more later (lxml pulls in
+    libgcc_s, which sits beside libc), and ``sysconfig``'s ``LIBDIR`` names the
+    interpreter's own tree, which on CI's setup-python is not the system's.
     """
-    libdir = sysconfig.get_config_var("LIBDIR") or "/usr/lib"
-    multiarch = sysconfig.get_config_var("MULTIARCH") or ""
-    if multiarch and os.path.basename(libdir.rstrip("/")) != multiarch:
-        return os.path.join(libdir, multiarch)
-    return libdir
+    dirs: list[str] = []
+    with open("/proc/self/maps") as maps:
+        for line in maps:
+            fields = line.split(maxsplit=5)
+            path = fields[5].strip() if len(fields) == 6 else ""
+            if ".so" not in os.path.basename(path) or not os.path.isfile(path):
+                continue  # anonymous, [vdso], memfd:…, (deleted), a non-library file
+            directory = os.path.dirname(os.path.realpath(path))
+            if directory not in dirs:
+                dirs.append(directory)
+    return dirs
 
 
 def read_allowlist(sys_path: Sequence[str]) -> list[str]:
@@ -160,7 +167,7 @@ def read_allowlist(sys_path: Sequence[str]) -> list[str]:
     secret or to a whole tree: ``/``, ``/etc``, ``/home``, a home directory, or a
     directory holding a ``.env`` (the repo root; its ``src/`` is fine).
     """
-    candidates = [*sys_path, sysconfig.get_paths()["stdlib"], shared_library_dir()]
+    candidates = [*sys_path, sysconfig.get_paths()["stdlib"], *shared_library_dirs()]
     files = ["/etc/ld.so.cache", *mimetypes.knownfiles]
     home = pwd.getpwuid(os.getuid()).pw_dir
     allowed: list[str] = []
