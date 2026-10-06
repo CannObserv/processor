@@ -253,6 +253,18 @@ Every denial test has a positive control: the same target under `off` succeeds. 
 - It shares the service's uid. Landlock (filesystem, signal scope, ptrace) and the parent's non-dumpable flag carry that, not uid separation.
 - `exedev` owns the releases and has sudo. As in Status's R2, that boundary is between the service and its code, not between the operator and production.
 
+## Amended in build and review
+
+Gate 2 approved the text above. Where the build or the review on PR #33 changed it, the code and the docs follow this list, not the text above.
+
+- **The library directories come from the loader, not from `LIBDIR`** (4f7a6ec). They are the directories of the shared objects already mapped. On CI's setup-python, `LIBDIR` names the toolcache, so `libgcc_s` (beside libc) was refused and the extractors failed to import.
+- **Read only, no execute** (CR 2, dea7c52). Layer 1's "read and execute" granted `execve` on the allowlist, the dynamic loader included. Loading a library doesn't need it.
+- **A boot canary** (CR 1, f216757). One real extraction through the contained child runs before any command. The ABI check alone misses a child that fails for another reason.
+- **Single-threaded only** (CR 4, 65182fd). `contain()` refuses a process with a second thread, which would escape both layers.
+- **The deploy's verify** reads the new MainPID's records from this boot since the restart (CR 5). A failed first deploy restarts the service on the unit it restored (CR 3).
+- **The key's live check** (CR 9). After the install the key is `/run/credentials/processor.service/gcs-writer-key`, readable by the service's uid through an ACL. DEPLOYMENT § Containment pairs a control (readable) with the contained read (denied).
+- **Tests are flat:** `tests/test_units.py` and `tests/test_deploy.py`, the repo's layout.
+
 ## Feedback for the cohort deploy skill
 
 These points are gathered for the upstream skills issue that Provisioner#23 will file to share the release structure. Each is what processor needed beyond Status's R1–R13.
