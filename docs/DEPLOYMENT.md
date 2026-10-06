@@ -221,7 +221,8 @@ The extraction child is assumed compromised by the document it parses (spec §3,
   - Landlock ABI ≥ 6 (Linux 6.12; `co-processor`: 6);
   - x86_64 or aarch64;
   - `docker.socket` disabled. It is enabled by default on exeuntu, and `/run/docker.sock` meant root to the `docker` group; the child can't reach any socket now, but `processor` isn't in that group either.
-- **Fail closed.** Under `CO_PROCESSOR_CHILD_CONTAINMENT=required` (the default), `processor run` exits 1 with `child containment unavailable` where the kernel can't contain the child, and systemd restarts it, so the unit flaps visibly. A child that fails to contain itself exits 70 before it reads its request, which counts as a strike.
+- **Fail closed.** Under `CO_PROCESSOR_CHILD_CONTAINMENT=required` (the default), `processor run` exits 1 with `child containment unavailable` where the kernel can't contain the child, and systemd restarts it, so the unit flaps visibly.
+- **The boot canary.** Before it takes any command, `processor run` makes one real extraction (a tiny HTML page) through the child, under the configured containment. It exits 1 with `child canary failed` (`kind`, `detail`) if that fails. This covers what the ABI check can't see, such as a library outside the allowlist after a host update, which would otherwise crash every command three times and publish a terminal `extraction_error` for each. A child that fails to contain itself exits 70 before it reads its request, which counts as a strike.
 - **What the child can still reach:**
   - the kernel's other syscalls;
   - its own code, the stdlib and the shared libraries;

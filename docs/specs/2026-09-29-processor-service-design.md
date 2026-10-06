@@ -224,8 +224,10 @@ connection. Now, in layers:
      docker's meant root), so the child opens no socket at all.
 
    `CO_PROCESSOR_CHILD_CONTAINMENT` is `required` by default: `processor
-   run` refuses to start where the kernel cannot contain the child, and a
-   child that fails to contain itself exits 70 before reading its request
+   run` refuses to start where the kernel cannot contain the child, or
+   where one real extraction through the contained child fails at boot (the
+   canary; CR 1). A child that fails to contain itself exits 70 before
+   reading its request
    (a crash, never a verdict). `off` is for dev and CI kernels only; the
    test suite's header says which mode it ran.
 2. **The parent is undumpable** (`PR_SET_DUMPABLE` 0, first thing in

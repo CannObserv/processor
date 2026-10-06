@@ -17,15 +17,24 @@ from redis.asyncio import Redis
 from processor import dlq
 from processor._contain import landlock_abi, make_undumpable, unavailable_reason
 from processor.build import build_id
-from processor.child import run_in_child
+from processor.child import run_in_child, transform_target
 from processor.consumer import GROUP, Consumer, group_reader, redis_client
 from processor.handler import Deps
 from processor.logging import configure_logging
+from processor.processors import TRANSFORMS
 from processor.processors.extract import PROCESSOR_VERSION
 from processor.settings import Settings
 from processor.stores import build_stores
 
 logger = logging.getLogger("processor")
+
+# One real extraction through the child at boot (#2 CR 1): the extractors import,
+# and their libraries load, inside the child's allowlist.
+_CANARY = (
+    b"<html><body><p>canary</p></body></html>",
+    "text/html",
+    {"extraction": {"algorithm": "full_page"}},
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -92,6 +101,27 @@ async def _run(settings: Settings) -> int:
         logger.error(
             "child containment unavailable",
             extra={"reason": reason, "landlock_abi": landlock_abi()},
+        )
+        return 1
+    # The ABI check cannot see a child that fails for any other reason: an
+    # allowlist refusal, or a library outside it. Every command would then crash
+    # three times, and the third publishes a terminal extraction_error for a
+    # healthy document (spec §4). Prove the child before taking any.
+    canary = await run_in_child(
+        transform_target(TRANSFORMS["extract"]),
+        _CANARY,
+        timeout_s=settings.extraction_timeout_s,
+        rlimit_as_bytes=settings.rlimit_as_bytes,
+        containment=settings.child_containment,
+    )
+    if canary.kind != "ok":
+        logger.error(
+            "child canary failed",
+            extra={
+                "kind": canary.kind,
+                "detail": canary.detail,
+                "child_containment": settings.child_containment,
+            },
         )
         return 1
 

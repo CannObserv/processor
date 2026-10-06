@@ -24,6 +24,8 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from processor.__main__ import main
 from processor._contain import landlock_abi, strongest_available
 from processor.build import build_id
+from processor.child import ChildResult, run_in_child
+from processor.settings import Settings
 
 pytestmark = pytest.mark.integration
 
@@ -247,3 +249,46 @@ def test_run_is_undumpable_before_it_reads_anything(env, monkeypatch) -> None:
     monkeypatch.setattr("processor.__main__.build_stores", build)
     assert main(["run"]) == 1
     assert order == ["undumpable", "stores"]
+
+
+def test_run_refuses_to_start_when_the_canary_extraction_fails(env, monkeypatch, capsys) -> None:
+    # CR 1: the ABI check misses a child that fails for any other reason (a library
+    # outside the allowlist, as CI's libgcc_s did). Every command would then crash
+    # three times, and the third publishes a terminal extraction_error for a
+    # healthy document. One real extraction at boot, before anything else runs.
+    seen: list[dict] = []
+
+    async def broken_child(target, args, **kwargs) -> ChildResult:
+        seen.append({"target": target, **kwargs})
+        return ChildResult(kind="crashed", detail="exit status 1: ImportError: libgcc_s.so.1")
+
+    def never(settings):
+        raise AssertionError("the stores were built after a failed canary")
+
+    monkeypatch.setattr("processor.__main__.run_in_child", broken_child)
+    monkeypatch.setattr("processor.__main__.build_stores", never)
+    assert main(["run"]) == 1
+    (record,) = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+    assert (record["level"], record["message"]) == ("ERROR", "child canary failed")
+    assert record["kind"] == "crashed" and "libgcc_s" in record["detail"]
+    (call,) = seen
+    assert call["target"] == "processor.processors.extract:extract"
+    assert call["containment"] == env["CO_PROCESSOR_CHILD_CONTAINMENT"]
+    assert call["rlimit_as_bytes"] == Settings().rlimit_as_bytes
+
+
+def test_the_canary_is_one_real_contained_extraction(env, monkeypatch) -> None:
+    results: list[ChildResult] = []
+
+    async def recording_child(*args, **kwargs) -> ChildResult:
+        results.append(await run_in_child(*args, **kwargs))
+        return results[-1]
+
+    def stop(settings):
+        raise OSError("past the canary")
+
+    monkeypatch.setattr("processor.__main__.run_in_child", recording_child)
+    monkeypatch.setattr("processor.__main__.build_stores", stop)
+    assert main(["run"]) == 1
+    (result,) = results
+    assert result.kind == "ok" and not result.value.empty
