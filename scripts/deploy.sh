@@ -121,8 +121,12 @@ build_release() {
   fi
   note "building $build"
   mkdir -p "$release"
-  git -C "$SRC" archive "$sha" | tar -x -C "$release"
-  cp -rL "$SRC/.wheelhouse" "$release/.wheelhouse"
+  # Each says why it stopped: under set -e alone the deploy would exit silently. The
+  # release, left without REVISION, is rebuilt next time (CR 13).
+  git -C "$SRC" archive "$sha" | tar -x -C "$release" ||
+    die "git archive failed for $build; nothing switched"
+  cp -rL "$SRC/.wheelhouse" "$release/.wheelhouse" ||
+    die "copying the wheelhouse failed for $build; nothing switched"
   # Built where it will run: a uv venv embeds its absolute path in its scripts.
   # Non-editable: sys.path, and so the child's Landlock allowlist, then holds the
   # stdlib and site-packages alone (#2). Copied, never hardlinked from ~/.cache/uv:

@@ -258,6 +258,23 @@ def test_refuses_without_the_service_user(w: Env) -> None:
     assert not (w.root / "live").exists()
 
 
+@pytest.mark.parametrize(
+    ("break_it", "message"),
+    [("archive", "git archive failed for"), ("wheelhouse", "copying the wheelhouse failed for")],
+)
+def test_a_failed_extract_or_copy_says_so(w: Env, break_it: str, message: str) -> None:
+    # CR 13: under set -e alone, the deploy would exit with no message.
+    if break_it == "archive":
+        (w.bin / "tar").write_text("#!/usr/bin/env bash\ncat >/dev/null; exit 2\n")
+        (w.bin / "tar").chmod(0o755)
+    else:
+        (w.checkout / ".wheelhouse" / "co_core-0.19.7-py3-none-any.whl").chmod(0)
+    result = w.deploy()
+    assert result.returncode == 1
+    assert f"deploy: {message}" in result.stderr and "nothing switched" in result.stderr
+    assert not (w.root / "live").exists()
+
+
 def test_a_failed_build_switches_nothing(w: Env) -> None:
     result = w.deploy(STUB_UV_FAIL="1")
     assert result.returncode == 1 and "uv sync failed" in result.stderr
