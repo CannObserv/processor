@@ -269,7 +269,14 @@ async def test_the_child_cannot_read_a_file_outside_its_allowlist(tmp_path: Path
 @needs_landlock
 @pytest.mark.parametrize(
     "path",
-    ["/etc/processor/.env", "/etc/processor/co-gcs-processor-writer.json", str(REPO / ".env")],
+    [
+        "/etc/processor/.env",
+        "/etc/processor/co-gcs-processor-writer.json",
+        # After #2's install: the key as the unit receives it, readable by the
+        # service's uid through an ACL, so by the child's but for Landlock (CR 9).
+        "/run/credentials/processor.service/gcs-writer-key",
+        str(REPO / ".env"),
+    ],
 )
 async def test_the_child_cannot_read_the_real_secrets(path: str) -> None:
     await _denied("try_read", str(_secret(Path(path))))

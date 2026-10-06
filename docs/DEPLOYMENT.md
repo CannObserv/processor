@@ -239,10 +239,17 @@ grep NoNewPrivs "/proc/$pid/status"                              # 1
 sudo -u processor cat "/proc/$pid/environ" >/dev/null            # Permission denied (undumpable)
 sudo -u processor cat /etc/processor/.env >/dev/null             # Permission denied
 systemctl is-enabled docker.socket                               # disabled
+# The key as the unit receives it: readable by the service's uid through an ACL,
+# from anywhere on the host, so by the child's but for Landlock (CR 9). The control
+# proves the uid can read it, so the second line's refusal is Landlock's.
+key=/run/credentials/processor.service/gcs-writer-key
+(cd / && sudo -u processor head -c1 "$key" >/dev/null) && echo "control: readable"
+(cd / && sudo -u processor /srv/processor/live/.venv/bin/python -I -c \
+  "from processor._contain import contain; contain('required'); open('$key')") # PermissionError
 journalctl -u processor -o cat | jq -cR 'fromjson? | select(.message == "starting") | {build, child_containment, landlock_abi}' | tail -n 1
 ```
 
-`tests/test_child.py` proves each denial on the host it runs on, against the real `/etc/processor/.env`, the key and the repo's `.env` when they're readable there. Each denial is paired with an uncontained control. `tests/test_contain.py` proves each layer alone. On `co-processor` the suite never skips them.
+`tests/test_child.py` proves each denial on the host it runs on, against the real `/etc/processor/.env`, the key (on disk, and as the unit's credential) and the repo's `.env` when they're readable there. After the install `exedev` can read none of the first three, so on `co-processor` those tests skip, and the two `key` lines above are the evidence. Each denial is paired with an uncontained control. `tests/test_contain.py` proves each layer alone. On `co-processor` the suite never skips them.
 
 **Rollback A, containment alone:** add `CO_PROCESSOR_CHILD_CONTAINMENT=off` to `/etc/processor/.env` and `sudo systemctl restart processor`. A deploy then fails its verify, which requires `required`, so take the line out before the next deploy.
 
