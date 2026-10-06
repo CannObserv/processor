@@ -211,7 +211,7 @@ Every denial test has a positive control: the same target under `off` succeeds. 
 
 `tests/test_settings.py`: the default is `required`, and `off` parses.
 
-`tests/deploy/test_units.py`, following Status's `test_release_units.py`:
+`tests/test_units.py` (the repo's flat layout), following Status's `test_release_units.py`:
 - no unit names `/home`, and none runs `uv`;
 - `User=processor`;
 - `WorkingDirectory=` and `ExecStart=` resolve into `/srv/processor/live`;
@@ -219,7 +219,7 @@ Every denial test has a positive control: the same target under `off` succeeds. 
 - `ProtectHome=yes` and `ProtectSystem=strict`;
 - every file under `deploy/` is either a unit or a known host config.
 
-`tests/deploy/test_deploy.py`, following Status's `test_deploy.py`. It runs `scripts/deploy.sh` end to end against a throwaway root and a temporary origin, with stub `uv`, `sudo`, `systemctl`, `systemd-run`, `journalctl` and `logger` on `PATH`. It covers:
+`tests/test_deploy.py`, following Status's `test_deploy.py`. It runs `scripts/deploy.sh` end to end against a throwaway root and a temporary origin, with stub `uv`, `sudo`, `systemctl`, `systemd-run`, `journalctl` and `logger` on `PATH`. It covers:
 - refusing root, a held lock, and a ref that is not on `origin/main`;
 - `REVISION` written last, and an interrupted build rebuilt;
 - a linked release never rebuilt;

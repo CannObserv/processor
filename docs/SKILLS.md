@@ -11,7 +11,7 @@ Vendored by [`managing-skills`](../skills/managing-skills/SKILL.md): one git sub
 | `skills/<name>` | agentskills.io discovery: a symlink `../skills-vendor/<owner>-<repo>/skills/<name>`, or a committed override |
 | `.claude/skills/<name>` | Claude Code discovery: always `../../skills/<name>`, so an override shadows the vendor copy in both systems |
 | `.skills/doctor.sh` | A real file, not a symlink (it would dangle exactly when needed). Re-links dangling vendor symlinks by initialising the submodules; `reviewing-*` / `shipping-*` run it as preflight |
-| `.skills/worktree_venv` | `none`: this checkout is the unit's `WorkingDirectory=`, so a worktree must not share its `.venv` (`using-git-worktrees` → *Venv linking*) |
+| `.skills/worktree_venv` | `none`: each worktree provisions its own `.venv` (`using-git-worktrees` → *Venv linking*). Set when this checkout was the unit's `WorkingDirectory=`; since #2 the unit runs a release, and the knob stays only so worktrees never share the checkout's venv |
 
 Every vendor symlink dangles until the submodules are initialised: a clone without `--recurse-submodules`, a fresh `git worktree add`. Run `bash .skills/doctor.sh`. Adding a skill means both entries. [tests/test_skills.py](../tests/test_skills.py) pins the chain, the override frontmatter and both hook halves.
 

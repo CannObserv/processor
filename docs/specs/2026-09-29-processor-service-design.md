@@ -125,8 +125,8 @@ processor-version pin on the command; no job API — the bus is the interface.
 | Dependencies | `co-core[extract]`, `co-core-aio[bus]`, `co-core-sync[gcs]`, all `==0.19.7` (Section 5), from the private CannObserv index |
 | CI | wheelhouse pulled through WIF as `co-pypi-reader` (org var `GCP_WIF_PROVIDER`), as in the other cohort repos |
 | VM | exe.dev `co-processor`, 8 GB, default `exeuntu` image, tag `processor` |
-| Service | systemd unit `processor`: `MemoryMax` below VM RAM, `Restart=on-failure`, `OOMPolicy=continue` (Section 4) |
-| Env | `/etc/processor/.env` (600), `CO_PROCESSOR_*` via pydantic-settings — never `os.getenv` |
+| Service | systemd unit `processor`: `MemoryMax` below VM RAM, `Restart=on-failure`, `OOMPolicy=continue` (Section 4). Runs as its own user `processor` (no sudo, not in `docker`, no home), from a read-only release at `/srv/processor/live` that `scripts/deploy.sh` builds from a commit on `origin/main` (amended 2026-10-06, #2: the cohort's release standard, broker#22 / status#9) |
+| Env | `/etc/processor/.env` (root 600, read by systemd before it switches users), `CO_PROCESSOR_*` via pydantic-settings — never `os.getenv`. The GCS key reaches the service by `LoadCredential=` (amended 2026-10-06, #2) |
 | Tailnet | `tag:processor`; policy `tag:processor` → `tag:broker` on 6379 |
 | Bus URL | `redis://processor:<pw>@broker:6379/0` — the MagicDNS name, never the address, which a broker rebuild changes; the VM runs Tailscale with `--accept-dns=true`, as the cohort does (amended 2026-10-01, #8) |
 
@@ -200,13 +200,43 @@ key). The parent decodes its result with an unpickler that allows no global
 but `ExtractOutcome`. At ≤ ~100 commands/day the start-up cost is noise
 (amended 2026-09-29/30).
 
-**Known limitation (accepted for the MVP, 2026-09-30).** The scrubbed
-environment and the unpickler are not a sandbox. The child runs as the
-service user, so a child that a parser bug gives code execution can read
-what that user can: the env file, the GCS key, and the parent's
-`/proc/<pid>/environ`. It can also open network connections.
-Containment is processor#2: Landlock in the child, a non-dumpable parent,
-and a dedicated service user.
+**Containment (amended 2026-10-06, #2).** The child is assumed to be
+compromised by the document it parses. Until 2026-10-06 it ran as the
+operator's user, with sudo and the `docker` group, and could read the env
+file, the GCS key, the parent's `/proc/<pid>/environ`, and open any
+connection. Now, in layers:
+
+1. **The child contains itself** (`processor._contain`, stdlib `ctypes`, no
+   binding) after `RLIMIT_AS` and before it reads its request:
+   - *Landlock* (ABI ≥ 6): read and execute only on a derived allowlist (each
+     `sys.path` entry, the stdlib, the shared-library directory,
+     `/etc/ld.so.cache`, and the mime-types files co-core reads at import).
+     It writes nothing, and reads nothing under `/proc`, `/etc/processor`,
+     `/run/credentials` or a home directory. No TCP bind or connect. Abstract
+     unix sockets and signals are scoped to its own domain. An allowlist
+     entry that would widen the set (`/`, `/etc`, `/home`, a home directory,
+     a directory holding `.env`) is refused.
+   - *seccomp*: `socket`, `socketpair` and `io_uring_*` fail with EPERM;
+     another arch's syscalls kill it. Landlock on 6.12 does not cover a
+     connect to an existing pathname unix socket (tailscaled's is 0666;
+     docker's meant root), so the child opens no socket at all.
+
+   `CO_PROCESSOR_CHILD_CONTAINMENT` is `required` by default: `processor
+   run` refuses to start where the kernel cannot contain the child, and a
+   child that fails to contain itself exits 70 before reading its request
+   (a crash, never a verdict). `off` is for dev and CI kernels only; the
+   test suite's header says which mode it ran.
+2. **The parent is undumpable** (`PR_SET_DUMPABLE` 0, first thing in
+   `processor run`), so no same-uid process reads its environment, which
+   holds the broker credential.
+3. **A dedicated user, `processor`**, owns nothing it runs: the release is
+   `exedev`'s and read-only, `/etc/processor` is root's, and the key comes
+   through `LoadCredential=`. `ProtectHome=yes` and `ProtectSystem=strict`.
+
+What stays reachable from a compromised child: the kernel's other syscalls;
+its own code, the stdlib and the shared libraries; CPU to the timeout and
+memory to `RLIMIT_AS`; and the output of its own command, which only
+Watcher's comparison checks.
 
 **Layout:**
 
@@ -427,6 +457,15 @@ TDD, red first.
   entry unacked, ack failure yields a duplicate fact. Child process: a fixture
   sleeping past the timeout (pool recycled, 3-strike cap), one exceeding
   `RLIMIT_AS` (→ `extraction_error`), one exiting hard.
+- **Containment (amended 2026-10-06, #2).** Each layer alone, in a
+  subprocess (`tests/test_contain.py`). Landlock alone still lets a pathname
+  unix socket through, and that test fails if a kernel closes the gap. Then
+  the contained child (`tests/test_child.py`): every denial is paired with an
+  uncontained control, and the whole corpus, `cases.json` plus `real/`, gives
+  results identical to the in-process `extract`. The suite runs `required`
+  where the kernel allows it, says which mode in its header, and never skips
+  on `co-processor`. `scripts/deploy.sh` runs end to end against a throwaway
+  root with stubs (`tests/test_deploy.py`).
 - **Integration.** A scratch Redis on `co-processor` with the real stream names;
   a test issuer `XADD`s real commands; assert facts, stored bytes, and `XINFO
   GROUPS` lag, against a scratch GCS prefix or the local store.
