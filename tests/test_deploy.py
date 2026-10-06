@@ -47,6 +47,7 @@ esac
 exit 0
 """,
     "journalctl": r"""#!/usr/bin/env bash
+echo "$*" >>"$STATE/journalctl.log"
 build="$(tail -n 1 "$STATE/started" 2>/dev/null)"
 [[ " ${STUB_DEAD:-} " == *" $build "* ]] && exit 0
 echo "-- a systemd line --"
@@ -369,3 +370,13 @@ def test_old_releases_are_pruned_but_never_live(w: Env) -> None:
 def test_help() -> None:
     result = subprocess.run(["bash", str(SCRIPT), "--help"], capture_output=True, text=True)
     assert result.returncode == 0 and "scripts/deploy.sh [<ref>]" in result.stdout
+
+
+def test_the_verify_reads_only_the_new_process_since_the_restart(w: Env) -> None:
+    # CR 5: by PID alone, an older process that had the same PID, in this boot or
+    # a past one, could pass the verify with its own records.
+    assert w.deploy().returncode == 0
+    (query,) = set(w.log("journalctl").splitlines())
+    assert query.startswith("-b --since @")
+    assert "_SYSTEMD_UNIT=processor.service _PID=1" in query
+    assert "-u " not in query

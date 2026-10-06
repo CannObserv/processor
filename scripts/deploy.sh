@@ -238,14 +238,15 @@ restore_unit() {
 }
 
 # The new process's own start records: `starting` naming <build> under required
-# containment, then `consuming`. By MainPID, so the old process's records, which
-# name the old build, never count.
-started_on() { # <build>
-  local want="$1" pid records deadline=$((SECONDS + VERIFY_SECONDS))
+# containment, then `consuming`. By MainPID, this boot, since the restart: an
+# older process that had the same PID never counts (CR 5).
+started_on() { # <build> <restart time, epoch seconds>
+  local want="$1" since="$2" pid records deadline=$((SECONDS + VERIFY_SECONDS))
   while ((SECONDS < deadline)); do
     pid="$(systemctl show -p MainPID --value "$UNIT" 2>/dev/null)" || pid=0
     if [[ -n "$pid" && "$pid" != 0 ]] &&
-      records="$(journalctl -u "$UNIT" "_PID=$pid" -o cat --no-pager 2>/dev/null)" &&
+      records="$(journalctl -b --since "@$since" "_SYSTEMD_UNIT=$UNIT.service" "_PID=$pid" \
+        -o cat --no-pager 2>/dev/null)" &&
       [[ "$(jq -rR 'fromjson? | select(.message == "starting")
           | "\(.build) \(.child_containment)"' <<<"$records" | tail -n 1)" == "$want required" ]] &&
       jq -eR 'fromjson? | select(.message == "consuming")' <<<"$records" >/dev/null; then
@@ -283,6 +284,8 @@ smoke() { # <build>
 }
 
 restart_and_verify() { # <build>
+  local since
+  since="$(date +%s)"
   # The deploy that fixes a crash loop is the one that finds the unit past its
   # StartLimitBurst, and systemd refuses manual starts there too.
   sudo systemctl reset-failed "$UNIT" || true
@@ -290,7 +293,7 @@ restart_and_verify() { # <build>
     note "systemctl restart $UNIT failed"
     return 1
   }
-  started_on "$1" && smoke "$1"
+  started_on "$1" "$since" && smoke "$1"
 }
 
 compare_host_configs() {
