@@ -10,8 +10,10 @@ on:
 permissions:
   contents: read
 
-# Cancel superseded runs on the same PR; never cancel runs on main (every commit
-# that lands keeps its signal).
+# Cancel superseded runs on the same PR; never cancel a run in progress on main.
+# GitHub still keeps one pending run per group: a push to main while another's
+# run is pending cancels that pending one, which scripts/deploy.sh then refuses
+# as `cancelled` (re-run it; #34 CR 1).
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

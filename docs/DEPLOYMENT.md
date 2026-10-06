@@ -222,7 +222,9 @@ A stop mid-reclaim finishes the command in hand and leaves the rest pending. A c
 - **The run and every job in it must be `success`.** A `skipped` job leaves the run's own conclusion `success`, so the gate reads the jobs too.
   - `CI_JOBS` in `deploy.sh` (`lint test`) is a floor, and `tests/test_deploy.py` holds `ci.yml` to it. Any other job counts without being named there.
   - A job renamed in `ci.yml` must be renamed in `CI_JOBS`. A build from before the rename then lacks the new name, so rolling back to it needs `--skip-ci`.
-- **Cancelled is not a verdict.** A run that timed out before a runner picked it up ends `cancelled` with no jobs; that happened on #23's PR, from GitHub capacity. The refusal says `run concluded cancelled`. Re-run it from its page (a re-run counts), or deploy a newer commit.
+- **Cancelled is not a verdict,** and has nothing to fix. The refusal says `run concluded cancelled`: re-run it from its page (a re-run counts), or deploy a newer commit. It happens two ways:
+  - **Superseded.** `ci.yml`'s concurrency group never cancels a run in progress on `main`, but GitHub keeps only one *pending* run per group. Push to `main` twice while a run is in progress, and the first of the two pending runs is cancelled. A dispatch on `main` does the same.
+  - **Never scheduled.** A run that times out before any runner picks it up ends `cancelled` with no jobs. That happened on #23's PR, from GitHub capacity.
 - **Pending: it waits.** Up to 10 minutes, asking every 30 s, holding the deploy lock. CI takes about 3 minutes. A run still going after that is refused with its link: deploy again when it finishes.
 - **No run: deploy the tip of the push.** An FF merge pushes every commit of the PR, and GitHub runs CI only on the newest commit of each push. #33 put 21 commits on `main`, and only `fe19a2b` has a run.
   - `scripts/deploy.sh <an intermediate commit>` is refused at once: deploy the tip of its push, or pass `--skip-ci`.

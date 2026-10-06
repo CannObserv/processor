@@ -212,9 +212,10 @@ ci_gate() {
     ] | join(", ")' <<<"$jobs")" ||
     die "GitHub's answer about $build's CI jobs is not the JSON expected; nothing was built"
   [[ "$conclusion" == success ]] || problems="run concluded $conclusion${problems:+; $problems}"
-  # Cancelled is not a verdict: a run that timed out waiting for a runner (#23's
-  # PR, GitHub capacity), or a dispatch on main sharing ci.yml's concurrency
-  # group, ends cancelled with nothing to fix (CR 12).
+  # Cancelled is not a verdict, and has nothing to fix (CR 12). ci.yml's
+  # concurrency group keeps one pending run on main: a newer push or a dispatch
+  # cancels this one while it waits behind a run in progress (#34 CR 1). A run
+  # that timed out waiting for a runner ends cancelled too (#23's PR).
   local remedy="fix it on main"
   [[ "$conclusion" == cancelled ]] && remedy="re-run it from its page (a re-run counts), or deploy a newer commit"
   [[ -z "$problems" ]] || die "CI did not pass for $build: $problems. Nothing was built; $remedy. Run: $url"
