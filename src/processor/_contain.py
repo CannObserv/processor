@@ -75,6 +75,15 @@ _WIDE_ROOTS = ("/home", "/root", "/tmp", "/var", "/run", "/dev", "/etc")
 
 _libc = ctypes.CDLL(None, use_errno=True)
 _libc.syscall.restype = ctypes.c_long
+# The kernel reads each argument register whole (CR 6). prctl(2)'s are unsigned
+# longs; syscall(2) is variadic, so _syscall widens every argument itself.
+_libc.prctl.argtypes = [ctypes.c_int, *[ctypes.c_ulong] * 4]
+_libc.prctl.restype = ctypes.c_int
+
+
+def _syscall(number: int, *args: int) -> int:
+    """``syscall(2)``, every argument a full ``long``; pointers as ``ctypes.addressof``."""
+    return _libc.syscall(ctypes.c_long(number), *(ctypes.c_long(a) for a in args))
 
 
 class ContainmentUnavailable(RuntimeError):
@@ -113,9 +122,7 @@ def _fail(what: str) -> ContainmentUnavailable:
 
 def landlock_abi() -> int:
     """The kernel's Landlock ABI version; 0 when Landlock is absent or disabled."""
-    version = _libc.syscall(
-        _SYS_LANDLOCK_CREATE_RULESET, None, ctypes.c_size_t(0), _LANDLOCK_CREATE_RULESET_VERSION
-    )
+    version = _syscall(_SYS_LANDLOCK_CREATE_RULESET, 0, 0, _LANDLOCK_CREATE_RULESET_VERSION)
     return max(int(version), 0)
 
 
@@ -224,9 +231,7 @@ def restrict_landlock(read_paths: Sequence[str]) -> None:
     attr = _RulesetAttr(
         _FS_ALL_ABI_6, _NET_BIND_TCP | _NET_CONNECT_TCP, _SCOPE_ABSTRACT_UNIX_SOCKET | _SCOPE_SIGNAL
     )
-    ruleset = _libc.syscall(
-        _SYS_LANDLOCK_CREATE_RULESET, ctypes.byref(attr), ctypes.c_size_t(ctypes.sizeof(attr)), 0
-    )
+    ruleset = _syscall(_SYS_LANDLOCK_CREATE_RULESET, ctypes.addressof(attr), ctypes.sizeof(attr), 0)
     if ruleset < 0:
         raise _fail("landlock_create_ruleset")
     try:
@@ -241,11 +246,11 @@ def restrict_landlock(read_paths: Sequence[str]) -> None:
                     access |= _FS_READ_DIR
                 rule = _PathBeneathAttr(access, fd)
                 if (
-                    _libc.syscall(
+                    _syscall(
                         _SYS_LANDLOCK_ADD_RULE,
                         ruleset,
                         _LANDLOCK_RULE_PATH_BENEATH,
-                        ctypes.byref(rule),
+                        ctypes.addressof(rule),
                         0,
                     )
                     != 0
@@ -253,7 +258,7 @@ def restrict_landlock(read_paths: Sequence[str]) -> None:
                     raise _fail(f"landlock_add_rule {path}")
             finally:
                 os.close(fd)
-        if _libc.syscall(_SYS_LANDLOCK_RESTRICT_SELF, ruleset, 0) != 0:
+        if _syscall(_SYS_LANDLOCK_RESTRICT_SELF, ruleset, 0) != 0:
             raise _fail("landlock_restrict_self")
     finally:
         os.close(ruleset)
@@ -264,7 +269,7 @@ def deny_sockets(machine: str | None = None) -> None:
     program = seccomp_program(platform.machine() if machine is None else machine)
     filters = (_SockFilter * len(program))(*(_SockFilter(*ins) for ins in program))
     fprog = _SockFprog(len(program), filters)
-    if _libc.prctl(_PR_SET_SECCOMP, _SECCOMP_MODE_FILTER, ctypes.byref(fprog), 0, 0) != 0:
+    if _libc.prctl(_PR_SET_SECCOMP, _SECCOMP_MODE_FILTER, ctypes.addressof(fprog), 0, 0) != 0:
         raise _fail("PR_SET_SECCOMP")
 
 

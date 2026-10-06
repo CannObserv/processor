@@ -4,6 +4,7 @@ The child's own behaviour under containment is ``tests/test_child.py``. Here eac
 layer is proved alone, in a subprocess, so a pass names the layer that denied.
 """
 
+import ctypes
 import errno
 import json
 import os
@@ -17,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from processor import _contain
 from processor._contain import (
     REQUIRED_ABI,
     SECCOMP_RET_ALLOW,
@@ -348,3 +350,28 @@ def test_a_second_thread_is_refused_not_left_unrestricted() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "2 threads" in result.stdout
+
+
+# --- the C calls: full-width arguments (CR 6) ---------------------------------
+
+
+def test_prctl_takes_unsigned_longs() -> None:
+    # The kernel reads arg2..arg5 as whole unsigned longs, and refuses
+    # PR_SET_NO_NEW_PRIVS unless arg3..arg5 are 0: an int's undefined upper half
+    # (aarch64) must not reach it.
+    assert _contain._libc.prctl.argtypes == [ctypes.c_int, *[ctypes.c_ulong] * 4]
+
+
+def test_every_syscall_argument_is_a_full_long(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple] = []
+
+    class Recorder:
+        def syscall(self, *args):
+            calls.append(args)
+            return 6
+
+    monkeypatch.setattr(_contain, "_libc", Recorder())
+    assert _contain.landlock_abi() == 6
+    (args,) = calls
+    assert all(type(a) is ctypes.c_long for a in args), args
+    assert [a.value for a in args] == [444, 0, 0, 1]
