@@ -58,3 +58,8 @@ Differences from Status: no `--dev` target, so no `live`/`dev` branching and no 
 ## Out of scope
 
 #35 (the drift signal).
+
+## Amended in review
+
+- **CR 1:** `ci.yml`'s comment said runs on `main` are never cancelled, but GitHub keeps only one *pending* run per concurrency group, whatever `cancel-in-progress` says. Two pushes to `main` while a run is in progress cancel the earlier pending run. The gate's `cancelled` remedy (re-run it) already covered that case. The comment, `ci_gate`'s comment and DEPLOYMENT now say so.
+- **CR 5:** an empty 200 answer for the jobs passed the gate, because jq reads an empty body as no input: no output, exit 0. `github()` now accepts only a JSON object and refuses anything else. Status has the same gate, and this is filed there as status#21.
