@@ -3,29 +3,36 @@
 As CannObserv/status's ``tests/deploy/test_deploy.py``: a temporary origin and
 checkout, ``PROCESSOR_DEPLOY_ROOT`` and ``PROCESSOR_DEPLOY_ETC`` under ``tmp_path``,
 and stubs for ``uv``, ``sudo``, ``systemctl``, ``journalctl``, ``systemd-run``,
-``getent`` and ``logger`` on ``PATH``. git, tar and jq are real.
+``getent``, ``logger`` and ``curl`` on ``PATH``. git, tar and jq are real.
 
 The stubs model the service: ``systemctl restart`` starts whatever build ``live``
 names, ``journalctl`` prints that process's ``starting`` and ``consuming`` records,
 and ``systemd-run`` answers the smoke run, unless the build is listed as dead.
+``curl`` plays GitHub's Actions API (#34), never the real one.
 """
 
+import json
 import os
+import re
 import shutil
 import stat
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "deploy.sh"
+CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 UNIT = (REPO / "deploy" / "processor.service").read_text()
 
 STUBS = {
     "uv": r"""#!/usr/bin/env bash
 echo "$PWD UV_LINK_MODE=${UV_LINK_MODE:-}" \
   "UV_PYTHON_DOWNLOADS=${UV_PYTHON_DOWNLOADS:-} $*" >>"$STATE/uv.log"
+echo "uv $*" >>"$STATE/calls.log"
 [[ "${STUB_UV_FAIL:-}" == 1 ]] && exit 1
 mkdir -p .venv/bin
 printf 'home = %s\n' "${STUB_PY_HOME:-/usr/bin}" >.venv/pyvenv.cfg
@@ -67,8 +74,69 @@ printf '{"result": "pass", "build": "%s", "child_containment": "required"}\n' "$
 """,
     "logger": r"""#!/usr/bin/env bash
 echo "$*" >>"$STATE/logger.log"
+echo "logger $*" >>"$STATE/calls.log"
+""",
+    # GitHub's Actions API (#34), as in CannObserv/status's tests (status#11): it
+    # answers from $STATE/ci, runs-<n>.json poll by poll (the last repeating) and
+    # jobs-<id>.json. With none written, one green push run on main for whatever
+    # commit was asked about, with green lint and test. STUB_CI_FAIL is GitHub
+    # refusing: as real curl does, only --fail-with-body passes STUB_CI_BODY on.
+    "curl": r"""#!/usr/bin/env bash
+url="${@: -1}"
+echo "$url" >>"$STATE/curl.log"
+echo "curl $url" >>"$STATE/calls.log"
+ci="$STATE/ci"
+if [[ -n "${STUB_CI_FAIL:-}" ]]; then
+  [[ " $* " == *" --fail-with-body "* ]] && printf '%s\n' "${STUB_CI_BODY:-}"
+  exit "$STUB_CI_FAIL"
+fi
+case "$url" in
+  */jobs*)
+    id="${url#*/actions/runs/}"
+    id="${id%%/*}"
+    cat "$ci/jobs-$id.json" 2>/dev/null || echo '{"jobs":[
+      {"name":"lint","status":"completed","conclusion":"success"},
+      {"name":"test","status":"completed","conclusion":"success"}]}' ;;
+  *)
+    sha="${url#*head_sha=}"
+    sha="${sha%%&*}"
+    n="$(cat "$ci/polls" 2>/dev/null || echo 0)"
+    echo $((n + 1)) >"$ci/polls"
+    answers=("$ci"/runs-*.json)
+    if [[ -e "${answers[0]}" ]]; then
+      last=$((${#answers[@]} - 1))
+      cat "$ci/runs-$((n < last ? n : last)).json"
+    else
+      echo "{\"workflow_runs\":[{\"id\":1,\"head_sha\":\"$sha\",\"event\":\"push\",
+        \"head_branch\":\"main\",\"status\":\"completed\",\"conclusion\":\"success\",
+        \"created_at\":\"2026-10-01T00:00:00Z\",\"html_url\":\"https://github.test/runs/1\"}]}"
+    fi ;;
+esac
 """,
 }
+
+
+def ci_run(
+    run_id: int,
+    sha: str,
+    *,
+    event: str = "push",
+    branch: str = "main",
+    status: str = "completed",
+    conclusion: str = "success",
+    created: str = "2026-10-01T00:00:00Z",
+) -> dict:
+    """One workflow run as GitHub's Actions API lists it."""
+    return {
+        "id": run_id,
+        "head_sha": sha,
+        "event": event,
+        "head_branch": branch,
+        "status": status,
+        "conclusion": conclusion if status == "completed" else None,
+        "created_at": created,
+        "html_url": f"https://github.test/runs/{run_id}",
+    }
 
 
 class Env:
@@ -81,7 +149,8 @@ class Env:
         self.state = tmp / "state"
         self.bin = tmp / "bin"
         self.checkout = tmp / "checkout"
-        for d in (self.root, self.etc / "systemd" / "system", self.state, self.bin):
+        self.ci = self.state / "ci"
+        for d in (self.root, self.etc / "systemd" / "system", self.ci, self.bin):
             d.mkdir(parents=True)
         for name, body in STUBS.items():
             path = self.bin / name
@@ -144,6 +213,31 @@ class Env:
     @property
     def installed_unit(self) -> Path:
         return self.etc / "systemd" / "system" / "processor.service"
+
+    def head(self) -> str:
+        return self.git("rev-parse", "HEAD")
+
+    def ci_answers(self, *answers: list[dict] | str) -> None:
+        """What GitHub lists as the commit's runs, poll by poll; the last repeats."""
+        for n, runs in enumerate(answers):
+            body = runs if isinstance(runs, str) else json.dumps({"workflow_runs": runs})
+            (self.ci / f"runs-{n}.json").write_text(body)
+
+    def ci_jobs(self, run_id: int, **conclusions: str) -> None:
+        """A run's jobs by conclusion; lint or test left out is green, "absent" drops one."""
+        jobs = {"lint": "success", "test": "success", **conclusions}
+        body = [
+            {"name": name, "status": "completed", "conclusion": conclusion}
+            for name, conclusion in jobs.items()
+            if conclusion != "absent"
+        ]
+        (self.ci / f"jobs-{run_id}.json").write_text(json.dumps({"jobs": body}))
+
+    def calls(self) -> list[str]:
+        return self.log("calls").splitlines()
+
+    def github_calls(self) -> list[str]:
+        return self.log("curl").splitlines()
 
 
 @pytest.fixture
@@ -417,3 +511,306 @@ def test_the_verify_reads_only_the_new_process_since_the_restart(w: Env) -> None
     assert query.startswith("-b --since @")
     assert "_SYSTEMD_UNIT=processor.service _PID=1" in query
     assert "-u " not in query
+
+
+# A wait no stubbed poll can outlast, polled at once: SECONDS ticks on the wall
+# clock's second, so a 1 s wait can be spent before its first answer (status#11, CR 1).
+PROMPT_POLLS = {"PROCESSOR_DEPLOY_CI_WAIT_SECONDS": "60", "PROCESSOR_DEPLOY_CI_POLL_SECONDS": "0"}
+
+
+def index_of(calls: list[str], needle: str) -> int:
+    return next(i for i, call in enumerate(calls) if needle in call)
+
+
+def assert_nothing_built(w: Env) -> None:
+    """Refused before the build: no release, no link, no uv, no unit touched."""
+    assert not (w.root / "releases").exists()
+    assert not (w.root / "live").is_symlink()
+    assert not w.log("uv") and not w.log("sudo")
+
+
+class TestTheCIGate:
+    """#34: a deploy needs the commit's CI green, as status#11 shipped it.
+
+    The run that decides is the newest push run of ci.yml on main for exactly
+    this commit. Every FF merge here has a pull_request run on the same SHA too.
+    """
+
+    @staticmethod
+    def other_and_push(w: Env, event: str, branch: str) -> None:
+        """A newer run of another kind (8) beside the push run on main (7)."""
+        sha = w.head()
+        later, earlier = "2026-10-01T02:00:00Z", "2026-10-01T01:00:00Z"
+        w.ci_answers([ci_run(8, sha, event=event, branch=branch, created=later),
+                      ci_run(7, sha, created=earlier)])  # fmt: skip
+
+    # Each differs from the push run on main in one way only, so each half of
+    # the filter is tested on its own.
+    OTHER_RUNS = pytest.mark.parametrize(
+        ("event", "branch"),
+        [("pull_request", "34-deploy-ci-gate"), ("pull_request", "main"),
+         ("workflow_dispatch", "main"), ("push", "feature")],
+        ids=["pr", "pr-from-main", "dispatch-on-main", "push-elsewhere"],
+    )  # fmt: skip
+
+    def test_a_deploy_asks_about_this_commit_as_pushed_to_main(self, w: Env) -> None:
+        result = w.deploy()
+        assert result.returncode == 0, result.stderr
+        runs, jobs = w.github_calls()
+        assert runs.startswith(
+            "https://api.github.com/repos/CannObserv/processor/actions/workflows/ci.yml/runs?"
+        )
+        for param in (f"head_sha={w.head()}", "event=push", "branch=main"):
+            assert param in runs
+        assert jobs.endswith("/repos/CannObserv/processor/actions/runs/1/jobs?per_page=100")
+
+    def test_a_pass_is_logged_with_its_run_before_anything_is_built(self, w: Env) -> None:
+        build = w.git("rev-parse", "--short=12", "HEAD")
+        result = w.deploy()
+        assert result.returncode == 0, result.stderr
+        assert f"CI passed for {build}: https://github.test/runs/1" in result.stderr
+        calls = w.calls()
+        passed = index_of(calls, "CI passed")
+        assert calls[passed] == (
+            f"logger -t processor-deploy CI passed for {build}: https://github.test/runs/1"
+        )
+        assert passed < index_of(calls, "uv sync")
+
+    def test_a_failed_job_is_refused_by_name(self, w: Env) -> None:
+        w.ci_answers([ci_run(7, w.head(), conclusion="failure")])
+        w.ci_jobs(7, test="failure")
+        result = w.deploy()
+        assert result.returncode == 1
+        assert "test (failure)" in result.stderr and "lint (" not in result.stderr
+        assert "https://github.test/runs/7" in result.stderr
+        assert "fix it on main" in result.stderr
+        assert_nothing_built(w)
+
+    @pytest.mark.parametrize("conclusion", ["skipped", "cancelled", "absent"])
+    def test_a_required_job_that_did_not_succeed_is_not_a_pass(
+        self, w: Env, conclusion: str
+    ) -> None:
+        """A skipped job leaves the run's own conclusion "success"."""
+        w.ci_answers([ci_run(7, w.head())])
+        w.ci_jobs(7, lint=conclusion)
+        result = w.deploy()
+        assert result.returncode == 1
+        expected = "lint (not in the run)" if conclusion == "absent" else f"lint ({conclusion})"
+        assert expected in result.stderr
+        assert_nothing_built(w)
+
+    def test_a_failed_job_the_checkout_does_not_know_is_refused(self, w: Env) -> None:
+        """CI_JOBS comes from the checkout running deploy.sh, which may predate a
+        job added to ci.yml since. Every job the run lists counts (status#11, CR 6)."""
+        w.ci_answers([ci_run(7, w.head())])
+        w.ci_jobs(7, e2e="failure")
+        result = w.deploy()
+        assert result.returncode == 1 and "e2e (failure)" in result.stderr
+        assert_nothing_built(w)
+
+    def test_a_run_that_did_not_conclude_success_is_refused_whatever_its_jobs(self, w: Env) -> None:
+        w.ci_answers([ci_run(7, w.head(), conclusion="failure")])
+        w.ci_jobs(7)
+        result = w.deploy()
+        assert result.returncode == 1 and "run concluded failure" in result.stderr
+        assert_nothing_built(w)
+
+    def test_a_cancelled_run_says_re_run_it(self, w: Env) -> None:
+        """Cancelled is not a verdict: a run that timed out waiting for a runner
+        (#23's PR, GitHub capacity) lists no jobs, and has nothing to fix."""
+        w.ci_answers([ci_run(7, w.head(), conclusion="cancelled")])
+        w.ci_jobs(7, lint="absent", test="absent")
+        result = w.deploy()
+        assert result.returncode == 1
+        assert "run concluded cancelled" in result.stderr
+        assert "test (not in the run)" in result.stderr
+        assert "re-run it from its page (a re-run counts)" in result.stderr
+        assert "fix it on main" not in result.stderr
+        assert_nothing_built(w)
+
+    def test_a_run_still_going_when_the_wait_ends_is_refused(self, w: Env) -> None:
+        w.ci_answers([ci_run(7, w.head(), status="in_progress")])
+        result = w.deploy(PROCESSOR_DEPLOY_CI_WAIT_SECONDS="0")
+        assert result.returncode == 1
+        assert "still in_progress" in result.stderr
+        assert "https://github.test/runs/7" in result.stderr
+        assert not [c for c in w.github_calls() if "/jobs" in c]
+        assert_nothing_built(w)
+
+    def test_a_run_that_finishes_within_the_wait_is_deployed(self, w: Env) -> None:
+        sha = w.head()
+        w.ci_answers([ci_run(7, sha, status="in_progress")], [ci_run(7, sha)])
+        started = time.monotonic()
+        result = w.deploy(**PROMPT_POLLS)
+        assert result.returncode == 0, result.stderr
+        assert time.monotonic() - started < 15, "polled every 30 s, not as told"
+        # The wait holds the lock for up to 10 minutes: say where to watch.
+        waiting = next(ln for ln in result.stderr.splitlines() if "waiting for CI" in ln)
+        assert "https://github.test/runs/7" in waiting
+        assert len([c for c in w.github_calls() if "/runs?" in c]) == 2
+
+    def test_the_tip_just_pushed_waits_for_its_run_to_appear(self, w: Env) -> None:
+        """GitHub queues the push run a few seconds after the push."""
+        w.ci_answers([], [ci_run(7, w.head())])
+        result = w.deploy(**PROMPT_POLLS)
+        assert result.returncode == 0, result.stderr
+
+    def test_the_tip_with_no_run_waits_bounded_then_is_refused(self, w: Env) -> None:
+        w.ci_answers([])
+        result = w.deploy(PROCESSOR_DEPLOY_CI_WAIT_SECONDS="2",
+                          PROCESSOR_DEPLOY_CI_POLL_SECONDS="1")  # fmt: skip
+        assert result.returncode == 1
+        assert "no CI run" in result.stderr and "after 2s" in result.stderr
+        assert "--skip-ci" in result.stderr
+        assert len(w.github_calls()) >= 2
+        assert_nothing_built(w)
+
+    def test_a_commit_behind_the_tip_with_no_run_is_refused_at_once(self, w: Env) -> None:
+        """An FF merge pushes many commits, and GitHub runs CI on the push's newest
+        only: #33 put 21 commits on main, and only fe19a2b has a push run."""
+        middle = w.git("rev-parse", "--short=12", "HEAD")
+        w.commit("tip")
+        w.ci_answers([])
+        result = w.deploy(middle)  # the default wait, 600 s
+        assert result.returncode == 1
+        assert "no CI run" in result.stderr
+        assert "newest commit of each push" in result.stderr and "--skip-ci" in result.stderr
+        assert len(w.github_calls()) == 1
+        assert_nothing_built(w)
+
+    def test_a_run_for_another_commit_is_not_this_ones(self, w: Env) -> None:
+        older = w.head()
+        w.commit("tip")
+        w.ci_answers([ci_run(7, older)])
+        result = w.deploy(PROCESSOR_DEPLOY_CI_WAIT_SECONDS="0")
+        assert result.returncode == 1 and "no CI run" in result.stderr
+
+    @OTHER_RUNS
+    def test_a_run_of_another_kind_alone_does_not_count(
+        self, w: Env, event: str, branch: str
+    ) -> None:
+        """Every FF merge has a pull_request run beside its push run, on the same SHA."""
+        w.ci_answers([ci_run(8, w.head(), event=event, branch=branch)])
+        w.ci_jobs(8)
+        result = w.deploy(PROCESSOR_DEPLOY_CI_WAIT_SECONDS="0")
+        assert result.returncode == 1 and "no CI run" in result.stderr
+        assert not [c for c in w.github_calls() if "/jobs" in c]
+        assert_nothing_built(w)
+
+    @OTHER_RUNS
+    def test_a_failed_run_of_another_kind_changes_nothing(
+        self, w: Env, event: str, branch: str
+    ) -> None:
+        self.other_and_push(w, event, branch)
+        w.ci_jobs(8, test="failure")
+        w.ci_jobs(7)
+        result = w.deploy()
+        assert result.returncode == 0, result.stderr
+        assert w.github_calls()[-1].endswith("/actions/runs/7/jobs?per_page=100")
+
+    @OTHER_RUNS
+    def test_a_green_run_of_another_kind_does_not_pass_a_failed_push_run(
+        self, w: Env, event: str, branch: str
+    ) -> None:
+        self.other_and_push(w, event, branch)
+        w.ci_jobs(8)
+        w.ci_jobs(7, lint="failure")
+        result = w.deploy()
+        assert result.returncode == 1
+        assert "lint (failure)" in result.stderr and "https://github.test/runs/7" in result.stderr
+
+    def test_of_two_push_runs_on_main_the_newest_decides(self, w: Env) -> None:
+        """A re-run counts: GitHub reports a run's latest attempt, and main moved back
+        and forward again lists the commit twice."""
+        sha = w.head()
+        w.ci_answers([ci_run(7, sha, created="2026-10-01T01:00:00Z"),
+                      ci_run(9, sha, created="2026-10-01T03:00:00Z"),
+                      ci_run(8, sha, created="2026-10-01T02:00:00Z")])  # fmt: skip
+        w.ci_jobs(7, test="failure")
+        w.ci_jobs(8, test="failure")
+        w.ci_jobs(9)
+        result = w.deploy()
+        assert result.returncode == 0, result.stderr
+        assert w.github_calls()[-1].endswith("/actions/runs/9/jobs?per_page=100")
+
+    @pytest.mark.parametrize(
+        ("rc", "body", "said"),
+        [
+            ("22", '{"message":"API rate limit exceeded for 192.0.2.1."}',
+             "GitHub says: API rate limit exceeded for 192.0.2.1."),
+            ("22", "<html>502 Bad Gateway</html>", "GitHub did not answer"),
+            ("28", "", "GitHub did not answer"),
+        ],
+        ids=["403-rate-limit", "5xx-html", "timeout"],
+    )  # fmt: skip
+    def test_github_refusing_refuses_the_deploy(
+        self, w: Env, rc: str, body: str, said: str
+    ) -> None:
+        """Unauthenticated: 60 requests an hour per address. A refusal never passes."""
+        result = w.deploy(STUB_CI_FAIL=rc, STUB_CI_BODY=body)
+        assert result.returncode == 1
+        assert said in result.stderr
+        assert "Nothing was built" in result.stderr and "--skip-ci" in result.stderr
+        assert_nothing_built(w)
+
+    def test_a_runs_answer_that_is_not_json_refuses_the_deploy(self, w: Env) -> None:
+        w.ci_answers("<html>unicorn</html>")
+        result = w.deploy()
+        assert result.returncode == 1
+        assert "not the JSON expected" in result.stderr and "nothing was built" in result.stderr
+        assert_nothing_built(w)
+
+    @pytest.mark.parametrize("body", ["<html>unicorn</html>", '{"total_count":0}'])
+    def test_a_jobs_answer_that_is_not_json_refuses_the_deploy(self, w: Env, body: str) -> None:
+        """jq alone exits 5, and says neither that nothing was built nor --skip-ci
+        (status#11, CR 10)."""
+        w.ci_answers([ci_run(7, w.head())])
+        (w.ci / "jobs-7.json").write_text(body)
+        result = w.deploy()
+        assert result.returncode == 1
+        assert "not the JSON expected" in result.stderr and "nothing was built" in result.stderr
+        assert_nothing_built(w)
+
+    def test_skip_ci_deploys_without_asking_and_logs_it_first(self, w: Env) -> None:
+        build = w.git("rev-parse", "--short=12", "HEAD")
+        w.ci_answers([ci_run(7, w.head(), conclusion="failure")])
+        w.ci_jobs(7, test="failure")
+        result = w.deploy("--skip-ci")
+        assert result.returncode == 0, result.stderr
+        assert not w.github_calls()
+        calls = w.calls()
+        skipped = index_of(calls, "--skip-ci")
+        assert (
+            calls[skipped] == f"logger -t processor-deploy CI not checked for {build} (--skip-ci)"
+        )
+        assert skipped < index_of(calls, "uv sync")
+
+    def test_a_rollback_is_gated_too(self, w: Env) -> None:
+        """One rule (#34, option a): a kept release proves it was built, not that
+        its CI passed. --skip-ci is the escape when GitHub cannot answer."""
+        old = w.head()
+        assert w.deploy().returncode == 0
+        w.commit("second")
+        assert w.deploy().returncode == 0
+        w.ci_answers([ci_run(7, old, conclusion="failure")])
+        w.ci_jobs(7, test="failure")
+        result = w.deploy(old[:12])
+        assert result.returncode == 1 and "test (failure)" in result.stderr
+        assert w.live() != f"releases/{old[:12]}"
+
+    def test_help_names_skip_ci(self) -> None:
+        result = subprocess.run(["bash", str(SCRIPT), "--help"], capture_output=True, text=True)
+        assert result.returncode == 0 and "--skip-ci" in result.stdout
+
+    def test_the_jobs_the_gate_requires_run_on_a_push_to_main(self) -> None:
+        """A job renamed in ci.yml must change CI_JOBS too. A job added need not:
+        every job a run lists counts."""
+        required = re.search(r"^CI_JOBS=\((.*)\)$", SCRIPT.read_text(), re.M)
+        assert required, "deploy.sh names its jobs in CI_JOBS=(...)"
+        workflow = yaml.safe_load(CI_WORKFLOW.read_text())
+        assert "main" in workflow[True]["push"]["branches"]  # `on:` loads as True
+        names = {job.get("name", key) for key, job in workflow["jobs"].items()}
+        for name in required.group(1).split():
+            assert name in names
+            (job,) = [j for k, j in workflow["jobs"].items() if j.get("name", k) == name]
+            assert "if" not in job, f"{name} may be skipped on a push"
