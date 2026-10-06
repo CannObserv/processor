@@ -208,7 +208,8 @@ connection. Now, in layers:
 
 1. **The child contains itself** (`processor._contain`, stdlib `ctypes`, no
    binding) after `RLIMIT_AS` and before it reads its request:
-   - *Landlock* (ABI ≥ 6): read and execute only on a derived allowlist (each
+   - *Landlock* (ABI ≥ 6): read only on a derived allowlist, and no program
+     run from it (no `execve`, not even the dynamic loader; CR 2) (each
      `sys.path` entry, the stdlib, the directories of the shared libraries
      already loaded (the loader's, so libgcc_s beside libc is found; Python's
      `LIBDIR` is not the system's on CI), `/etc/ld.so.cache`, and the

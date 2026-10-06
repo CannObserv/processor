@@ -142,6 +142,7 @@ def try_signal_parent() -> list:
 
 def try_exec(path: str) -> list:
     def run() -> int:
-        return subprocess.run([path, "-c", "exit 0"], check=False).returncode
+        args = [path, "--version"] if "ld-linux" in path else [path, "-c", "exit 0"]
+        return subprocess.run(args, check=False, capture_output=True).returncode
 
     return _attempt(run)

@@ -4,10 +4,10 @@ The child parses untrusted documents, and shares the service's uid. Before it re
 its request, it restricts itself (``contain``), so a parser bug that gives it code
 execution reaches only:
 
-- **Files:** read (and execute) on a derived allowlist: each ``sys.path`` entry, the
+- **Files:** read only, on a derived allowlist: each ``sys.path`` entry, the
   stdlib, the loaded shared libraries' directories, ``/etc/ld.so.cache`` and the mime-types
   files co-core reads at import. No write anywhere; nothing under ``/proc``,
-  ``/etc/processor``, ``/run/credentials`` or a home directory.
+  ``/etc/processor``, ``/run/credentials`` or a home directory. No ``execve`` at all.
 - **Network:** no TCP bind or connect (Landlock), and no socket of any family at all
   (seccomp: ``socket``, ``socketpair`` and ``io_uring_*`` fail with EPERM). Landlock
   alone does not stop a connect to an existing pathname unix socket, such as
@@ -53,10 +53,9 @@ _SYS_LANDLOCK_RESTRICT_SELF = 446
 _LANDLOCK_CREATE_RULESET_VERSION = 1 << 0
 _LANDLOCK_RULE_PATH_BENEATH = 1
 
-_FS_EXECUTE = 1 << 0
 _FS_READ_FILE = 1 << 2
 _FS_READ_DIR = 1 << 3
-_FS_ALL_ABI_6 = (1 << 16) - 1  # EXECUTE … IOCTL_DEV
+_FS_ALL_ABI_6 = (1 << 16) - 1  # EXECUTE … IOCTL_DEV: all handled, so EXECUTE is denied
 _NET_BIND_TCP = 1 << 0
 _NET_CONNECT_TCP = 1 << 1
 _SCOPE_ABSTRACT_UNIX_SOCKET = 1 << 0
@@ -221,7 +220,7 @@ def no_new_privs() -> None:
 
 
 def restrict_landlock(read_paths: Sequence[str]) -> None:
-    """Read and execute ``read_paths`` only; no TCP; scoped abstract sockets and signals."""
+    """Read ``read_paths`` only, execute nothing; no TCP; scoped abstract sockets and signals."""
     attr = _RulesetAttr(
         _FS_ALL_ABI_6, _NET_BIND_TCP | _NET_CONNECT_TCP, _SCOPE_ABSTRACT_UNIX_SOCKET | _SCOPE_SIGNAL
     )
@@ -234,7 +233,10 @@ def restrict_landlock(read_paths: Sequence[str]) -> None:
         for path in read_paths:
             fd = os.open(path, os.O_PATH | os.O_CLOEXEC)
             try:
-                access = _FS_EXECUTE | _FS_READ_FILE
+                # Read only. EXECUTE is handled and never granted, so the child runs
+                # no program, not even the loader beside libc; loading a library
+                # does not need it (Landlock checks EXECUTE at execve alone; CR 2).
+                access = _FS_READ_FILE
                 if os.path.isdir(path):
                     access |= _FS_READ_DIR
                 rule = _PathBeneathAttr(access, fd)

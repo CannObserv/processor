@@ -339,6 +339,18 @@ async def test_the_child_cannot_signal_its_parent() -> None:
     await _denied("try_signal_parent")
 
 
+def _loader() -> str:
+    """The dynamic loader: an executable inside the allowlist (beside libc)."""
+    for line in Path("/proc/self/maps").read_text().splitlines():
+        path = line.split()[-1]
+        if os.path.basename(path).startswith("ld-linux"):
+            return os.path.realpath(path)
+    pytest.skip("no ld-linux mapped here")
+
+
 @needs_landlock
-async def test_the_child_cannot_run_a_program() -> None:
-    await _denied("try_exec", "/bin/sh")
+@pytest.mark.parametrize("program", ["/bin/sh", "loader"])
+async def test_the_child_cannot_run_a_program(program: str) -> None:
+    # CR 2: /bin/sh is outside the allowlist, so refusing it proves little; the
+    # loader is inside it (it can run any ELF it can read). No path grants EXECUTE.
+    await _denied("try_exec", _loader() if program == "loader" else program)
