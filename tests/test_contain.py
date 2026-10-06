@@ -327,3 +327,24 @@ def test_an_undumpable_process_hides_its_environment(tmp_path: Path, undumpable:
     finally:
         proc.kill()
         proc.wait()
+
+
+@needs_landlock
+def test_a_second_thread_is_refused_not_left_unrestricted() -> None:
+    # CR 4: Landlock and seccomp bind the calling thread alone. A thread started
+    # earlier (by an import, say) would keep every right; refuse rather than leave it.
+    result = _python(
+        """
+        import threading, time
+        from processor._contain import ContainmentUnavailable, contain
+        threading.Thread(target=time.sleep, args=(30,), daemon=True).start()
+        try:
+            contain("required")
+        except ContainmentUnavailable as exc:
+            print(exc)
+        else:
+            print("contained")
+        """
+    )
+    assert result.returncode == 0, result.stderr
+    assert "2 threads" in result.stdout

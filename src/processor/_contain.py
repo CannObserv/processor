@@ -276,6 +276,12 @@ def contain(mode: Containment, *, abi: int | None = None) -> None:
         raise ValueError(f"unknown containment mode {mode!r}: 'required' or 'off'")
     if reason := unavailable_reason(abi=abi):
         raise ContainmentUnavailable(reason)
+    # Both layers bind the calling thread and its future children alone: a thread
+    # that already exists would keep every right (CR 4).
+    if (threads := len(os.listdir("/proc/self/task"))) != 1:
+        raise ContainmentUnavailable(
+            f"{threads} threads: only a single-threaded process is contained"
+        )
     paths = read_allowlist(sys.path)  # at call time: the child has just extended it
     no_new_privs()
     restrict_landlock(paths)
