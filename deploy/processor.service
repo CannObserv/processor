@@ -1,5 +1,6 @@
 # Processor — the content.process consumer (CannObserv/processor, spec §2–§4).
-# Install: docs/DEPLOYMENT.md. Code on main is the deployed code.
+# Runs the release scripts/deploy.sh put at /srv/processor/live, never a checkout;
+# the deploy installs this file from that release (docs/DEPLOYMENT.md).
 [Unit]
 Description=Processor: consume content.process, extract, store by hash, publish content.derived
 Documentation=https://github.com/CannObserv/processor/blob/main/docs/DEPLOYMENT.md
@@ -8,13 +9,24 @@ After=network-online.target tailscaled.service
 
 [Service]
 Type=exec
-User=exedev
-Group=exedev
-WorkingDirectory=/home/exedev/processor
-# CO_PROCESSOR_BUS_URL (the broker credential), GOOGLE_APPLICATION_CREDENTIALS, and
-# any CO_PROCESSOR_* override. 600, owned by exedev; never sourced into a shell profile.
+# Its own user (#2): no sudo, not in group docker, no home. It reads its release and
+# nothing of exedev's; the extraction child is contained besides (spec §3).
+User=processor
+Group=processor
+WorkingDirectory=/srv/processor/live
+# CO_PROCESSOR_BUS_URL (the broker credential) and any CO_PROCESSOR_* override.
+# root:root 600 in a 700 directory: systemd reads it before switching users, so the
+# service user never can. Never sourced into a shell profile.
 EnvironmentFile=/etc/processor/.env
-ExecStart=/home/exedev/processor/.venv/bin/processor run
+# The GCS writer key, root 600 on disk, handed over by systemd at start. Keep
+# GOOGLE_APPLICATION_CREDENTIALS out of the env file: EnvironmentFile= overrides
+# Environment=.
+LoadCredential=gcs-writer-key:/etc/processor/co-gcs-processor-writer.json
+Environment=GOOGLE_APPLICATION_CREDENTIALS=%d/gcs-writer-key
+# The venv's own entry point: it never syncs, and needs no uv (cohort R5). Its
+# scripts carry the release's physical path, so a later switch of the link never
+# mixes two releases in one process or its children.
+ExecStart=/srv/processor/live/.venv/bin/processor run
 Restart=on-failure
 RestartSec=5
 
@@ -41,7 +53,10 @@ TimeoutStopSec=240
 
 NoNewPrivileges=yes
 PrivateTmp=yes
-ProtectSystem=full
+# Nothing writes outside PrivateTmp: the release is read-only, its bytecode compiled
+# at build. Nothing reads /home: the release is under /srv.
+ProtectSystem=strict
+ProtectHome=yes
 
 [Install]
 WantedBy=multi-user.target
