@@ -657,10 +657,12 @@ class TestTheCIGate:
 
     def test_the_tip_with_no_run_waits_bounded_then_is_refused(self, w: Env) -> None:
         w.ci_answers([])
-        result = w.deploy(PROCESSOR_DEPLOY_CI_WAIT_SECONDS="2",
+        # CR 3: SECONDS ticks on the wall clock's second, so a 2 s wait can show
+        # its first poll 0 s left; 3 s needs that poll to take over a second.
+        result = w.deploy(PROCESSOR_DEPLOY_CI_WAIT_SECONDS="3",
                           PROCESSOR_DEPLOY_CI_POLL_SECONDS="1")  # fmt: skip
         assert result.returncode == 1
-        assert "no CI run" in result.stderr and "after 2s" in result.stderr
+        assert "no CI run" in result.stderr and "after 3s" in result.stderr
         assert "--skip-ci" in result.stderr
         assert len(w.github_calls()) >= 2
         assert_nothing_built(w)
