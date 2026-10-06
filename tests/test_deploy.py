@@ -333,6 +333,9 @@ def test_only_a_pushed_main_commit_is_deployed(w: Env, ref_kind: str, message: s
     result = w.deploy(ref)
     assert result.returncode == 1 and message in result.stderr
     assert not (w.root / "releases").exists()
+    # CR 8: refused before GitHub is asked; the gate's 60 requests an hour are not
+    # spent on a commit that can never deploy.
+    assert not w.github_calls()
 
 
 def test_refuses_root(w: Env) -> None:
