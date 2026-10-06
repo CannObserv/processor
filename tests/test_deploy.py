@@ -755,8 +755,10 @@ class TestTheCIGate:
         assert "Nothing was built" in result.stderr and "--skip-ci" in result.stderr
         assert_nothing_built(w)
 
-    def test_a_runs_answer_that_is_not_json_refuses_the_deploy(self, w: Env) -> None:
-        w.ci_answers("<html>unicorn</html>")
+    @pytest.mark.parametrize("body", ["<html>unicorn</html>", '{"total_count":0}'])
+    def test_a_runs_answer_that_is_not_json_refuses_the_deploy(self, w: Env, body: str) -> None:
+        """CR 4: JSON without workflow_runs fails the same way as no JSON at all."""
+        w.ci_answers(body)
         result = w.deploy()
         assert result.returncode == 1
         assert "not the JSON expected" in result.stderr and "nothing was built" in result.stderr
