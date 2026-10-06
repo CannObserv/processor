@@ -790,13 +790,17 @@ class TestTheCIGate:
         its CI passed. --skip-ci is the escape when GitHub cannot answer."""
         old = w.head()
         assert w.deploy().returncode == 0
-        w.commit("second")
+        second = w.commit("second")
         assert w.deploy().returncode == 0
+        syncs, restarts = len(w.log("uv").splitlines()), w.log("systemctl").count("restart ")
         w.ci_answers([ci_run(7, old, conclusion="failure")])
         w.ci_jobs(7, test="failure")
         result = w.deploy(old[:12])
         assert result.returncode == 1 and "test (failure)" in result.stderr
-        assert w.live() != f"releases/{old[:12]}"
+        # CR 2: refused before anything changed, not merely somewhere other than old.
+        assert w.live() == f"releases/{second}"
+        assert len(w.log("uv").splitlines()) == syncs
+        assert w.log("systemctl").count("restart ") == restarts
 
     def test_help_names_skip_ci(self) -> None:
         result = subprocess.run(["bash", str(SCRIPT), "--help"], capture_output=True, text=True)
