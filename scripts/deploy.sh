@@ -120,6 +120,10 @@ build_release() {
     rm -rf "$release"
   fi
   note "building $build"
+  # The parent explicitly, repaired if an earlier deploy left it 700: `mkdir -p`
+  # takes the operator's umask (700 under 077), and the service user could then
+  # reach no release at all (CR 14).
+  install -d -m 755 "$ROOT/releases"
   mkdir -p "$release"
   # Each says why it stopped: under set -e alone the deploy would exit silently. The
   # release, left without REVISION, is rebuilt next time (CR 13).

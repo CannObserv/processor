@@ -184,6 +184,16 @@ def test_the_release_is_read_only_and_readable_by_the_service_user(w: Env) -> No
             assert mode & stat.S_IXOTH, path
 
 
+def test_the_service_user_can_reach_the_release_under_any_umask(w: Env) -> None:
+    # CR 14: `mkdir -p` made releases/ with the operator's umask (700 under 077),
+    # and the release's chmod does not reach its parent: processor could reach no
+    # release at all. Every directory from the root down must let "other" through.
+    assert w.deploy(umask="077").returncode == 0
+    release = w.root / "releases" / w.git("rev-parse", "--short=12", "HEAD")
+    for path in (w.root, w.root / "releases", release):
+        assert path.stat().st_mode & stat.S_IXOTH, f"{path} is {stat.filemode(path.stat().st_mode)}"
+
+
 def test_the_build_is_non_editable_against_the_system_python(w: Env) -> None:
     assert w.deploy().returncode == 0
     (line,) = w.log("uv").splitlines()
