@@ -74,7 +74,7 @@ uv sync                                  # install deps (wheelhouse first)
 uv run pytest                            # tests
 uv run pytest -m integration             # bus tests against the scratch redis-server
 uv run ruff check . && uv run ruff format --check .
-scripts/deploy.sh [<build>]              # ship: build a release from origin/main, switch, verify (as exedev)
+scripts/deploy.sh [<build>]              # ship: CI green, then build a release from origin/main, switch, verify (as exedev)
 ```
 
 ## Conventions

@@ -167,22 +167,24 @@ processor_cli() {   # e.g. processor_cli dlq list; processor_cli ensure-group
 - it verifies through the journal and the smoke run, since it has no HTTP endpoint;
 - the venv entry point stands in for `uv run --frozen --no-sync`.
 
-Status's CI gate (status#11) and drift check (status#12) aren't adopted yet. Each is a follow-up issue.
+Status's CI gate (status#11) is adopted as § The CI gate (#34). Its drift check (status#12) isn't yet: #35.
 
 ## Deploy a change: `scripts/deploy.sh`
 
-Run as `exedev`, from `~/processor`, after the PR merges. It needs `git`, `uv`, `jq` and `flock` (util-linux) on the `PATH`, plus `sudo` for `systemctl`, `systemd-run` and the unit file; `co-processor` has all of them. The script fetches `origin` itself:
+Run as `exedev`, from `~/processor`, after the PR merges. It needs `git`, `uv`, `jq`, `curl` and `flock` (util-linux) on the `PATH`, and HTTPS to `api.github.com`, plus `sudo` for `systemctl`, `systemd-run` and the unit file; `co-processor` has all of them. The script fetches `origin` itself:
 
 ```bash
 cd ~/processor && git pull --ff-only     # for the skills hook; the deploy fetches on its own
-scripts/deploy.sh                        # origin/main
-scripts/deploy.sh <build>                # any commit on origin/main: a rollback
-journalctl -t processor-deploy -n 20     # "live -> <build> (was releases/<old>)"
+scripts/deploy.sh                        # origin/main, once its CI passed
+scripts/deploy.sh <build>                # any commit on origin/main with green CI: a rollback
+scripts/deploy.sh --skip-ci [<build>]    # without asking CI: an emergency, logged
+journalctl -t processor-deploy -n 20     # "CI passed for <build>: <run>", "live -> <build> (was releases/<old>)"
 ```
 
 A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml` or `uv.lock` needs no deploy.
 
 **In order:**
+0. **Ask CI** whether the commit passed (§ The CI gate). A refusal builds nothing.
 1. **Build** `releases/<build>`, or reuse a complete one whose venv still imports `processor`, co-core and lxml. A release that `live` runs is never rebuilt in place. The service user must exist, or nothing switches.
 2. **Switch** `live` (an atomic rename). Then install `deploy/processor.service` from the release, if it differs from the installed copy, followed by `daemon-reload`.
 3. **Restart.** `reset-failed` comes first, in case a crash loop hit the start limit. The restart lets the in-flight command finish (`KillMode=mixed`: SIGTERM reaches the consumer, not its extraction child), for up to `TimeoutStopSec=240`.
@@ -207,8 +209,29 @@ Then the host configs under `deploy/` (tailscaled's drop-in, NodeSource's apt fi
 | `PROCESSOR_DEPLOY_KEEP` | `5` | releases kept besides `live` |
 | `PROCESSOR_DEPLOY_VERIFY_SECONDS` | `300` | how long the new process has to start, past `TimeoutStopSec=240` |
 | `PROCESSOR_DEPLOY_PYTHON` | `/usr/bin/python3.12` | the interpreter each venv is built on |
+| `PROCESSOR_DEPLOY_CI_WAIT_SECONDS` | `600` | how long to wait for a pending CI run |
+| `PROCESSOR_DEPLOY_CI_POLL_SECONDS` | `30` | how often to ask while waiting |
 
 A stop mid-reclaim finishes the command in hand and leaves the rest pending. A command killed mid-flight stays pending, and the reclaim re-runs it after `reclaim_min_idle_ms`. That includes a stop during a GCS outage: the library's retries can push one command to about 435 s, past `TimeoutStopSec`, so systemd SIGKILLs it. That is safe (nothing was acked) and deliberate (a deploy never hangs for minutes).
+
+### The CI gate
+
+**A deploy needs the commit's CI to have passed** (#34, ported from status#11). Before anything is built, `deploy.sh` asks GitHub's Actions API about the commit. It refuses unless `lint`, `test` and any other job in the run all succeeded. The refusal names each job that didn't, with its conclusion, and links the run. A refused deploy changes nothing.
+
+- **Which run.** The newest `push` run of `ci.yml` on `main` for exactly that commit. Every FF merge also has a `pull_request` run on the same SHA, and that one doesn't count, nor does a `workflow_dispatch` run. A re-run counts, since GitHub reports a run's latest attempt.
+- **The run and every job in it must be `success`.** A `skipped` job leaves the run's own conclusion `success`, so the gate reads the jobs too.
+  - `CI_JOBS` in `deploy.sh` (`lint test`) is a floor, and `tests/test_deploy.py` holds `ci.yml` to it. Any other job counts without being named there.
+  - A job renamed in `ci.yml` must be renamed in `CI_JOBS`. A build from before the rename then lacks the new name, so rolling back to it needs `--skip-ci`.
+- **Cancelled is not a verdict.** A run that timed out before a runner picked it up ends `cancelled` with no jobs; that happened on #23's PR, from GitHub capacity. The refusal says `run concluded cancelled`. Re-run it from its page (a re-run counts), or deploy a newer commit.
+- **Pending: it waits.** Up to 10 minutes, asking every 30 s, holding the deploy lock. CI takes about 3 minutes. A run still going after that is refused with its link: deploy again when it finishes.
+- **No run: deploy the tip of the push.** An FF merge pushes every commit of the PR, and GitHub runs CI only on the newest commit of each push. #33 put 21 commits on `main`, and only `fe19a2b` has a run.
+  - `scripts/deploy.sh <an intermediate commit>` is refused at once: deploy the tip of its push, or pass `--skip-ci`.
+  - The tip may have been pushed seconds ago, so it waits, as for a pending run. A tip that never gets a run (`[skip ci]`) is refused when the wait ends; pass `--skip-ci` rather than wait.
+- **No token.** The repo is public, so the API answers without one, at 60 requests an hour per address. A deploy costs 2 requests, or up to 22 if it waits the full 10 minutes. Whether `co-processor`'s egress address is shared with other VMs is unknown.
+  - If GitHub refuses or can't be reached (a 403 rate limit, a 5xx, a timeout, an answer that isn't JSON), the deploy says so, with GitHub's message when there is one, and builds nothing. Wait, or pass `--skip-ci`. It never passes.
+  - If the repo goes private, the API answers 404, and the gate needs a read-only token.
+- **Rollbacks are gated too.** One rule: a kept release proves it was built, not that its CI passed. Every deploy so far was the tip of its push, so its run exists, and a rollback to it normally passes. When GitHub is slow or rate-limited mid-incident, `scripts/deploy.sh --skip-ci <old build>`.
+- **`--skip-ci`** deploys without asking GitHub at all: for a fix that can't wait for CI, or when GitHub can't answer. It is logged before anything is built, as `CI not checked for <build> (--skip-ci)`. A gate that passes is logged too, as `CI passed for <build>: <run>`.
 
 ## Containment
 
@@ -273,7 +296,7 @@ Then run § Containment's checks, and wait for the next shadow command: `ack: co
 
 ## Rollback
 
-- **A failed deploy** switches back by itself (exit 1). `scripts/deploy.sh <old build>` rolls back on purpose; the old release still exists among the 5 kept, so nothing is rebuilt.
+- **A failed deploy** switches back by itself (exit 1). `scripts/deploy.sh <old build>` rolls back on purpose; the old release still exists among the 5 kept, so nothing is rebuilt. It is gated on the old build's CI like any deploy; if GitHub can't answer, add `--skip-ci` (§ The CI gate).
 - **The install** (Stage B), back to `exedev` running `~/processor`:
 
   ```bash
