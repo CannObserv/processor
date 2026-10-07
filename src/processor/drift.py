@@ -47,7 +47,10 @@ RUNS_PATH = "actions/workflows/ci.yml/runs?event=push&branch=main&per_page=100"
 #: it, the first push left unchecked starts the clock: the earliest the code
 #: can have come, so an alert sooner, never later (status CR 1).
 WALK_LIMIT = 8
-#: Every call together, inside ``processor-drift.service``'s ``TimeoutStartSec``.
+#: No call to GitHub starts past this. Each call is bounded per socket read by
+#: ``REQUEST_TIMEOUT_SECONDS`` (requests' timeout is per read, not per request), so
+#: one answer trickling in can run past it. The hard stop is the unit's
+#: ``TimeoutStartSec=90``; a kill there sends no check-in: silence, never a false ok.
 CHECK_TIMEOUT_SECONDS = 60.0
 REQUEST_TIMEOUT_SECONDS = 10.0
 #: GitHub lists at most this many files in a compare; a list this long may be
@@ -253,7 +256,7 @@ def _first_counting(get: Get, live: str, found: list[Push], now: datetime) -> Pu
 
 
 def github(api: str | None = None) -> Get:
-    """A ``get`` for :func:`assess`: GitHub's REST API, every call within one deadline.
+    """A ``get`` for :func:`assess`: GitHub's REST API, no call started past one deadline.
 
     Raises :class:`GitHubSilent` for anything but a JSON object: a refusal (with
     GitHub's message), an error page, a timeout, an empty or wrong-shaped 200.

@@ -257,7 +257,7 @@ A stop mid-reclaim finishes the command in hand and leaves the rest pending. A c
 - **The check is itself runtime:** it lives in `src/` and its units in `deploy/`. A change to it needs a deploy, and lags like any other.
 - **The clock** starts at the push, from its CI run's `created_at`, never the commit date. Within the grace, the body names the oldest push since live, which may be docs only.
 - **GitHub's budget:** unauthenticated, 60 requests an hour per address, shared with § The CI gate. A run costs 1 request in sync or behind in docs only, 2 behind in code, and at most 10 past the grace.
-- **Apart from `processor run`:** a oneshot with `TimeoutStartSec=90`, no `Restart=`, and no retry. A GitHub or Status outage costs it its exit code and nothing else. It reads no `.env`, so it never holds the broker credential.
+- **Apart from `processor run`:** a oneshot with `TimeoutStartSec=90`, no `Restart=`, and no retry. No GitHub call starts past 60 s, but each is bounded per read, not in total, so the 90 s is the hard stop. A run killed there sends nothing, which reads as a GitHub-silent run. A GitHub or Status outage costs it its exit code and nothing else. It reads no `.env`, so it never holds the broker credential.
 
 **`missing` on `co-processor-drift` means the check isn't reporting.** The cause is one of: the timer is stopped, `co-processor` is down, the tailnet path to `status` is gone, the key is wrong or missing, Status refuses, or GitHub stayed silent for two runs in a row. It says nothing about `processor run`. To find out which:
 

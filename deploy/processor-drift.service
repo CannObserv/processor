@@ -23,8 +23,10 @@ Group=processor
 # A release, never a checkout (#2). Its REVISION is what this checks.
 WorkingDirectory=/srv/processor/live
 ExecStart=/srv/processor/live/.venv/bin/processor drift
-# GitHub (every call together, 60 s) and one check-in (10 s). No Restart=: the next
-# hour is the retry, and the monitor's grace absorbs one missed run.
+# The hard stop. No GitHub call starts past 60 s, but each is bounded per read, not
+# in total, then one check-in (10 s per read). Killed here, the run sends nothing:
+# silence, never a false ok. No Restart=: the next hour is the retry, and the
+# monitor's grace absorbs one missed run.
 TimeoutStartSec=90
 
 # No EnvironmentFile=: /etc/processor/.env holds the broker credential, which a drift
