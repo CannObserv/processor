@@ -78,3 +78,12 @@ GitHub silent never sends `ok`: a long outage ends in Status's `missing` (trap 3
 ## Out of scope
 
 The liveness monitor's Processor half (unless folded in), #29, #37.
+
+## Amended in implementation
+
+- **The plan's decisions 1–3 were approved as recommended** (2026-10-07): hourly alerts, grace 8 h, the monitor id in the unit. CannObserv/status#24 was posted as drafted, liveness section included.
+- **A new timer is enabled after the verify, not at install.** A deploy that is switched back never ran it, so `restore_units` only removes what it added; nothing to disable.
+- **A timer that won't enable or re-arm is a note, never a switch back.** Status fails the target there (its CR 1) because its sweep timer is what watches for silence. Here the timer only watches the deploy.
+- **`SetCredential=status-checkin-key:\n`, not an empty value.** systemd 255 rejects `SetCredential=id:` ("Invalid syntax") and drops the line, and the start then fails on the missing file. Measured on `co-processor`; Status's lone newline is the working form.
+- **A rename counts by either name** (`previous_filename`): a file moved out of `src/` left the release. Status's `diff_counts` reads `filename` only.
+- **Pending gate 1:** `Environment=CO_PROCESSOR_DRIFT_MONITOR_ID=<id>` in `processor-drift.service`, with its test, once status#24 posts the id.

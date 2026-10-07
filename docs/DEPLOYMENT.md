@@ -1,6 +1,6 @@
 # Deployment
 
-Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`, as its own user `processor`, from a release that [`scripts/deploy.sh`](#deploy-a-change-scriptsdeploysh) builds from a commit on `origin/main` (#2). What runs is `/srv/processor/live/REVISION`. Design: [the spec](specs/2026-09-29-processor-service-design.md) §2 (identities, grants), §4 (failure handling), §6 (cutover).
+Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`, as its own user `processor`, from a release that [`scripts/deploy.sh`](#deploy-a-change-scriptsdeploysh) builds from a commit on `origin/main` (#2). What runs is `/srv/processor/live/REVISION`. An hourly timer, `processor-drift.timer`, reports through Status when that lags `origin/main` ([The drift check](#the-drift-check), #35). Design: [the spec](specs/2026-09-29-processor-service-design.md) §2 (identities, grants), §4 (failure handling), §6 (cutover).
 
 ## Prerequisites (operator)
 
@@ -18,6 +18,9 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`, a
 | User `processor` (system, no home, no sudo, not in `docker`); `/srv/processor` (`exedev`, 755); `/etc/processor` root-only | this VM | #2, [Install](#install-once-2s-stage-b) |
 | `docker.socket` disabled | this VM | done 2026-10-05 (operator, #2 gate 1); `disabled` and `inactive` on 2026-10-06 |
 | Landlock ABI ≥ 6 | kernel | 6 on 2026-10-06 (6.12.93); [Containment](#containment) |
+| Tailnet `tag:processor` → `tag:status:9000` | tailnet policy | #35 gate 2 (operator). On 2026-10-06 23:23Z `status` did not resolve from `co-processor` |
+| Status tenant `co-processor`, its production key, and the monitor `co-processor-drift` | `co-status` | CannObserv/status#24 (#35 gate 1) |
+| Status key at `/etc/processor/status-checkin.key` (root 600; `processor-drift.service`'s `LoadCredential=`) | this VM | #35 gate 3, [The drift check](#the-drift-check) |
 | Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level, for `co-gcs-blob-reader`, the identity Watcher already reads `gs://` blobs with | GCP | done 2026-10-02 (in the bucket's IAM policy); watcher#325 has not yet confirmed that identity |
 
 ### Broker credential handoff (hash-only, broker#75 as of 2026-09-30)
@@ -130,6 +133,7 @@ CO_PROCESSOR_BUS_URL=redis://processor:<password>@broker:6379/0
 - **The GCS key** is `/etc/processor/co-gcs-processor-writer.json`. The unit loads it with `LoadCredential=gcs-writer-key:…` and sets `GOOGLE_APPLICATION_CREDENTIALS=%d/gcs-writer-key`, which is `/run/credentials/processor.service/gcs-writer-key`.
 - **Keep `GOOGLE_APPLICATION_CREDENTIALS` out of `.env`.** `EnvironmentFile=` overrides `Environment=`, so a leftover line would point the service back at the root-only key path, and the preflight would fail.
 - **The service user can read the credentials directory, and so can the child.** Landlock refuses it to the child (§ Containment).
+- **The Status key** is `/etc/processor/status-checkin.key`, for `processor-drift.service` alone (`LoadCredential=status-checkin-key:…`). That unit reads no `.env`: the drift check never holds the broker credential (§ The drift check).
 
 A command that needs the service's settings runs as the service, through systemd. Don't load the file into a shell:
 
@@ -149,7 +153,7 @@ processor_cli() {   # e.g. processor_cli dlq list; processor_cli ensure-group
 /srv/processor/                      exedev's, 755
   releases/<build>/   git archive of one commit on origin/main, its .wheelhouse, its own
                       .venv; REVISION written last; a-w, go+rX
-  live -> releases/<build>           processor.service
+  live -> releases/<build>           processor.service, processor-drift.service
 ```
 
 - **`<build>` is the commit's 12-character short SHA.** `REVISION` holds it. A directory without `REVISION` is an interrupted build, and the next deploy rebuilds it. The `starting` record reports the build, from `REVISION` (`dev` outside a release).
@@ -167,7 +171,7 @@ processor_cli() {   # e.g. processor_cli dlq list; processor_cli ensure-group
 - it verifies through the journal and the smoke run, since it has no HTTP endpoint;
 - the venv entry point stands in for `uv run --frozen --no-sync`.
 
-Status's CI gate (status#11) is adopted as § The CI gate (#34). Its drift check (status#12) isn't yet: #35.
+Status's CI gate (status#11) is adopted as § The CI gate (#34), and its drift check (status#12) as § The drift check (#35), which reports to Status instead of healthchecks.io.
 
 ## Deploy a change: `scripts/deploy.sh`
 
@@ -181,12 +185,12 @@ scripts/deploy.sh --skip-ci [<build>]    # without asking CI: an emergency, logg
 journalctl -t processor-deploy -n 20     # "CI passed for <build>: <run>", "live -> <build> (was releases/<old>)"
 ```
 
-A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml` or `uv.lock` needs no deploy.
+A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml` or `uv.lock` needs no deploy. That list is `RUNTIME_DIRS` and `RUNTIME_FILES` in `src/processor/drift.py`, and the drift check alerts on it (§ The drift check).
 
 **In order:**
 0. **Ask CI** whether the commit passed (§ The CI gate). A refusal builds nothing.
 1. **Build** `releases/<build>`, or reuse a complete one whose venv still imports `processor`, co-core and lxml. A release that `live` runs is never rebuilt in place. The service user must exist, or nothing switches.
-2. **Switch** `live` (an atomic rename). Then install `deploy/processor.service` from the release, if it differs from the installed copy, followed by `daemon-reload`.
+2. **Switch** `live` (an atomic rename). Then install every `deploy/*.service` and `deploy/*.timer` from the release that differs from its installed copy (#35, as status#18), with one `daemon-reload`. A changed timer is `try-restart`ed so it re-arms. Each replaced copy is kept aside for step 5.
 3. **Restart.** `reset-failed` comes first, in case a crash loop hit the start limit. The restart lets the in-flight command finish (`KillMode=mixed`: SIGTERM reaches the consumer, not its extraction child), for up to `TimeoutStopSec=240`.
 4. **Verify,** within `PROCESSOR_DEPLOY_VERIFY_SECONDS` (300):
    - the new `MainPID` logs `starting` with this build and `child_containment: required`, then `consuming`;
@@ -196,16 +200,18 @@ A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pypr
      - **Input:** from the committed real corpus.
      - **Output:** the production bucket, write-if-absent, so a repeat run writes nothing new.
      - **Pass:** it prints `"result": "pass"` when the fact matches Watcher's recorded fingerprint, the entry is acked, and the object reads back intact.
-5. **On failure:** switch back (the unit too), restart, and prove the old build the same way.
+5. **On failure:** switch back (the units too: replaced copies go back, added ones are removed), restart, and prove the old build the same way.
    - Exit 1 when the old build answers.
    - Exit 4 when nothing answers: the old build failed too, or there was nothing to switch back to. On a first deploy, the unit it replaced goes back and the service restarts on it, and § Rollback applies.
+
+**On success,** a timer this deploy installed for the first time is enabled (`systemctl enable --now`), so a deploy that was switched back never ran it. A timer installed before is never enabled again, so an operator's `disable` sticks. A timer that won't enable or re-arm is a note, never a switch back: it watches the deploy, it never decides one. Still by hand: `sudo systemctl reenable <unit>` after its `[Install]` section changes, and retiring a unit (`disable --now`, remove the file, `daemon-reload`), since a unit gone from `deploy/` stays installed.
 
 Then the host configs under `deploy/` (tailscaled's drop-in, NodeSource's apt files) are compared with their installed copies. A difference is a note, never an install. The deploy keeps the 5 most recently deployed releases plus `live`.
 
 | Variable | Default | What |
 |---|---|---|
 | `PROCESSOR_DEPLOY_ROOT` | `/srv/processor` | releases and the `live` link |
-| `PROCESSOR_DEPLOY_ETC` | `/etc` | the unit goes in `systemd/system/`; host configs are compared there |
+| `PROCESSOR_DEPLOY_ETC` | `/etc` | the units go in `systemd/system/`; host configs are compared there |
 | `PROCESSOR_DEPLOY_KEEP` | `5` | releases kept besides `live` |
 | `PROCESSOR_DEPLOY_VERIFY_SECONDS` | `300` | how long the new process has to start, past `TimeoutStopSec=240` |
 | `PROCESSOR_DEPLOY_PYTHON` | `/usr/bin/python3.12` | the interpreter each venv is built on |
@@ -234,6 +240,63 @@ A stop mid-reclaim finishes the command in hand and leaves the rest pending. A c
   - If the repo goes private, the API answers 404, and the gate needs a read-only token.
 - **Rollbacks are gated too.** One rule: a kept release proves it was built, not that its CI passed. Every deploy so far was the tip of its push, so its run exists, and a rollback to it normally passes. When GitHub is slow or rate-limited mid-incident, `scripts/deploy.sh --skip-ci <old build>`.
 - **`--skip-ci`** deploys without asking GitHub at all: for a fix that can't wait for CI, or when GitHub can't answer. It is logged before anything is built, as `CI not checked for <build> (--skip-ci)`. A gate that passes is logged too, as `CI passed for <build>: <run>`.
+
+## The drift check
+
+**Live lagging `origin/main` in code that runs alerts through Status** (#35, ported from status#12). `processor-drift.timer` starts `processor-drift.service` 5 min after boot, then hourly. It runs `/srv/processor/live/.venv/bin/processor drift` as `processor`: it asks GitHub how far live's `REVISION` is behind `main`, then checks in once to Status's monitor `co-processor-drift` (tenant `co-processor`, CannObserv/status#24) at `http://status:9000`. The rules are in `src/processor/drift.py`.
+
+| Live | Check-in (`kind`) | What to do |
+|---|---|---|
+| `main`; behind only in what never runs; behind in code for 8 h or less since the push that brought it | `ok` (`ok`) | nothing |
+| behind in code for more than 8 h | `alert` (`lag`), every hour until deployed. It names `main`'s CI result | `scripts/deploy.sh`. If `main`'s CI isn't green, § The CI gate refuses: fix `main` first |
+| not on `main`: diverged, or GitHub doesn't know live's commit (a rewritten `main`) | `alert` (`off_main`) | deploy a commit on `main`; `journalctl -t processor-deploy` says how live got there |
+| unstamped: the release has no `REVISION` | `alert` (`unstamped`) | `live` names something that isn't a finished release: deploy |
+| GitHub can't answer: a rate limit, a 5xx, a timeout, a wrong-shaped answer | none; the run exits 1 | nothing. The monitor's grace absorbs one missed run |
+
+- **What runs:** `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml`, `uv.lock`. A rename counts by either name. Docs, tests, CI, skills and the other scripts never count, however old.
+- **The check is itself runtime:** it lives in `src/` and its units in `deploy/`. A change to it needs a deploy, and lags like any other.
+- **The clock** starts at the push, from its CI run's `created_at`, never the commit date. Within the grace, the body names the oldest push since live, which may be docs only.
+- **GitHub's budget:** unauthenticated, 60 requests an hour per address, shared with § The CI gate. A run costs 1 request in sync or behind in docs only, 2 behind in code, and at most 10 past the grace.
+- **Apart from `processor run`:** a oneshot with `TimeoutStartSec=90`, no `Restart=`, and no retry. A GitHub or Status outage costs it its exit code and nothing else. It reads no `.env`, so it never holds the broker credential.
+
+**`missing` on `co-processor-drift` means the check isn't reporting.** The cause is one of: the timer is stopped, `co-processor` is down, the tailnet path to `status` is gone, the key is wrong or missing, Status refuses, or GitHub stayed silent for two runs in a row. It says nothing about `processor run`. To find out which:
+
+```bash
+systemctl list-timers processor-drift.timer
+systemctl status processor-drift.service
+journalctl -u processor-drift -o cat | jq -cR 'fromjson? | select(.message == "drift check") | {timestamp, level, kind, checkin, body}'
+```
+
+Each run logs one `drift check` record: `build`, `main`, `kind`, `body`, and `checkin`. `checkin` is one of:
+- `202`;
+- `null`: GitHub was silent;
+- `failed: <Status's answer>`;
+- `not sent: no <what>`: the monitor id or the key is missing.
+
+The level is INFO for `ok`, WARNING for an alert or a silent GitHub, and ERROR when the check-in failed. Exit 0 means Status took the check-in.
+
+**Run it now:** `sudo systemctl start processor-drift.service`, then read the journal as above.
+
+**Silence a lag you mean to keep.** It alerts hourly until deployed. `sudo systemctl stop processor-drift.timer` stops the alerts, and the monitor then goes `missing`, which is honest. `start` resumes them. A deploy never re-enables a timer it installed before, so `disable --now` keeps it stopped across reboots too.
+
+**A deliberate alert** proves the channels end to end. It sends `kind: test`, and asks GitHub nothing:
+
+```bash
+sudo systemd-run --quiet --pipe --wait --collect -p User=processor -p Group=processor \
+  -p LoadCredential=status-checkin-key:/etc/processor/status-checkin.key \
+  -p "$(systemctl show -p Environment processor-drift.service)" -p WorkingDirectory=/srv/processor/live \
+  /srv/processor/live/.venv/bin/processor drift --test-alert
+```
+
+**Installing the key** (once; #35 gate 3). Status's operator mints it into `/etc/status/pending/co-processor.key` on `co-status` (status#24), and it is read across terminal to terminal. It never goes on a command line, into an issue or into a chat:
+
+```bash
+sudo install -m 600 -o root -g root /dev/null /etc/processor/status-checkin.key
+sudo tee /etc/processor/status-checkin.key >/dev/null     # paste the key, Enter, then Ctrl-D
+sudo systemctl start processor-drift.service              # once the timer is installed: check in now
+```
+
+Installed before the deploy that brings the timer, the timer's first run (at the enable) checks in.
 
 ## Containment
 
@@ -328,6 +391,7 @@ On boot, the service preflights both buckets and exits non-zero if either is unr
 
 ## Operate
 
+- **Drift:** `journalctl -u processor-drift` (§ The drift check).
 - **Logs:** `journalctl -u processor`. `starting` names the `build`, `child_containment` and `landlock_abi`. Deploys: `journalctl -t processor-deploy`. Each outcome has `command_id`, `info_source_id`, `action` (`ack` / `strike` / `leave_pending` / `dead_letter`), `reason`, `detail`, and timings in `*_ms`. Each also has `input_digest` once it is valid, as bare hex like the command's. A complete fact adds `output_digest` (`sha256:<hex>`, as on the fact; the object is `blobs/<hex>.bin`; absent when `empty`), `output_size_bytes`, `empty` and `processor_version`, and so does a `leave_pending` whose publish failed after the store. A shadow command's output: `journalctl -u processor -o cat | jq -cR 'fromjson? | select(.command_id == "<id>") | {action, reason, input_digest, output_digest}'` (`-R … fromjson?` skips systemd's own lines, which `-u` includes and plain `jq` aborts on).
 - **Dead letters:** `processor_cli dlq list | show <id> | drop <id>` (§ `/etc/processor/`). There is no replay. An entry failed to decode, was not a command, or is a command that raised outside the handler on every attempt (`reason` starts `gave up on attempt`): that one is a bug to fix. Before dead-lettering such a command, Processor published a terminal `extraction_error` whose `detail` starts `dead-lettered:` (best effort), so Watcher has closed it (#17). The journal's `dead-lettering` record says which: `failure_fact` is `published`, `skipped` (a fact had already gone out) or `refused`. On a command given up at the cap, `handle_skipped` is `true` when the record retries a give-up that did not finish (the failure fact refused transiently, or the dead-letter refused), with no re-run of the command and the original traceback (#28). The same entry logging that every ~11 min while it stays pending means `content.process.dlq` refuses it: `journalctl -u processor -o cat | jq -cR 'fromjson? | select(.handle_skipped) | {timestamp, command_id, message_id, reason}'`.
 - **Lag / missing group:** the broker probe watches `processor.process` (broker#75).

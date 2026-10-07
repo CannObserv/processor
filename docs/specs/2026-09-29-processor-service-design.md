@@ -127,7 +127,8 @@ processor-version pin on the command; no job API — the bus is the interface.
 | VM | exe.dev `co-processor`, 8 GB, default `exeuntu` image, tag `processor` |
 | Service | systemd unit `processor`: `MemoryMax` below VM RAM, `Restart=on-failure`, `OOMPolicy=continue` (Section 4). Runs as its own user `processor` (no sudo, not in `docker`, no home), from a read-only release at `/srv/processor/live` that `scripts/deploy.sh` builds from a commit on `origin/main` (amended 2026-10-06, #2: the cohort's release standard, broker#22 / status#9) |
 | Env | `/etc/processor/.env` (root 600, read by systemd before it switches users), `CO_PROCESSOR_*` via pydantic-settings — never `os.getenv`. The GCS key reaches the service by `LoadCredential=` (amended 2026-10-06, #2) |
-| Tailnet | `tag:processor`; policy `tag:processor` → `tag:broker` on 6379 |
+| Tailnet | `tag:processor`; policy `tag:processor` → `tag:broker` on 6379, and → `tag:status` on 9000 (amended 2026-10-07, #35: the drift check) |
+| Drift check | `processor-drift.timer` → `processor-drift.service`, hourly, as `processor`: `processor drift` asks GitHub (unauthenticated) whether live's `REVISION` lags `origin/main` in code that runs, and checks in to Status's monitor `co-processor-drift` at `http://status:9000`; `alert` once code has waited past 8 h, nothing when GitHub can't say. Apart from `processor run`: an outage of either costs only the check. Its key is a `LoadCredential=` from `/etc/processor/status-checkin.key`; it reads no `.env` (amended 2026-10-07, #35; CannObserv/status#24) |
 | Bus URL | `redis://processor:<pw>@broker:6379/0` — the MagicDNS name, never the address, which a broker rebuild changes; the VM runs Tailscale with `--accept-dns=true`, as the cohort does (amended 2026-10-01, #8) |
 
 **Grants.**
@@ -139,6 +140,7 @@ processor-version pin on the command; no job API — the bus is the interface.
 | ACL user `processor` | `content.process.dlq` | selector `(+xdel ~content.process.dlq)` |
 | `co-gcs-processor-writer` | `gs://co-gcs-processor` | `objectCreator` + `objectViewer`; **no delete** — append-only, never deleted |
 | `co-gcs-processor-writer` | `gs://co-gcs-blobs` | `objectViewer` (Replicator's raw blobs — the input) |
+| Status tenant `co-processor` (production key, `/etc/processor/status-checkin.key`) | Status monitor `co-processor-drift` | check-in only (`POST /api/v1/monitors/{id}/checkin`); Status's operator owns the monitor and its channels (CannObserv/status#24, #35) |
 | Watcher's service account, `co-gcs-blob-reader` (its `GCS_BLOB_CREDENTIALS`; confirmed on watcher#325, granted 2026-10-02) | `gs://co-gcs-processor` | `objectViewer`, bucket-level |
 
 The ACL shape copies broker#62's `observo` user. Withheld on purpose, as there:
