@@ -23,6 +23,9 @@ Group=processor
 # A release, never a checkout (#2). Its REVISION is what this checks.
 WorkingDirectory=/srv/processor/live
 ExecStart=/srv/processor/live/.venv/bin/processor drift
+# co-processor-drift, tenant co-processor (CannObserv/status#24). Not a secret; the
+# base URL defaults to http://status:9000 (src/processor/settings.py).
+Environment=CO_PROCESSOR_DRIFT_MONITOR_ID=01M4BHMGGTXWQ16J3G5WWDQRYQ
 # The hard stop. No GitHub call starts past 60 s, but each is bounded per read, not
 # in total, then one check-in (10 s per read). Killed here, the run sends nothing:
 # silence, never a false ok. No Restart=: the next hour is the retry, and the

@@ -18,8 +18,8 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`, a
 | User `processor` (system, no home, no sudo, not in `docker`); `/srv/processor` (`exedev`, 755); `/etc/processor` root-only | this VM | #2, [Install](#install-once-2s-stage-b) |
 | `docker.socket` disabled | this VM | done 2026-10-05 (operator, #2 gate 1); `disabled` and `inactive` on 2026-10-06 |
 | Landlock ABI ≥ 6 | kernel | 6 on 2026-10-06 (6.12.93); [Containment](#containment) |
-| Tailnet `tag:processor` → `tag:status:9000` | tailnet policy | #35 gate 2 (operator). On 2026-10-06 23:23Z `status` did not resolve from `co-processor` |
-| Status tenant `co-processor`, its production key, and the monitor `co-processor-drift` | `co-status` | CannObserv/status#24 (#35 gate 1) |
+| Tailnet `tag:processor` → `tag:status:9000` | tailnet policy | #35 gate 2, done 2026-10-07: `http://status:9000/health` answered `production` from `co-processor` at 14:03Z |
+| Status tenant `co-processor`, its production key, and the monitor `co-processor-drift` (`01M4BHMGGTXWQ16J3G5WWDQRYQ`) | `co-status` | CannObserv/status#24 (#35 gate 1), done 2026-10-07 16:02Z |
 | Status key at `/etc/processor/status-checkin.key` (root 600; `processor-drift.service`'s `LoadCredential=`) | this VM | #35 gate 3, [The drift check](#the-drift-check) |
 | Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level, for `co-gcs-blob-reader`, the identity Watcher already reads `gs://` blobs with | GCP | done 2026-10-02 (in the bucket's IAM policy); watcher#325 has not yet confirmed that identity |
 

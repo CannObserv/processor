@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from processor.settings import DriftSettings
+
 DEPLOY = Path(__file__).resolve().parent.parent / "deploy"
 SERVICE = DEPLOY / "processor.service"
 DRIFT = DEPLOY / "processor-drift.service"
@@ -81,6 +83,14 @@ class TestTheDriftUnits:
         assert (_one("User", DRIFT), _one("Group", DRIFT)) == ("processor", "processor")
         assert _one("WorkingDirectory", DRIFT) == "/srv/processor/live"
         assert _one("ExecStart", DRIFT) == "/srv/processor/live/.venv/bin/processor drift"
+
+    def test_it_names_co_processor_drift(self) -> None:
+        # The monitor's id, posted on CannObserv/status#24 (2026-10-07): not a secret.
+        # DriftSettings must accept it, or `processor drift` exits 2 every hour.
+        (env,) = _all("Environment", DRIFT)
+        name, _, value = env.partition("=")
+        assert (name, value) == ("CO_PROCESSOR_DRIFT_MONITOR_ID", "01M4BHMGGTXWQ16J3G5WWDQRYQ")
+        assert DriftSettings(drift_monitor_id=value).drift_monitor_id == value
 
     def test_it_never_reads_the_broker_credential(self) -> None:
         # The env file holds CO_PROCESSOR_BUS_URL: a drift check has no use for it.

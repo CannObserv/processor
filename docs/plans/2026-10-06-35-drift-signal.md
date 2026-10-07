@@ -86,7 +86,7 @@ The liveness monitor's Processor half (unless folded in), #29, #37.
 - **A timer that won't enable or re-arm is a note, never a switch back.** Status fails the target there (its CR 1) because its sweep timer is what watches for silence. Here the timer only watches the deploy.
 - **`SetCredential=status-checkin-key:\n`, not an empty value.** systemd 255 rejects `SetCredential=id:` ("Invalid syntax") and drops the line, and the start then fails on the missing file. Measured on `co-processor`; Status's lone newline is the working form.
 - **A rename counts by either name** (`previous_filename`): a file moved out of `src/` left the release. Status's `diff_counts` reads `filename` only.
-- **Pending gate 1:** `Environment=CO_PROCESSOR_DRIFT_MONITOR_ID=<id>` in `processor-drift.service`, with its test, once status#24 posts the id.
+- **Gate 1 done** (status#24, 2026-10-07 16:02Z): `Environment=CO_PROCESSOR_DRIFT_MONITOR_ID=01M4BHMGGTXWQ16J3G5WWDQRYQ` in `processor-drift.service`, with its test. **Gate 2 done:** `http://status:9000/health` answered from `co-processor` at 14:03Z.
 - **The end-to-end tests are in `tests/test_drift.py`, not `tests/test_main.py`** (CR 5). `test_main.py` is marked `integration` as a whole module, and these tests need no Redis.
 
 ## Amended in review
