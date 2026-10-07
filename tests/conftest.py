@@ -47,11 +47,17 @@ class HttpStub:
                     (self.command, self.path), (404, b'{"message": "unrouted"}', 0.0)
                 )
                 time.sleep(delay)
-                self.send_response(code)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                try:
+                    self.send_response(code)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                except (BrokenPipeError, ConnectionResetError):
+                    # The client gave up first: what the timeout tests provoke. Left
+                    # to socketserver, its traceback reached stderr during a later
+                    # test and broke that test's JSON log parsing (#35 CR 6).
+                    pass
 
             do_GET = do_POST = _answer
 
@@ -59,6 +65,8 @@ class HttpStub:
                 pass
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        # Joined at close, so no answer still sleeping outlives its test (CR 6).
+        self.server.daemon_threads = False
         self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
         threading.Thread(
             target=self.server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True

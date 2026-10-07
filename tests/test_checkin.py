@@ -67,9 +67,9 @@ def test_a_malformed_key_is_refused_before_any_request_and_never_quoted(http_stu
 
 
 def test_a_stall_is_cut_off(http_stub):
-    http_stub.route("POST", PATH, 202, delay=1.0)
+    http_stub.route("POST", PATH, 202, delay=0.5)
     with pytest.raises(CheckinFailed, match="Timeout"):
-        post_checkin(http_stub.url, MONITOR, KEY, "ok", {}, timeout=0.2)
+        post_checkin(http_stub.url, MONITOR, KEY, "ok", {}, timeout=0.1)
 
 
 class TestReadKey:
