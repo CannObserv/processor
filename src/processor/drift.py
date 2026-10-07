@@ -267,7 +267,7 @@ def github(api: str | None = None) -> Get:
     def get(path: str) -> Mapping:
         left = deadline - time.monotonic()
         if left <= 0:
-            raise GitHubSilent(f"Timeout: past {CHECK_TIMEOUT_SECONDS:.0f} s for every call")
+            raise GitHubSilent(f"Timeout: no GitHub call starts past {CHECK_TIMEOUT_SECONDS:.0f} s")
         try:
             response = requests.get(
                 f"{base}/{path}",

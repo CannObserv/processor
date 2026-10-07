@@ -525,6 +525,12 @@ class TestTheGetter:
         with pytest.raises(GitHubSilent, match="Timeout"):
             get("x")
 
+    def test_past_the_deadline_no_call_starts(self, http_stub, monkeypatch):
+        monkeypatch.setattr(drift, "CHECK_TIMEOUT_SECONDS", 0)
+        with pytest.raises(GitHubSilent, match="^Timeout: no GitHub call starts past 0 s$"):
+            drift.github(http_stub.url)("x")
+        assert http_stub.requests == []
+
 
 # --- processor drift, end to end ---------------------------------------------
 
