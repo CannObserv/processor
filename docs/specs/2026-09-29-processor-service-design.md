@@ -473,6 +473,14 @@ TDD, red first.
   where the kernel allows it, says which mode in its header, and never skips
   on `co-processor`. `scripts/deploy.sh` runs end to end against a throwaway
   root with stubs (`tests/test_deploy.py`).
+- **The drift check (amended 2026-10-07, #35).** Its verdicts come from
+  GitHub's answer shapes through a fake `get` (`tests/test_drift.py`); the
+  getter, the Status check-in (`tests/test_checkin.py`) and `processor drift`
+  end to end run against local HTTP stubs, never GitHub or Status. A runtime
+  lag past the grace sends `alert`, a docs-only one `ok`, a silent GitHub
+  nothing. `scripts/deploy.sh` installing every unit under `deploy/`, and
+  enabling a new timer once verified, has its own cases in
+  `tests/test_deploy.py`.
 - **Integration.** A scratch Redis on `co-processor` with the real stream names;
   a test issuer `XADD`s real commands; assert facts, stored bytes, and `XINFO
   GROUPS` lag, against a scratch GCS prefix or the local store.
