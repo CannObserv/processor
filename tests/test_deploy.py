@@ -27,6 +27,11 @@ REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "deploy.sh"
 CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 UNIT = (REPO / "deploy" / "processor.service").read_text()
+# Every other unit under deploy/ (#35): the deploy installs them all.
+DRIFT_UNITS = {
+    name: (REPO / "deploy" / name).read_text()
+    for name in ("processor-drift.service", "processor-drift.timer")
+}
 
 STUBS = {
     "uv": r"""#!/usr/bin/env bash
@@ -45,6 +50,7 @@ exec "$@"
 """,
     "systemctl": r"""#!/usr/bin/env bash
 echo "$*" >>"$STATE/systemctl.log"
+[[ "$1" == "${STUB_SYSTEMCTL_FAIL:-}" ]] && exit 1
 case "$1" in
   restart)
     rev="$(cat "$PROCESSOR_DEPLOY_ROOT/live/REVISION" 2>/dev/null || echo dev)"
@@ -163,6 +169,8 @@ class Env:
         (self.checkout / "deploy").mkdir()
         shutil.copy(SCRIPT, self.checkout / "scripts" / "deploy.sh")
         (self.checkout / "deploy" / "processor.service").write_text(UNIT)
+        for name, body in DRIFT_UNITS.items():
+            (self.checkout / "deploy" / name).write_text(body)
         (self.checkout / "scripts" / "smoke_scratch_bus.py").write_text("# stub\n")
         wheelhouse = self.checkout / ".wheelhouse"
         wheelhouse.mkdir()
@@ -213,6 +221,9 @@ class Env:
     @property
     def installed_unit(self) -> Path:
         return self.etc / "systemd" / "system" / "processor.service"
+
+    def installed(self, name: str) -> Path:
+        return self.etc / "systemd" / "system" / name
 
     def head(self) -> str:
         return self.git("rev-parse", "HEAD")
@@ -474,6 +485,95 @@ def test_an_unchanged_unit_is_not_reinstalled(w: Env) -> None:
     before = w.log("sudo").count("install -m 644")
     assert w.deploy().returncode == 0
     assert w.log("sudo").count("install -m 644") == before
+
+
+class TestEveryUnit:
+    """Every ``deploy/*.service`` and ``*.timer`` is installed from the release (#35 trap 1).
+
+    status#18's fix, ported: before it, ``install_unit`` handled ``processor.service``
+    alone, and the drift units would never have reached ``/etc/systemd/system``.
+    """
+
+    def test_a_deploy_installs_the_drift_units_and_enables_the_timer(self, w: Env) -> None:
+        result = w.deploy()
+        assert result.returncode == 0, result.stderr
+        for name, body in DRIFT_UNITS.items():
+            assert w.installed(name).read_text() == body
+        calls = w.log("systemctl").splitlines()
+        assert "enable --now processor-drift.timer" in calls
+        # After the verify: a deploy that is switched back never enabled it.
+        assert calls.index("restart processor") < calls.index("enable --now processor-drift.timer")
+        assert "processor-drift.timer enabled" in result.stderr
+        # The service is the timer's: enabled or restarted by nothing else.
+        assert not [c for c in calls if "processor-drift.service" in c]
+        assert "processor-drift.timer (new)" in w.log("logger")
+
+    def test_one_daemon_reload_for_every_unit(self, w: Env) -> None:
+        assert w.deploy().returncode == 0
+        assert w.log("systemctl").splitlines().count("daemon-reload") == 1
+
+    def test_a_timer_already_installed_is_never_enabled_again(self, w: Env) -> None:
+        """An operator's ``systemctl disable --now processor-drift.timer`` sticks."""
+        assert w.deploy().returncode == 0
+        before = w.log("systemctl").count("enable")
+        w.commit("second")
+        assert w.deploy().returncode == 0
+        assert w.log("systemctl").count("enable") == before
+
+    def test_a_changed_timer_is_re_armed_not_enabled(self, w: Env) -> None:
+        assert w.deploy().returncode == 0
+        timer = w.checkout / "deploy" / "processor-drift.timer"
+        timer.write_text(timer.read_text().replace("OnUnitActiveSec=1h", "OnUnitActiveSec=30min"))
+        w.commit("timer change")
+        result = w.deploy()
+        assert result.returncode == 0, result.stderr
+        assert "OnUnitActiveSec=30min" in w.installed("processor-drift.timer").read_text()
+        calls = w.log("systemctl").splitlines()
+        assert calls.count("enable --now processor-drift.timer") == 1  # the first deploy's
+        assert "try-restart processor-drift.timer" in calls
+
+    def test_a_timer_that_cannot_be_enabled_never_fails_the_deploy(self, w: Env) -> None:
+        """The drift check watches the deploy; it never decides one (#35 trap 4)."""
+        result = w.deploy(STUB_SYSTEMCTL_FAIL="enable")
+        assert result.returncode == 0, result.stderr
+        assert "enable --now processor-drift.timer failed" in result.stderr
+        assert w.live() == f"releases/{w.git('rev-parse', '--short=12', 'HEAD')}"
+
+    def test_a_failed_verify_removes_the_units_it_added(self, w: Env) -> None:
+        for name in DRIFT_UNITS:
+            (w.checkout / "deploy" / name).unlink()
+        old = w.commit("before #35")
+        assert w.deploy().returncode == 0
+        for name, body in DRIFT_UNITS.items():
+            (w.checkout / "deploy" / name).write_text(body)
+        new = w.commit("#35")
+        result = w.deploy(STUB_DEAD=new)
+        assert result.returncode == 1, result.stderr
+        assert f"switched back to {old}, which is answering" in result.stderr
+        for name in DRIFT_UNITS:
+            assert not w.installed(name).exists(), name
+        # Enabled only once the deploy verifies: a deploy switched back never ran it.
+        assert "enable" not in w.log("systemctl")
+
+    def test_a_failed_verify_restores_the_units_it_replaced(self, w: Env) -> None:
+        assert w.deploy().returncode == 0
+        service = w.checkout / "deploy" / "processor-drift.service"
+        service.write_text(service.read_text() + "# changed\n")
+        timer = w.checkout / "deploy" / "processor-drift.timer"
+        timer.write_text(timer.read_text() + "# changed\n")
+        new = w.commit("drift change")
+        result = w.deploy(STUB_DEAD=new)
+        assert result.returncode == 1, result.stderr
+        for name, body in DRIFT_UNITS.items():
+            assert w.installed(name).read_text() == body, name
+        calls = w.log("systemctl").splitlines()
+        assert calls.count("try-restart processor-drift.timer") == 2  # installed, then restored
+
+    def test_a_first_deploy_that_fails_removes_every_unit_it_added(self, w: Env) -> None:
+        build = w.git("rev-parse", "--short=12", "HEAD")
+        assert w.deploy(STUB_DEAD=build).returncode == 4
+        for name in DRIFT_UNITS:
+            assert not w.installed(name).exists(), name
 
 
 def test_host_configs_are_compared_never_installed(w: Env) -> None:
