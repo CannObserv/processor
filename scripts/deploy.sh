@@ -501,6 +501,22 @@ restart_and_verify() { # <build>
   started_on "$1" "$since" && smoke "$1"
 }
 
+# Processor's installed units that this release no longer has. A deploy never
+# removes one, so it keeps running: after a rollback past #35, the drift timer
+# runs a build with no `processor drift`, and co-processor-drift goes missing
+# (CR 7). A note, never a removal: retiring a unit is the operator's.
+note_units_not_in_release() {
+  local path name
+  for path in "$UNIT_DIR/$UNIT".service "$UNIT_DIR/$UNIT"-*.service "$UNIT_DIR/$UNIT"-*.timer; do
+    [[ -f "$path" ]] || continue
+    name="$(basename "$path")"
+    [[ -f "$release/deploy/$name" ]] && continue
+    note "$name is installed but not in $build's deploy/; it keeps running. If it should not:" \
+      "sudo systemctl disable --now $name (docs/DEPLOYMENT.md § Rollback)"
+  done
+  return 0
+}
+
 compare_host_configs() {
   local entry rel dest
   for entry in "${HOST_CONFIGS[@]}"; do
@@ -557,6 +573,7 @@ else
   logger -t processor-deploy "live failed on $build; $back, which is NOT answering" || true
   dead "live failed on $build; $back, which is NOT answering: journalctl -u $UNIT -n 50"
 fi
+note_units_not_in_release
 compare_host_configs
 
 # --- prune -----------------------------------------------------------------

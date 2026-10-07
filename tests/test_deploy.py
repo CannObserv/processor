@@ -573,6 +573,20 @@ class TestEveryUnit:
         calls = w.log("systemctl").splitlines()
         assert calls.count("try-restart processor-drift.timer") == 2  # installed, then restored
 
+    def test_a_unit_the_release_lacks_is_named_and_left_running(self, w: Env) -> None:
+        """CR 7: a rollback past #35 leaves the drift timer running a build with no
+        ``processor drift``; the monitor would go missing with no cause on record."""
+        assert w.deploy().returncode == 0
+        for name in DRIFT_UNITS:
+            (w.checkout / "deploy" / name).unlink()
+        w.commit("before #35")
+        result = w.deploy()
+        assert result.returncode == 0, result.stderr
+        for name in DRIFT_UNITS:
+            assert w.installed(name).exists(), "never removed by a deploy"
+            assert f"{name} is installed but not in" in result.stderr
+        assert "sudo systemctl disable --now processor-drift.timer" in result.stderr
+
     def test_a_first_deploy_that_fails_removes_every_unit_it_added(self, w: Env) -> None:
         build = w.git("rev-parse", "--short=12", "HEAD")
         assert w.deploy(STUB_DEAD=build).returncode == 4
