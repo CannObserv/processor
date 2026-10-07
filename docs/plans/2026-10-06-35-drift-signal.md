@@ -66,7 +66,7 @@ GitHub silent never sends `ok`: a long outage ends in Status's `missing` (trap 3
 
 1. **Tests (red).**
    - `tests/test_drift.py`: verdicts from GitHub JSON (pure), ported from Status's `tests/core/test_drift.py` and narrowed to the allowlist: in sync, docs-only, `tests/`/CI/skills-only, each runtime path, a cut-short compare, within/past the grace, the clock at the push not the commit, the walk (limit, early stop inside the grace), `[skip ci]` main, main's CI named, off-main, 404, unstamped, GitHub silent and wrong-shaped.
-   - `tests/test_checkin.py` (the Status client) and `tests/test_main.py` (`processor drift` end to end), with stubbed GitHub and stubbed Status as local HTTP servers: a runtime lag past the grace sends `alert`; a docs-only lag sends `ok`; GitHub silent sends nothing and exits 1; Status 5xx/unreachable/422 exits 1; no key and no monitor id exit 1 without a request; the key goes only in the header, never in a log; `--test-alert`.
+   - `tests/test_checkin.py` (the Status client) and `tests/test_drift.py::TestTheCommand` (`processor drift` end to end), with stubbed GitHub and stubbed Status as local HTTP servers: a runtime lag past the grace sends `alert`; a docs-only lag sends `ok`; GitHub silent sends nothing and exits 1; Status 5xx/unreachable/422 exits 1; no key and no monitor id exit 1 without a request; the key goes only in the header, never in a log; `--test-alert`.
    - `tests/test_units.py`: the drift service (oneshot, `User=processor`, the entry point, no `EnvironmentFile=`, the credential and its fallback, the hardening, `TimeoutStartSec`), the timer (hourly, `WantedBy=timers.target`), every file accounted for.
    - `tests/test_deploy.py`: a deploy installs both drift units and enables the timer; an unchanged unit is not reinstalled; an operator-disabled timer is not re-enabled; a changed timer is `try-restart`ed; a failed verify restores replaced units and removes/disables added ones.
 2. **Implement (green):** `src/processor/drift.py`, `src/processor/checkin.py`, the subcommand, `DriftSettings`, the two units, `deploy.sh`'s `install_units`/`restore_units`. Full suite, ruff.
@@ -87,3 +87,10 @@ The liveness monitor's Processor half (unless folded in), #29, #37.
 - **`SetCredential=status-checkin-key:\n`, not an empty value.** systemd 255 rejects `SetCredential=id:` ("Invalid syntax") and drops the line, and the start then fails on the missing file. Measured on `co-processor`; Status's lone newline is the working form.
 - **A rename counts by either name** (`previous_filename`): a file moved out of `src/` left the release. Status's `diff_counts` reads `filename` only.
 - **Pending gate 1:** `Environment=CO_PROCESSOR_DRIFT_MONITOR_ID=<id>` in `processor-drift.service`, with its test, once status#24 posts the id.
+- **The end-to-end tests are in `tests/test_drift.py`, not `tests/test_main.py`** (CR 5). `test_main.py` is marked `integration` as a whole module, and these tests need no Redis.
+
+## Amended in review
+
+- **CR 1:** a key pasted with a line break reached `requests`, whose `InvalidHeader` quotes the header value, so the key would have reached the journal; a non-latin-1 one escaped as `UnicodeEncodeError` with no `drift check` record. A key that isn't one token of printable ASCII is now refused before any request, by name.
+- **CR 2:** `requests`' timeout bounds each socket read, not a request. The 60 s is when the last GitHub call may start; the unit's `TimeoutStartSec=90` is the hard stop, and a kill there is silence.
+- **CR 6:** the HTTP stub let a hung-up client's `BrokenPipe` traceback reach stderr during a later test (about 1 run in 5). It now takes the hang-up quietly and joins its threads at close.
