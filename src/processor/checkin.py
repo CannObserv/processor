@@ -14,6 +14,7 @@ monitor's grace absorbs one missed check-in. A failure raises
 ``$CREDENTIALS_DIRECTORY``: in no process environment, never logged.
 """
 
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -22,6 +23,9 @@ import requests
 #: The ``LoadCredential=`` name ``processor-drift.service`` gives the key.
 CREDENTIAL_NAME = "status-checkin-key"
 TIMEOUT_SECONDS = 10.0
+#: One token of printable ASCII: what Status mints. Anything else is a bad paste,
+#: refused before requests sees it, since its InvalidHeader quotes the value (CR 1).
+_KEY = re.compile(r"[\x21-\x7e]+")
 
 
 class CheckinFailed(Exception):
@@ -52,6 +56,11 @@ def post_checkin(
     timeout: float = TIMEOUT_SECONDS,
 ) -> int:
     """Check in once; return Status's answer code (202), or raise :class:`CheckinFailed`."""
+    if not _KEY.fullmatch(key):
+        raise CheckinFailed(
+            f"the {CREDENTIAL_NAME} credential is not one token of printable ASCII; "
+            "reinstall it (docs/DEPLOYMENT.md § The drift check)"
+        )
     url = f"{base_url.rstrip('/')}/api/v1/monitors/{monitor_id}/checkin"
     try:
         response = requests.post(

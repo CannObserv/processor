@@ -666,6 +666,16 @@ class TestTheCommand:
         assert world.status.requests == []
         assert "status-checkin-key" in outcome(capsys)["checkin"]
 
+    def test_a_malformed_key_never_reaches_the_journal(self, world, capsys):
+        """CR 1: a key pasted with a line break in it."""
+        (world.credentials / "status-checkin-key").write_text(f"{KEY}\n{KEY}\n")
+        world.lag(hours=1)
+        assert main(["drift"]) == 1
+        assert world.status.requests == []
+        err = capsys.readouterr().err
+        assert KEY not in err
+        assert '"message": "drift check"' in err
+
     def test_no_monitor_id_fails_without_asking_status(self, world, monkeypatch, capsys):
         monkeypatch.delenv("CO_PROCESSOR_DRIFT_MONITOR_ID")
         world.lag(hours=1)

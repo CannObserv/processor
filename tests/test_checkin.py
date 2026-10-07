@@ -51,6 +51,21 @@ def test_unreachable_is_a_failure_that_never_quotes_the_key():
     assert KEY not in str(caught.value)
 
 
+@pytest.mark.parametrize(
+    "key",
+    ["sk-test\npart-two", "sk-test\u2019s", "sk test"],
+    ids=["line-break", "unicode", "space"],
+)
+def test_a_malformed_key_is_refused_before_any_request_and_never_quoted(http_stub, key):
+    """A bad paste at install (CR 1): requests' InvalidHeader quotes the value, and a
+    non-latin-1 one escaped as UnicodeEncodeError, with no drift check record."""
+    http_stub.route("POST", PATH, 202)
+    with pytest.raises(CheckinFailed, match=CREDENTIAL_NAME) as caught:
+        post_checkin(http_stub.url, MONITOR, key, "ok", {})
+    assert "sk-test" not in str(caught.value)
+    assert http_stub.requests == []
+
+
 def test_a_stall_is_cut_off(http_stub):
     http_stub.route("POST", PATH, 202, delay=1.0)
     with pytest.raises(CheckinFailed, match="Timeout"):
