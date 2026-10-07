@@ -106,7 +106,7 @@ def _drift(settings: DriftSettings, *, test_alert: bool) -> int:
     ]
     if missing:
         logger.error(
-            "drift check", extra=fields | {"checkin": f"not sent: no {', no '.join(missing)}"}
+            "drift check", extra=fields | {"checkin": f"not sent: missing {', '.join(missing)}"}
         )
         return 1
     try:

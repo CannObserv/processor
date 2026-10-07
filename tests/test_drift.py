@@ -681,7 +681,17 @@ class TestTheCommand:
         world.lag(hours=1)
         assert main(["drift"]) == 1
         assert world.status.requests == []
-        assert "CO_PROCESSOR_DRIFT_MONITOR_ID" in outcome(capsys)["checkin"]
+        assert outcome(capsys)["checkin"] == "not sent: missing CO_PROCESSOR_DRIFT_MONITOR_ID"
+
+    def test_neither_is_named_in_one_line(self, world, monkeypatch, capsys):
+        """CR 3: the line an operator reads at gate 3."""
+        monkeypatch.delenv("CO_PROCESSOR_DRIFT_MONITOR_ID")
+        (world.credentials / "status-checkin-key").write_text("\n")
+        world.lag(hours=1)
+        assert main(["drift"]) == 1
+        assert outcome(capsys)["checkin"] == (
+            "not sent: missing CO_PROCESSOR_DRIFT_MONITOR_ID, the status-checkin-key credential"
+        )
 
     def test_a_monitor_id_that_is_not_a_ulid_is_invalid_settings(self, world, monkeypatch, capsys):
         monkeypatch.setenv("CO_PROCESSOR_DRIFT_MONITOR_ID", "../../admin")

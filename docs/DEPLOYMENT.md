@@ -271,7 +271,7 @@ Each run logs one `drift check` record: `build`, `main`, `kind`, `body`, and `ch
 - `202`;
 - `null`: GitHub was silent;
 - `failed: <Status's answer>`;
-- `not sent: no <what>`: the monitor id or the key is missing.
+- `not sent: missing <what>`: the monitor id or the key.
 
 The level is INFO for `ok`, WARNING for an alert or a silent GitHub, and ERROR when the check-in failed. Exit 0 means Status took the check-in.
 
