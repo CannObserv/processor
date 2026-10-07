@@ -689,7 +689,7 @@ class TestTheCommand:
         assert world.status.requests == []
         assert outcome(capsys)["checkin"] == "not sent: missing CO_PROCESSOR_DRIFT_MONITOR_ID"
 
-    def test_neither_is_named_in_one_line(self, world, monkeypatch, capsys):
+    def test_both_missing_are_named_in_one_line(self, world, monkeypatch, capsys):
         """CR 3: the line an operator reads at gate 3."""
         monkeypatch.delenv("CO_PROCESSOR_DRIFT_MONITOR_ID")
         (world.credentials / "status-checkin-key").write_text("\n")
