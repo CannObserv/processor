@@ -1,5 +1,5 @@
 """``processor run`` — the service; ``processor ensure-group`` — the hard ordering;
-``processor dlq list|show|drop`` — the drainer."""
+``processor dlq list|show|drop`` — the drainer; ``processor drift`` — the drift check."""
 
 import argparse
 import asyncio
@@ -14,16 +14,17 @@ from co_core_aio.bus import AsyncBusPublisher
 from pydantic import ValidationError
 from redis.asyncio import Redis
 
-from processor import dlq
+from processor import dlq, drift
 from processor._contain import landlock_abi, make_undumpable, unavailable_reason
 from processor.build import build_id
+from processor.checkin import CREDENTIAL_NAME, CheckinFailed, post_checkin, read_key
 from processor.child import run_in_child, transform_target
 from processor.consumer import GROUP, Consumer, group_reader, redis_client
 from processor.handler import Deps
 from processor.logging import configure_logging
 from processor.processors import TRANSFORMS
 from processor.processors.extract import PROCESSOR_VERSION
-from processor.settings import Settings
+from processor.settings import DriftSettings, Settings
 from processor.stores import build_stores
 
 logger = logging.getLogger("processor")
@@ -55,20 +56,69 @@ def main(argv: list[str] | None = None) -> int:
     listing.add_argument("--count", type=_positive_int, default=100)
     drain_commands.add_parser("show").add_argument("id")
     drain_commands.add_parser("drop").add_argument("id")
+    drift_parser = commands.add_parser(
+        "drift", help="check once whether live lags origin/main, and check in to Status (#35)"
+    )
+    drift_parser.add_argument(
+        "--test-alert", action="store_true", help="send one test alert, asking GitHub nothing"
+    )
     args = parser.parse_args(argv)
 
     configure_logging()
     try:
-        settings = Settings()
+        settings = DriftSettings() if args.command == "drift" else Settings()
     except ValidationError as exc:
         errors = exc.errors(include_url=False, include_input=False)
         logger.error("invalid settings", extra={"errors": errors})
         return 2
+    if args.command == "drift":
+        return _drift(settings, test_alert=args.test_alert)
     if args.command == "run":
         return asyncio.run(_run(settings))
     if args.command == "ensure-group":
         return asyncio.run(_ensure_group(settings))
     return asyncio.run(_dlq(settings, args))
+
+
+def _drift(settings: DriftSettings, *, test_alert: bool) -> int:
+    """One drift check, one check-in, one ``drift check`` record (#35).
+
+    Exit 0 when Status took the check-in, ok or alert; 1 when there was none to
+    send (GitHub silent) or Status did not take it. Never a retry: the next hour is.
+    """
+    live = build_id()
+    if test_alert:
+        verdict = drift.deliberate_alert(live)
+    else:
+        verdict = drift.assess(live, now=datetime.now(UTC), get=drift.github())
+    fields = {"build": live, "main": verdict.main, "kind": verdict.kind, "body": verdict.body}
+    if verdict.status is None:
+        logger.warning("drift check", extra=fields | {"checkin": None})
+        return 1
+    key = read_key(settings.credentials_directory)
+    missing = [
+        name
+        for name, value in (
+            ("CO_PROCESSOR_DRIFT_MONITOR_ID", settings.drift_monitor_id),
+            (f"the {CREDENTIAL_NAME} credential", key),
+        )
+        if not value
+    ]
+    if missing:
+        logger.error(
+            "drift check", extra=fields | {"checkin": f"not sent: no {', no '.join(missing)}"}
+        )
+        return 1
+    try:
+        code = post_checkin(
+            settings.status_url, settings.drift_monitor_id, key, verdict.status, verdict.variables()
+        )
+    except CheckinFailed as exc:
+        logger.error("drift check", extra=fields | {"checkin": f"failed: {exc}"})
+        return 1
+    level = logging.INFO if verdict.status == "ok" else logging.WARNING
+    logger.log(level, "drift check", extra=fields | {"checkin": code})
+    return 0
 
 
 def _positive_int(value: str) -> int:

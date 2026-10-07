@@ -62,3 +62,22 @@ class Settings(BaseSettings):
         if self.store_backend == "local" and not (self.local_input_root and self.local_output_root):
             raise ValueError("store_backend=local needs local_input_root and local_output_root")
         return self
+
+
+class DriftSettings(BaseSettings):
+    """``processor drift``'s knobs (#35): Status, the monitor, the credentials directory.
+
+    Apart from :class:`Settings`, so the drift unit never needs the broker credential.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="CO_PROCESSOR_", extra="ignore")
+
+    # Status's API, by MagicDNS name on the tailnet, production port only (status D2).
+    status_url: str = "http://status:9000"
+    # co-processor-drift's id (CannObserv/status#24): a ULID, set in
+    # deploy/processor-drift.service. Not a secret; it becomes a URL path segment.
+    drift_monitor_id: str = Field(default="", pattern=r"^([0-9A-HJKMNP-TV-Z]{26})?$")
+    # systemd's, for LoadCredential=; unprefixed. None outside a unit.
+    credentials_directory: Path | None = Field(
+        default=None, validation_alias="CREDENTIALS_DIRECTORY"
+    )
