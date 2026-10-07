@@ -22,18 +22,18 @@
 #   0. ask GitHub whether the commit's CI passed (unless --skip-ci)
 #   1. build releases/<build> (or reuse it): archive, wheelhouse, uv sync,
 #      REVISION last, read-only
-#   2. switch the link (rename(2), atomic), then install the unit from the
-#      release when it differs from the installed copy
+#   2. switch the link (rename(2), atomic), then install each unit under deploy/
+#      from the release when it differs from the installed copy (#35)
 #   3. restart processor (it lets the in-flight command finish: up to
 #      TimeoutStopSec=240)
 #   4. verify: the new process logs `starting` with this build and
 #      child_containment required, then `consuming`; then the smoke run, as the
 #      service user with the unit's environment, credential and sandboxing
 #      (scripts/smoke_scratch_bus.py: the scratch bus, the production bucket)
-#   5. on failure, switch back, unit too, restart, and prove the old build the
-#      same way
+#   5. on failure, switch back, units too, restart, and prove the old build the
+#      same way; on success, enable a timer this deploy installed new
 #
-# Runs as exedev; sudo for systemctl, systemd-run and the unit file only. Exits
+# Runs as exedev; sudo for systemctl, systemd-run and the unit files only. Exits
 # 0 when verified, 4 when processor is left on a build that did not answer (no
 # rollback possible, or the old build failed too), 1 otherwise.
 set -euo pipefail
@@ -113,7 +113,7 @@ git -C "$SRC" rev-parse --git-dir >/dev/null 2>&1 ||
 exec 9>"$ROOT/.deploy.lock"
 flock -n 9 || die "another deploy is running (it holds $ROOT/.deploy.lock)"
 
-# The installed unit this deploy replaces, kept for a switch back.
+# The installed units this deploy replaces, kept for a switch back.
 backup="$(mktemp -d "${TMPDIR:-/tmp}/processor-deploy.XXXXXX")"
 trap 'rm -rf "$backup" || :' EXIT
 
@@ -334,44 +334,110 @@ swap() { # <link> <target>: rename(2) over the old link, so there is never no li
   mv -Tf "$1.new" "$1"
 }
 
-# Installs the release's unit when it differs from the installed copy, after
-# keeping that copy aside for restore_unit. Called as `install_unit || ...`.
-install_unit() {
-  local name="$UNIT.service" unit="$UNIT_DIR/$UNIT.service"
-  cmp -s "$release/deploy/$name" "$unit" && return 0
-  if [[ -e "$unit" ]]; then
-    cp "$unit" "$backup/$name" || {
-      note "cannot keep $unit aside; not installing it"
-      return 1
-    }
-  else
-    : >"$backup/$name.added"
-  fi
-  sudo install -m 644 "$release/deploy/$name" "$unit" || {
-    note "installing $name in $UNIT_DIR failed"
-    return 1
-  }
-  sudo systemctl daemon-reload || {
-    note "systemctl daemon-reload failed"
-    return 1
-  }
-  note "unit installed from $build: $name"
-  logger -t processor-deploy "unit from $build: $name" || true
+# --- units (#35; status#18) --------------------------------------------------
+#
+# Every deploy/*.service and deploy/*.timer in the release is installed: before
+# #35 only processor.service was, and a new unit would never have reached
+# $UNIT_DIR (status#18 had the same bug). tests/test_units.py accounts for each
+# file under deploy/.
+
+units_of() { # the release's units, by name
+  local path
+  for path in "$release"/deploy/*.service "$release"/deploy/*.timer; do
+    [[ -f "$path" ]] && basename "$path"
+  done
+  return 0
 }
 
-# Switch back, for the unit. A failure is a note: the rollback still proves the
-# old build, and says whether it answers.
-restore_unit() {
-  local name="$UNIT.service"
-  if [[ -f "$backup/$name" ]]; then
-    sudo install -m 644 "$backup/$name" "$UNIT_DIR/$name" || note "restoring $name failed"
-  elif [[ -f "$backup/$name.added" ]]; then
-    sudo rm -f "$UNIT_DIR/$name" || note "removing $UNIT_DIR/$name failed"
-  else
-    return 0
+# Installs the release's units that differ from their installed copies, after
+# keeping each copy aside for restore_units. One daemon-reload, and a changed
+# timer is try-restarted so it re-arms on its new schedule. A new timer is
+# enabled later, by enable_new_timers, once the deploy verifies. Units the
+# release lacks stay as they are.
+# Called as `install_units || ...`, so set -e is off in here: every step that
+# can fail says so itself.
+install_units() {
+  local name unit changed=() added=() timers=()
+  { mkdir -p "$backup/units" && : >"$backup/units.added"; } ||
+    { note "cannot keep the installed units aside in $backup"; return 1; }
+  while read -r name; do
+    unit="$UNIT_DIR/$name"
+    cmp -s "$release/deploy/$name" "$unit" && continue
+    if [[ -e "$unit" ]]; then
+      cp "$unit" "$backup/units/$name" ||
+        { note "cannot keep $unit aside; not installing it"; return 1; }
+      changed+=("$name")
+      [[ "$name" != *.timer ]] || timers+=("$name")
+    else
+      echo "$name" >>"$backup/units.added"
+      added+=("$name")
+    fi
+    sudo install -m 644 "$release/deploy/$name" "$unit" ||
+      { note "installing $name in $UNIT_DIR failed"; return 1; }
+  done < <(units_of)
+  ((${#changed[@]} + ${#added[@]})) || return 0
+  sudo systemctl daemon-reload || { note "systemctl daemon-reload failed"; return 1; }
+  # A timer only watches: one that will not re-arm is a note, never a reason to
+  # switch processor back (#35 trap 4).
+  for name in "${timers[@]}"; do
+    sudo systemctl try-restart "$name" || note "systemctl try-restart $name failed: systemctl status $name"
+  done
+  local list="${changed[*]}"
+  for name in "${added[@]}"; do list+=" $name (new)"; done
+  note "units installed from $build: ${list# }"
+  logger -t processor-deploy "units from $build: ${list# }" || true
+}
+
+# Whether install_units replaced or added any unit.
+units_replaced() {
+  compgen -G "$backup/units/*" >/dev/null || [[ -s "$backup/units.added" ]]
+}
+
+# Switch back, for units: the copies install_units replaced go back, and what it
+# added is removed. A failure is a note: the rollback still proves the old build,
+# and says whether it answers.
+restore_units() {
+  local path name timers=() any=0
+  for path in "$backup/units"/*; do
+    [[ -f "$path" ]] || continue
+    name="$(basename "$path")"
+    sudo install -m 644 "$path" "$UNIT_DIR/$name" || note "restoring $name failed: $path"
+    [[ "$name" != *.timer ]] || timers+=("$name")
+    any=1
+  done
+  # Missing when install_units could not even start; set -e is on here, and a
+  # failed redirect would end the rollback before it proves the old build (status CR 4).
+  if [[ -f "$backup/units.added" ]]; then
+    while read -r name; do
+      sudo rm -f "$UNIT_DIR/$name" || note "removing $UNIT_DIR/$name failed"
+      any=1
+    done <"$backup/units.added"
   fi
+  ((any)) || return 0
   sudo systemctl daemon-reload || note "systemctl daemon-reload failed"
-  logger -t processor-deploy "unit restored" || true
+  for name in "${timers[@]}"; do
+    sudo systemctl try-restart "$name" || note "systemctl try-restart $name failed"
+  done
+  logger -t processor-deploy "units restored" || true
+}
+
+# A timer this deploy installed new is enabled once the deploy verifies, so a
+# deploy switched back never ran it. One installed before is never enabled
+# again: an operator's `systemctl disable --now` sticks (#35). Status installs
+# without enabling; here the drift timer is the decision #35 made. A failure is
+# a note: the timer watches the deploy, it never decides one.
+enable_new_timers() {
+  local name
+  [[ -f "$backup/units.added" ]] || return 0
+  while read -r name; do
+    [[ "$name" == *.timer ]] || continue
+    if sudo systemctl enable --now "$name"; then
+      note "$name enabled"
+      logger -t processor-deploy "$name enabled" || true
+    else
+      note "systemctl enable --now $name failed; enable it by hand (docs/DEPLOYMENT.md § The drift check)"
+    fi
+  done <"$backup/units.added"
 }
 
 # The new process's own start records: `starting` naming <build> under required
@@ -454,10 +520,11 @@ previous="$(release_of)"
 swap "$link" "releases/$build"
 logger -t processor-deploy "live -> $build (was ${previous_link:-nothing})" || true
 units_ok=1
-install_unit || units_ok=0
+install_units || units_ok=0
 
 if ((units_ok)) && restart_and_verify "$build"; then
   note "live is on $build"
+  enable_new_timers
 else
   if [[ -z "$previous" ]]; then
     # A first deploy: nothing to switch back to. The unit it replaced goes back,
@@ -465,7 +532,7 @@ else
     # verify would keep running the new release, consuming, under a unit file
     # that no longer describes it (CR 3). The install's other steps (the user,
     # /etc/processor) are the operator's to undo: DEPLOYMENT.md § Rollback.
-    restore_unit
+    restore_units
     sudo systemctl reset-failed "$UNIT" || true
     sudo systemctl restart "$UNIT" || note "systemctl restart $UNIT failed on the restored unit"
     logger -t processor-deploy "live failed on $build; no previous release; restarted on the unit it replaced" || true
@@ -473,14 +540,14 @@ else
       "restarted on the unit it replaced. docs/DEPLOYMENT.md § Rollback"
   fi
   if [[ "$previous" == "$build" ]]; then
-    [[ -f "$backup/$UNIT.service" || -f "$backup/$UNIT.service.added" ]] ||
+    units_replaced ||
       dead "live failed on $build, which it was already running; there is nothing to switch back to"
-    old="$build" back="put back the unit it replaced, on $build"
+    old="$build" back="put back the units it replaced, on $build"
   else
     old="$(served_build "$previous_link")" back="switched back to $old"
     swap "$link" "$previous_link"
   fi
-  restore_unit
+  restore_units
   if restart_and_verify "$old"; then
     logger -t processor-deploy "live rolled back to $old after $build failed ($back)" || true
     die "live failed on $build; $back, which is answering"
