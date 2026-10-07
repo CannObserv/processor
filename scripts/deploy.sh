@@ -432,7 +432,9 @@ enable_new_timers() {
   while read -r name; do
     [[ "$name" == *.timer ]] || continue
     if sudo systemctl enable --now "$name"; then
-      note "$name enabled"
+      # --now starts it, and a timer whose OnBootSec has passed fires at once:
+      # that first run is the one to read (CR 4).
+      note "$name enabled; its first run: journalctl -u ${name%.timer} -n 5"
       logger -t processor-deploy "$name enabled" || true
     else
       note "systemctl enable --now $name failed; enable it by hand (docs/DEPLOYMENT.md § The drift check)"

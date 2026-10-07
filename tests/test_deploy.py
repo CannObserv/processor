@@ -503,7 +503,11 @@ class TestEveryUnit:
         assert "enable --now processor-drift.timer" in calls
         # After the verify: a deploy that is switched back never enabled it.
         assert calls.index("restart processor") < calls.index("enable --now processor-drift.timer")
-        assert "processor-drift.timer enabled" in result.stderr
+        # CR 4: the enable starts the first run; the deploy says where it shows.
+        assert (
+            "processor-drift.timer enabled; its first run: journalctl -u processor-drift -n 5"
+            in result.stderr
+        )
         # The service is the timer's: enabled or restarted by nothing else.
         assert not [c for c in calls if "processor-drift.service" in c]
         assert "processor-drift.timer (new)" in w.log("logger")
