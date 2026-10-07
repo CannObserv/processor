@@ -1,0 +1,15 @@
+# Hourly: Status's co-processor-drift monitor expects a check-in every 3600 s, with a
+# grace of 5400 s, so one missed run is absorbed and two alarm (CannObserv/status#24).
+# Enabled by scripts/deploy.sh the first time it installs this file (#35).
+[Unit]
+Description=Processor: check hourly whether live lags origin/main
+
+[Timer]
+Unit=processor-drift.service
+# After tailscaled: Status is reached by its MagicDNS name.
+OnBootSec=5min
+OnUnitActiveSec=1h
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

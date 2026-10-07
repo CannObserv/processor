@@ -1,0 +1,40 @@
+# Processor's drift check (#35): does live lag origin/main in code that runs?
+# Started hourly by processor-drift.timer; scripts/deploy.sh installs both from the
+# release and enables the timer the first time it installs it (docs/DEPLOYMENT.md).
+#
+# Compares the live release's REVISION with main on GitHub and checks in to Status's
+# co-processor-drift monitor (CannObserv/status#24): ok while live is main, behind only
+# in what never runs, or behind in code for 8 h or less; alert past that, and at once
+# when live is off main. No check-in when GitHub cannot say, so a long outage ends in
+# the monitor going missing. src/processor/drift.py has the rules.
+#
+# Apart from processor.service on purpose: a Status or GitHub outage costs this unit
+# its exit code and nothing else (#35 trap 4).
+[Unit]
+Description=Processor: does live lag origin/main? Check in to Status
+Documentation=https://github.com/CannObserv/processor/blob/main/docs/DEPLOYMENT.md
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service
+
+[Service]
+Type=oneshot
+User=processor
+Group=processor
+# A release, never a checkout (#2). Its REVISION is what this checks.
+WorkingDirectory=/srv/processor/live
+ExecStart=/srv/processor/live/.venv/bin/processor drift
+# GitHub (every call together, 60 s) and one check-in (10 s). No Restart=: the next
+# hour is the retry, and the monitor's grace absorbs one missed run.
+TimeoutStartSec=90
+
+# No EnvironmentFile=: /etc/processor/.env holds the broker credential, which a drift
+# check has no use for. Only the Status key, root 600 on disk, handed over at start.
+# SetCredential= is the fallback when the file is missing: the check then runs, logs
+# that it has no key, and exits 1.
+LoadCredential=status-checkin-key:/etc/processor/status-checkin.key
+SetCredential=status-checkin-key:\n
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
