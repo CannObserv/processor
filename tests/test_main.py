@@ -119,6 +119,76 @@ async def test_run_processes_a_command_and_stops_on_sigterm(admin, env, tmp_path
     assert starting["child_containment"] == env["CO_PROCESSOR_CHILD_CONTAINMENT"]
     assert starting["landlock_abi"] == landlock_abi()
     assert starting["build"] == build_id()
+    assert starting["liveness"] == "off"  # no monitor id: dev, CI (#39)
+
+
+MONITOR = "01M46EXP45TVCVAMQXK043N1Q7"
+CHECKIN = f"/api/v1/monitors/{MONITOR}/checkin"
+
+
+async def _run_until(env: dict[str, str], ready) -> list[dict]:
+    """``processor run`` until ``ready()`` holds, then SIGTERM: its JSON records."""
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "processor", "run",
+        env=os.environ | env, stderr=asyncio.subprocess.PIPE,
+    )  # fmt: skip
+    try:
+        async with asyncio.timeout(30):
+            while not await ready():
+                assert proc.returncode is None, "processor run exited early"
+                await asyncio.sleep(0.1)
+    finally:
+        if proc.returncode is None:
+            proc.send_signal(signal.SIGTERM)
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+    assert proc.returncode == 0
+    return [json.loads(line) for line in stderr.decode().splitlines() if line.startswith("{")]
+
+
+async def test_run_checks_in_to_its_live_monitor(admin, env, tmp_path, http_stub) -> None:
+    http_stub.route("POST", CHECKIN, 202)
+    (tmp_path / "creds").mkdir()
+    (tmp_path / "creds" / "status-checkin-key").write_text("sk-test-key\n")
+    live = {
+        "CO_PROCESSOR_LIVE_MONITOR_ID": MONITOR,
+        "CO_PROCESSOR_STATUS_URL": http_stub.url,
+        "CREDENTIALS_DIRECTORY": str(tmp_path / "creds"),
+    }
+
+    async def checked_in() -> bool:
+        return bool(http_stub.requests)
+
+    records = await _run_until(env | live, checked_in)
+    request = http_stub.requests[0]
+    assert request["headers"]["X-API-Key"] == "sk-test-key"
+    body = json.loads(request["body"])
+    assert body["status"] == "ok" and body["variables"]["build"] == build_id()
+    (starting,) = [r for r in records if r["message"] == "starting"]
+    assert starting["liveness"] == f"on {MONITOR}"
+    (ok,) = [r for r in records if r["message"] == "liveness check-in"]
+    assert (ok["level"], ok["checkin"]) == ("INFO", 202)
+    assert "sk-test-key" not in json.dumps(records)
+
+
+async def test_a_missing_key_turns_liveness_off_and_never_stops_the_service(
+    admin, env, tmp_path
+) -> None:
+    # A Status problem must never stop Processor; the silence pages instead.
+    (tmp_path / "creds").mkdir()
+    (tmp_path / "creds" / "status-checkin-key").write_text("\n")  # the unit's fallback
+    live = {
+        "CO_PROCESSOR_LIVE_MONITOR_ID": MONITOR,
+        "CREDENTIALS_DIRECTORY": str(tmp_path / "creds"),
+    }
+
+    async def consuming() -> bool:
+        return bool(await admin.exists(CONTENT_PROCESS))
+
+    records = await _run_until(env | live, consuming)
+    (starting,) = [r for r in records if r["message"] == "starting"]
+    assert starting["liveness"] == "off: missing the status-checkin-key credential"
+    (off,) = [r for r in records if r["message"] == "liveness check-in off"]
+    assert off["level"] == "ERROR"
 
 
 async def _seed_dlq(admin: Redis) -> str:
