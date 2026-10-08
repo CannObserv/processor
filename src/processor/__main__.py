@@ -1,13 +1,16 @@
-"""``processor run`` — the service; ``processor ensure-group`` — the hard ordering;
-``processor dlq list|show|drop`` — the drainer; ``processor drift`` — the drift check."""
+"""``processor run`` — the service, with its liveness check-in; ``processor ensure-group``
+— the hard ordering; ``processor dlq list|show|drop`` — the drainer; ``processor drift``
+— the drift check."""
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import signal
 import sys
 from datetime import UTC, datetime
+from functools import partial
 
 from co_core.pure.adapters.bus.streams import CONTENT_PROCESS
 from co_core_aio.bus import AsyncBusPublisher
@@ -21,6 +24,7 @@ from processor.checkin import CREDENTIAL_NAME, CheckinFailed, post_checkin, read
 from processor.child import run_in_child, transform_target
 from processor.consumer import GROUP, Consumer, group_reader, redis_client
 from processor.handler import Deps
+from processor.liveness import Heartbeat
 from processor.logging import configure_logging
 from processor.processors import TRANSFORMS
 from processor.processors.extract import PROCESSOR_VERSION
@@ -202,6 +206,7 @@ async def _run(settings: Settings) -> int:
         reclaim_min_idle_ms=settings.reclaim_min_idle_ms,
         reclaim_interval_s=settings.reclaim_interval_s,
     )
+    liveness, heartbeat = _liveness(settings, consumer)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -219,14 +224,53 @@ async def _run(settings: Settings) -> int:
             "store_backend": settings.store_backend,
             "input": stores.input.uri_for("0" * 64).rsplit("/", 1)[0],
             "output": stores.output.uri_for("0" * 64).rsplit("/", 1)[0],
+            "liveness": liveness,
         },
     )
+    beating = asyncio.create_task(heartbeat.run()) if heartbeat else None
     try:
         await consumer.run(stop)
     finally:
+        if beating is not None:
+            beating.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await beating
         await client.aclose()
     logger.info("stopped")
     return 0
+
+
+def _liveness(settings: Settings, consumer: Consumer) -> tuple[str, Heartbeat | None]:
+    """The heartbeat to ``co-processor-live`` (#39), and what the ``starting`` record says.
+
+    Off without a monitor id (dev, CI). Off, logged as an ERROR, without the key: a
+    Status problem never stops Processor, and the monitor's silence pages instead.
+    """
+    if not settings.live_monitor_id:
+        return "off", None
+    key = read_key(settings.credentials_directory)
+    if not key:
+        reason = f"missing the {CREDENTIAL_NAME} credential"
+        logger.error("liveness check-in off", extra={"reason": reason})
+        return f"off: {reason}", None
+    post = partial(
+        post_checkin,
+        settings.status_url,
+        settings.live_monitor_id,
+        key,
+        "ok",
+        timeout=settings.live_checkin_timeout_s,
+    )
+    heartbeat = Heartbeat(
+        consumer,
+        post,
+        build=build_id(),
+        interval_s=settings.live_interval_s,
+        # One command (the reclaim's own bound for a dead one) plus one blocking read.
+        stale_after_s=(settings.reclaim_min_idle_ms + settings.read_block_ms) / 1000,
+        timeout_s=settings.live_checkin_timeout_s,
+    )
+    return f"on {settings.live_monitor_id}", heartbeat
 
 
 async def _dlq(settings: Settings, args: argparse.Namespace) -> int:
