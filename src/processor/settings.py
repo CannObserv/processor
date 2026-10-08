@@ -19,10 +19,25 @@ GiB = 1024**3
 _POST_EXTRACTION_ALLOWANCE_MS = 60_000
 
 
-class Settings(BaseSettings):
-    """Every knob, with the spec's defaults."""
+#: A Status monitor id: a ULID, or empty for none. Not a secret; a URL path segment.
+_MONITOR_ID = r"^([0-9A-HJKMNP-TV-Z]{26})?$"
+
+
+class StatusSettings(BaseSettings):
+    """Status's API and the key's directory: what both check-ins share (#35, #39)."""
 
     model_config = SettingsConfigDict(env_prefix="CO_PROCESSOR_", extra="ignore")
+
+    # Status's API, by MagicDNS name on the tailnet, production port only (status D2).
+    status_url: str = "http://status:9000"
+    # systemd's, for LoadCredential=; unprefixed. None outside a unit.
+    credentials_directory: Path | None = Field(
+        default=None, validation_alias="CREDENTIALS_DIRECTORY"
+    )
+
+
+class Settings(StatusSettings):
+    """Every knob, with the spec's defaults."""
 
     # The bus: redis://processor:<pw>@broker:6379/0 — the MagicDNS name, never the
     # address, which a broker rebuild changes (#8).
@@ -50,6 +65,13 @@ class Settings(BaseSettings):
     reclaim_min_idle_ms: int = 600_000
     reclaim_interval_s: float = Field(default=60, gt=0)
 
+    # The liveness check-in (#39): co-processor-live's id, set in
+    # deploy/processor.service; empty is off (dev, CI). One check-in per interval,
+    # cut off at the timeout, which must end before the next tick.
+    live_monitor_id: str = Field(default="", pattern=_MONITOR_ID)
+    live_interval_s: float = Field(default=300, gt=0)
+    live_checkin_timeout_s: float = Field(default=10, gt=0)
+
     @model_validator(mode="after")
     def _check(self) -> "Settings":
         floor = int(self.extraction_timeout_s * 1000) + _POST_EXTRACTION_ALLOWANCE_MS
@@ -61,23 +83,20 @@ class Settings(BaseSettings):
             )
         if self.store_backend == "local" and not (self.local_input_root and self.local_output_root):
             raise ValueError("store_backend=local needs local_input_root and local_output_root")
+        if self.live_checkin_timeout_s >= self.live_interval_s:
+            raise ValueError(
+                f"live_checkin_timeout_s ({self.live_checkin_timeout_s}) must be below "
+                f"live_interval_s ({self.live_interval_s}), or a check-in outlasts its tick"
+            )
         return self
 
 
-class DriftSettings(BaseSettings):
+class DriftSettings(StatusSettings):
     """``processor drift``'s knobs (#35): Status, the monitor, the credentials directory.
 
     Apart from :class:`Settings`, so the drift unit never needs the broker credential.
     """
 
-    model_config = SettingsConfigDict(env_prefix="CO_PROCESSOR_", extra="ignore")
-
-    # Status's API, by MagicDNS name on the tailnet, production port only (status D2).
-    status_url: str = "http://status:9000"
-    # co-processor-drift's id (CannObserv/status#24): a ULID, set in
-    # deploy/processor-drift.service. Not a secret; it becomes a URL path segment.
-    drift_monitor_id: str = Field(default="", pattern=r"^([0-9A-HJKMNP-TV-Z]{26})?$")
-    # systemd's, for LoadCredential=; unprefixed. None outside a unit.
-    credentials_directory: Path | None = Field(
-        default=None, validation_alias="CREDENTIALS_DIRECTORY"
-    )
+    # co-processor-drift's id (CannObserv/status#24), set in
+    # deploy/processor-drift.service.
+    drift_monitor_id: str = Field(default="", pattern=_MONITOR_ID)
