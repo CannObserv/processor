@@ -15,6 +15,7 @@ import json
 import logging
 import socket
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -35,9 +36,11 @@ from redis.exceptions import ResponseError
 
 from processor import consumer as consumer_module
 from processor._contain import strongest_available
+from processor.checkin import post_checkin
 from processor.child import ChildResult, run_in_child
 from processor.consumer import GROUP, Consumer, redis_client
 from processor.handler import Deps
+from processor.liveness import Heartbeat
 from processor.logging import JsonFormatter
 from processor.processors.extract import PROCESSOR_VERSION, extract
 from processor.stores import Stores
@@ -839,3 +842,133 @@ async def test_oom_leaves_the_entry_pending(admin, bus, stores) -> None:
     await consumer.step()
     (fact,) = await facts(admin)
     assert isinstance(fact, ProcessingCompleteEvent)
+
+
+# --- liveness (#39): the consumer's progress, and the heartbeat beside it -------------
+
+
+def _beat(consumer: Consumer, url: str, **knobs) -> Heartbeat:
+    post = partial(post_checkin, url, "01M46EXP45TVCVAMQXK043N1Q7", "sk-test-key", "ok",
+                   timeout=knobs["timeout_s"])  # fmt: skip
+    return Heartbeat(consumer, post, build="test", **knobs)
+
+
+async def test_empty_reads_are_progress(bus, stores) -> None:
+    # An idle queue turns the loop: it must never read as an outage.
+    consumer = make_consumer(bus, stores)
+    stop = asyncio.Event()
+    task = asyncio.create_task(consumer.run(stop))
+    try:
+        await asyncio.sleep(0.1)
+        first = consumer.last_progress
+        await asyncio.sleep(0.5)  # several 100 ms reads, nothing to read
+        assert consumer.last_progress > first
+        assert consumer.backing_off is False
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, timeout=5)
+
+
+async def test_a_backoff_is_progress_and_says_so(bus, stores, monkeypatch) -> None:
+    # A broker outage backs off; the loop still turns. The broker alarms for itself.
+    monkeypatch.setattr(consumer_module, "_BACKOFF_START_S", 0.01)
+    consumer = make_consumer(bus, stores)
+    real_step = consumer.step
+    failures = itertools.count()
+    stamps = []
+
+    async def step() -> None:
+        stamps.append((consumer.last_progress, consumer.backing_off))
+        if next(failures) < 3:
+            raise RedisConnectionError("broker gone")
+        await real_step()
+
+    consumer.step = step
+    stop = asyncio.Event()
+    task = asyncio.create_task(consumer.run(stop))
+    try:
+        async with asyncio.timeout(5):
+            while len(stamps) < 5:
+                await asyncio.sleep(0.01)
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, timeout=5)
+    times, backing_off = zip(*stamps, strict=True)
+    assert list(times) == sorted(times) and times[3] > times[1]
+    assert backing_off[:5] == (False, True, True, True, False)
+
+
+async def test_each_message_of_a_reclaim_walk_is_progress(admin, bus, stores) -> None:
+    # A walk over a backlog takes one command's time per entry; stamped per step alone,
+    # a long walk would read as a wedge.
+    dead = AsyncBusConsumer(bus, topic=CONTENT_PROCESS, group=GROUP, consumer="old-instance")
+    await dead.ensure_group()
+    await issue(admin, stores, "cmd-1")
+    await issue(admin, stores, "cmd-2")
+    assert len(await dead.read(count=2)) == 2
+    seen = []
+
+    async def inprocess(_target, args, **_kwargs) -> ChildResult:
+        seen.append(consumer.last_progress)
+        return ChildResult(kind="ok", value=extract(*args))
+
+    consumer = make_consumer(bus, stores, run_child=inprocess)
+    await consumer.start()
+    await consumer.reclaim()
+    assert len(await facts(admin)) == 2
+    assert seen[1] > seen[0]
+
+
+async def test_a_hung_status_never_delays_a_command(admin, bus, stores, hung_status) -> None:
+    # Status takes the connection and never answers. Were the check-in on the event
+    # loop, it would hold the loop for its 30 s timeout, and the command with it.
+    consumer = make_consumer(bus, stores)
+    beat = _beat(consumer, hung_status, interval_s=0.05, stale_after_s=605, timeout_s=30)
+    stop = asyncio.Event()
+    run = asyncio.create_task(consumer.run(stop))
+    heartbeat = asyncio.create_task(beat.run())
+    try:
+        async with asyncio.timeout(15):
+            while not await admin.exists(CONTENT_PROCESS):
+                await asyncio.sleep(0.01)
+            await issue(admin, stores)
+            while not await admin.xlen(CONTENT_DERIVED):
+                await asyncio.sleep(0.01)
+        assert beat._thread is not None and beat._thread.is_alive()  # still hung on Status
+    finally:
+        heartbeat.cancel()
+        stop.set()
+        await asyncio.wait_for(run, timeout=5)
+    (fact,) = await facts(admin)
+    assert isinstance(fact, ProcessingCompleteEvent)
+
+
+async def test_a_wedged_loop_goes_silent_while_the_event_loop_stays_up(
+    bus, stores, http_stub, caplog
+) -> None:
+    # A hung read, an endless walk: the process is up, the loop is not turning.
+    path = "/api/v1/monitors/01M46EXP45TVCVAMQXK043N1Q7/checkin"
+    http_stub.route("POST", path, 202)
+    consumer = make_consumer(bus, stores)
+
+    async def wedged() -> None:
+        await asyncio.Event().wait()
+
+    consumer.step = wedged
+    beat = _beat(consumer, http_stub.url, interval_s=0.05, stale_after_s=0.3, timeout_s=0.04)
+    stop = asyncio.Event()
+    run = asyncio.create_task(consumer.run(stop))
+    heartbeat = asyncio.create_task(beat.run())
+    caplog.set_level(logging.INFO, logger="processor.liveness")
+    try:
+        await asyncio.sleep(0.6)  # past the bound: fresh at the start, stale since 0.3 s
+        sent = len(http_stub.requests)
+        stale = len([r for r in caplog.records if r.getMessage().startswith("consume loop stale")])
+        await asyncio.sleep(0.4)
+    finally:
+        heartbeat.cancel()
+        run.cancel()
+    assert sent >= 1  # it checked in while fresh
+    assert len(http_stub.requests) == sent  # then silence
+    later = [r for r in caplog.records if r.getMessage().startswith("consume loop stale")]
+    assert stale >= 1 and len(later) >= stale + 4  # the heartbeat kept ticking

@@ -1,6 +1,7 @@
-"""Suite-wide: say which child containment this run exercises (#2); a local HTTP stub (#35)."""
+"""Suite-wide: say which child containment this run exercises (#2); local HTTP stubs (#35, #39)."""
 
 import json
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -101,3 +102,17 @@ def http_stub_2():
     stub = HttpStub()
     yield stub
     stub.close()
+
+
+@pytest.fixture
+def hung_status():
+    """A Status that takes the connection and never answers (#39): no thread to join.
+
+    The kernel completes the handshake from the listen backlog, so a client connects
+    and then waits on its read, as on a Status that hangs.
+    """
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen()
+    yield f"http://127.0.0.1:{server.getsockname()[1]}"
+    server.close()
