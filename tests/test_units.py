@@ -56,9 +56,17 @@ def test_the_unit_runs_the_live_release_as_its_own_user() -> None:
 
 def test_secrets_come_from_etc_processor_and_the_key_as_a_credential() -> None:
     assert _one("EnvironmentFile") == "/etc/processor/.env"
-    name, _, source = _one("LoadCredential").partition(":")
-    assert source == "/etc/processor/co-gcs-processor-writer.json"
-    assert _one("Environment") == f"GOOGLE_APPLICATION_CREDENTIALS=%d/{name}"
+    credentials = dict(c.partition(":")[::2] for c in _all("LoadCredential", SERVICE))
+    assert credentials["gcs-writer-key"] == "/etc/processor/co-gcs-processor-writer.json"
+    assert "GOOGLE_APPLICATION_CREDENTIALS=%d/gcs-writer-key" in _all("Environment", SERVICE)
+
+
+def test_the_status_key_is_a_credential_with_an_empty_fallback() -> None:
+    # The liveness check-in's (#39): the drift check's key, the same file. A missing
+    # file starts the service with liveness off, logged, never a failed start.
+    credentials = dict(c.partition(":")[::2] for c in _all("LoadCredential", SERVICE))
+    assert credentials["status-checkin-key"] == "/etc/processor/status-checkin.key"
+    assert _all("SetCredential", SERVICE) == ["status-checkin-key:\\n"]  # as the drift unit
 
 
 @pytest.mark.parametrize(

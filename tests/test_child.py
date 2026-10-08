@@ -275,6 +275,9 @@ async def test_the_child_cannot_read_a_file_outside_its_allowlist(tmp_path: Path
         # After #2's install: the key as the unit receives it, readable by the
         # service's uid through an ACL, so by the child's but for Landlock (CR 9).
         "/run/credentials/processor.service/gcs-writer-key",
+        # The Status key (#39): beside the GCS key since the liveness check-in.
+        "/etc/processor/status-checkin.key",
+        "/run/credentials/processor.service/status-checkin-key",
         str(REPO / ".env"),
     ],
 )
