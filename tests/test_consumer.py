@@ -405,8 +405,12 @@ async def test_an_entry_that_raises_does_not_strand_the_ones_behind_it(
     await dead.ensure_group()
     await issue(admin, stores, "cmd-1")
     await issue(admin, stores, "cmd-2")
-    assert len(await dead.read(count=2)) == 2
-    await asyncio.sleep(0.6)
+    entries = await dead.read(count=2)
+    assert len(entries) == 2
+    # No wall clock (#40): age both entries past the threshold, as the dead consumer's,
+    # without a delivery (JUSTID). Once claimed, cmd-1 can't age 30 s within the test.
+    ids = [entry.message_id for entry in entries]
+    await admin.xclaim(CONTENT_PROCESS, GROUP, "old-instance", 0, ids, idle=60_000, justid=True)
 
     async def inprocess(_target, args, **_kwargs) -> ChildResult:
         return ChildResult(kind="ok", value=extract(*args))
@@ -422,7 +426,7 @@ async def test_an_entry_that_raises_does_not_strand_the_ones_behind_it(
     monkeypatch.setattr(AsyncBusConsumer, "ack", flaky_ack)
     deps = make_consumer(bus, stores, run_child=inprocess)._deps
     consumer = Consumer(bus, deps, consumer_name="co-processor", read_block_ms=100,
-                        reclaim_min_idle_ms=500, reclaim_interval_s=0)  # fmt: skip
+                        reclaim_min_idle_ms=30_000, reclaim_interval_s=0)  # fmt: skip
     with pytest.raises(RedisConnectionError):
         await consumer.step()
     await consumer.step()
