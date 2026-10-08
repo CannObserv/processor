@@ -26,6 +26,9 @@ max-deliveries hook, no loop (spec Open Question 2) — so the loop is here:
   ``NOPERM``, ``OOM``), never exiting on one. A stop also ends a reclaim between
   messages: the in-flight command finishes, and the rest of a backlog stays pending
   for the next process rather than outlasting the unit's ``TimeoutStopSec``.
+- ``last_progress``: stamped after every step, backoff included, and every message,
+  reclaimed ones included. The liveness heartbeat (:mod:`processor.liveness`, #39)
+  checks in only while it is fresh.
 """
 
 import asyncio
@@ -110,6 +113,11 @@ class Consumer:
         # re-runs the give-up only, never the command (#28).
         self._gave_up: dict[str, tuple[str, Exception]] = {}
         self._stop: asyncio.Event | None = None
+        #: ``time.monotonic()`` at the last finished step, backoff or message (#39):
+        #: what the liveness heartbeat judges the loop by.
+        self.last_progress = time.monotonic()
+        #: Whether the last step raised, so the loop is backing off (#39).
+        self.backing_off = False
 
     async def start(self) -> None:
         """Create ``processor.process`` from ``$`` if it does not exist."""
@@ -120,6 +128,7 @@ class Consumer:
         self._stop = stop
         backoff = _BACKOFF_START_S
         started = False
+        self.last_progress = time.monotonic()
         while not stop.is_set():
             try:
                 if not started:
@@ -128,7 +137,11 @@ class Consumer:
                     logger.info("consuming", extra={"group": GROUP, "stream": CONTENT_PROCESS})
                 await self.step()
                 backoff = _BACKOFF_START_S
+                self.backing_off = False
+                self.last_progress = time.monotonic()
             except Exception as exc:
+                self.backing_off = True
+                self.last_progress = time.monotonic()
                 log = logger.warning if is_transient(exc) else logger.exception
                 log(
                     "consumer loop error; backing off",
@@ -186,6 +199,14 @@ class Consumer:
         return self._stop is not None and self._stop.is_set()
 
     async def _process(self, message: BusMessage) -> None:
+        try:
+            await self._process_one(message)
+        finally:
+            # Per message, not per step: a reclaim walk takes one command's time per
+            # entry, and a long walk is not a wedge (#39).
+            self.last_progress = time.monotonic()
+
+    async def _process_one(self, message: BusMessage) -> None:
         message_id = message.message_id
         attempt = self._strikes.get(message_id, 0) + 1
         if (gave_up := self._gave_up.get(message_id)) is not None:
