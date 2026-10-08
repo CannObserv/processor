@@ -11,6 +11,7 @@ and ``systemd-run`` answers the smoke run, unless the build is listed as dead.
 ``curl`` plays GitHub's Actions API (#34), never the real one.
 """
 
+import fcntl
 import json
 import os
 import re
@@ -357,16 +358,11 @@ def test_refuses_root(w: Env) -> None:
 
 
 def test_refuses_while_another_deploy_holds_the_lock(w: Env) -> None:
-    lock = w.root / ".deploy.lock"
-    with subprocess.Popen(["flock", str(lock), "sleep", "10"]) as holder:
-        try:
-            for _ in range(50):
-                if lock.exists():
-                    break
-                subprocess.run(["sleep", "0.1"])
-            result = w.deploy()
-        finally:
-            holder.kill()
+    # Held here, not by a `flock` child polled for the file (#40): flock(1) creates
+    # the file before it holds the lock, so a deploy in between took it.
+    with open(w.root / ".deploy.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        result = w.deploy()
     assert result.returncode == 1 and "another deploy is running" in result.stderr
 
 
