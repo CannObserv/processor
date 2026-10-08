@@ -41,6 +41,7 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 | Node.js | 24 LTS from NodeSource apt, agent tooling only (mayfly, SocratiCode): `deploy/nodesource.sh install\|check`, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#nodejs-agent-tooling-only) |
 | CI | GitHub Actions [.github/workflows/ci.yml](.github/workflows/ci.yml): lint, then the full suite against `redis:7.0.15` (the broker's, not 7.2: CLIENT SETINFO). Keyless WIF to `co-pypi-reader` needs the org variable `GCP_WIF_PROVIDER` shared with this repo and a `roles/iam.workloadIdentityUser` binding for `principalSet://…/attribute.repository/CannObserv/processor` |
 | Drift check | `processor-drift.timer`, hourly: does live lag `origin/main` in code that runs (`processor.drift.RUNTIME_*`)? Checks in to Status's `co-processor-drift` (`http://status:9000`, status#24); `alert` past 8 h. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#the-drift-check) (#35) |
+| Liveness | `processor run` checks in `ok` to Status's `co-processor-live` every 5 min, only while the consume loop progressed within 605 s; silence past the 900 s grace pages. Daemon thread, 10 s bound: Status never touches consumption. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#liveness) (#39) |
 | Service | systemd unit `processor` — [deploy/processor.service](deploy/processor.service), runbook [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md); live since 2026-10-02. Runs as user `processor` (no sudo, not in `docker`, no home) from `/srv/processor/live` → `releases/<build>`, a read-only release `scripts/deploy.sh` builds from a commit on `origin/main` (#2; the cohort standard, broker#22 / status#9). **Never from a checkout** |
 
 **Tests never touch the real broker or real buckets.** Use the scratch Redis, co-core's `LocalBlobStore`, and fakes. Since #8 `broker` resolves on this VM, so a test that connects names `localhost` (or `broker.invalid` for name-resolution cases), never `broker`. `processor` cannot and must not `XADD content.process` on the broker.
@@ -59,7 +60,7 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 
 ## Environment Files
 
-1. `/etc/processor/` (root, dir 700, files 600) — production: `.env` (`CO_PROCESSOR_*`, the broker credential), read by systemd, never by the service user; the GCS key, handed over by `LoadCredential=` (#2). Managed by the operator. Commands needing it run as the service: `processor_cli` in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+1. `/etc/processor/` (root, dir 700, files 600) — production: `.env` (`CO_PROCESSOR_*`, the broker credential), read by systemd, never by the service user; the GCS key and the Status key, handed over by `LoadCredential=` (#2, #35, #39). Managed by the operator. Commands needing it run as the service: `processor_cli` in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 2. `.env` (repo root, git-ignored) — dev/agent secrets: `GH_TOKEN` (this repo), `GH_TOKEN_<REPO>` (sibling repos, read). **Never commit, never print values.**
 
 Settings via pydantic-settings, prefix `CO_PROCESSOR_` — **never `os.getenv`**. Anything naming a shared external resource takes a service-prefixed name.
@@ -93,6 +94,6 @@ scripts/deploy.sh [<build>]              # ship: CI green, then build a release 
 ## Detail Docs
 
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, `/etc/processor/`, releases and `scripts/deploy.sh`, the drift check, containment, install and rollback, operate, co-core bumps, Tailscale DNS, Node.js
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, `/etc/processor/`, releases and `scripts/deploy.sh`, the drift check, liveness, containment, install and rollback, operate, co-core bumps, Tailscale DNS, Node.js
 - [docs/plans/](docs/plans/) — implementation plans
 - [docs/SKILLS.md](docs/SKILLS.md) — vendored agent skills, the brainstorming override, the refresh hook

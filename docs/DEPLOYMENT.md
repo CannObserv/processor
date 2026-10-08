@@ -1,6 +1,6 @@
 # Deployment
 
-Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`, as its own user `processor`, from a release that [`scripts/deploy.sh`](#deploy-a-change-scriptsdeploysh) builds from a commit on `origin/main` (#2). What runs is `/srv/processor/live/REVISION`. An hourly timer, `processor-drift.timer`, reports through Status when that lags `origin/main` ([The drift check](#the-drift-check), #35). Design: [the spec](specs/2026-09-29-processor-service-design.md) §2 (identities, grants), §4 (failure handling), §6 (cutover).
+Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`, as its own user `processor`, from a release that [`scripts/deploy.sh`](#deploy-a-change-scriptsdeploysh) builds from a commit on `origin/main` (#2). What runs is `/srv/processor/live/REVISION`. An hourly timer, `processor-drift.timer`, reports through Status when that lags `origin/main` ([The drift check](#the-drift-check), #35). `processor run` itself checks in to Status every 5 min while it is consuming ([Liveness](#liveness), #39). Design: [the spec](specs/2026-09-29-processor-service-design.md) §2 (identities, grants), §4 (failure handling), §6 (cutover).
 
 ## Prerequisites (operator)
 
@@ -128,12 +128,16 @@ CO_PROCESSOR_BUS_URL=redis://processor:<password>@broker:6379/0
 # CO_PROCESSOR_RECLAIM_INTERVAL_S=60
 # CO_PROCESSOR_MAX_ATTEMPTS=3
 # CO_PROCESSOR_CONSUMER_NAME=co-processor
+# CO_PROCESSOR_LIVE_INTERVAL_S=300           # change co-processor-live's interval with it (§ Liveness)
+# CO_PROCESSOR_LIVE_CHECKIN_TIMEOUT_S=10     # below the interval
 ```
 
 - **The GCS key** is `/etc/processor/co-gcs-processor-writer.json`. The unit loads it with `LoadCredential=gcs-writer-key:…` and sets `GOOGLE_APPLICATION_CREDENTIALS=%d/gcs-writer-key`, which is `/run/credentials/processor.service/gcs-writer-key`.
 - **Keep `GOOGLE_APPLICATION_CREDENTIALS` out of `.env`.** `EnvironmentFile=` overrides `Environment=`, so a leftover line would point the service back at the root-only key path, and the preflight would fail.
 - **The service user can read the credentials directory, and so can the child.** Landlock refuses it to the child (§ Containment).
-- **The Status key** is `/etc/processor/status-checkin.key`, for `processor-drift.service` alone (`LoadCredential=status-checkin-key:…`). That unit reads no `.env`: the drift check never holds the broker credential (§ The drift check).
+- **The Status key** is `/etc/processor/status-checkin.key`. Both units load it as `LoadCredential=status-checkin-key:…`:
+  - `processor-drift.service`, which reads no `.env`, so the drift check never holds the broker credential (§ The drift check);
+  - `processor.service`, since #39, for the liveness check-in (§ Liveness). Landlock refuses it to the child, as it refuses the GCS key.
 
 A command that needs the service's settings runs as the service, through systemd. Don't load the file into a shell:
 
@@ -259,7 +263,7 @@ A stop mid-reclaim finishes the command in hand and leaves the rest pending. A c
 - **GitHub's budget:** unauthenticated, 60 requests an hour per address, shared with § The CI gate. A run costs 1 request in sync or behind in docs only, 2 behind in code, and at most 10 past the grace.
 - **Apart from `processor run`:** a oneshot with `TimeoutStartSec=90`, no `Restart=`, and no retry. No GitHub call starts past 60 s, but each is bounded per read, not in total, so the 90 s is the hard stop. A run killed there sends nothing, which reads as a GitHub-silent run. A GitHub or Status outage costs it its exit code and nothing else. It reads no `.env`, so it never holds the broker credential.
 
-**`missing` on `co-processor-drift` means the check isn't reporting.** The cause is one of: the timer is stopped, live was rolled back past #35 (§ Rollback), `co-processor` is down, the tailnet path to `status` is gone, the key is wrong or missing, Status refuses, or GitHub stayed silent for two runs in a row. It says nothing about `processor run`. To find out which:
+**`missing` on `co-processor-drift` means the check isn't reporting.** The cause is one of: the timer is stopped, live was rolled back past #35 (§ Rollback), `co-processor` is down, the tailnet path to `status` is gone, the key is wrong or missing, Status refuses, or GitHub stayed silent for two runs in a row. It says nothing about `processor run` (that is `co-processor-live`, § Liveness). To find out which:
 
 ```bash
 systemctl list-timers processor-drift.timer
@@ -298,6 +302,52 @@ sudo systemctl start processor-drift.service              # once the timer is in
 
 Installed before the deploy that brings the timer, the timer's first run (at the enable) checks in.
 
+## Liveness
+
+**`processor run` checks in to Status while it is consuming** (#39). A task beside the consume loop checks in `ok` to Status's monitor `co-processor-live` (tenant `co-processor`, CannObserv/status#24) every 5 min. It does so only while the loop has made progress within 605 s: a finished read (an empty one counts), a handled message, or a backoff. It never sends `alert`. When it stops checking in, Status's `missing` is the page. The code is `src/processor/liveness.py`.
+
+| Monitor | Value |
+|---|---|
+| interval | 300 s (`CO_PROCESSOR_LIVE_INTERVAL_S`; change the monitor's with it) |
+| grace | 900 s: Status pages after 20 min of silence |
+| renotify | daily |
+| variables | `build`, `last_progress_age_s`, `backing_off` |
+
+- **The monitor id** is in `deploy/processor.service` (`CO_PROCESSOR_LIVE_MONITOR_ID`). Without it, liveness is off: dev and CI.
+- **The key** is the drift check's, the same file (§ `/etc/processor/`). If it's missing, the service still starts. `starting` then says `liveness: off: missing the status-checkin-key credential`, an ERROR record `liveness check-in off` follows, and the monitor goes `missing`.
+- **Never in consumption's way.** Each check-in runs in a daemon thread, bounded at 10 s, with one attempt per tick. A tick whose check-in is still running is skipped. A Status outage costs log lines, never a command's time.
+- **605 s** is `reclaim_min_idle_ms + read_block_ms`: the reclaim's own bound for a dead command, plus one read. A reclaim walk over a backlog counts as progress per message, so it is never a wedge.
+- **The grace covers a deploy.** The worst case is about 850 s:
+  - up to 300 s since the last check-in;
+  - a 240 s stop (`TimeoutStopSec`, while the in-flight command finishes);
+  - a 300 s verify of a new build that never starts;
+  - then the switch back, whose old build checks in about 5 s after it starts.
+
+  A normal deploy (about 5 s) never pages.
+
+**`missing` on `co-processor-live` means `processor run` isn't consuming**, or can't say so. It is one of:
+- the service is stopped, or crash-looping (a failed preflight, a failed canary, refused containment);
+- the consume loop is wedged: no read, message or backoff has finished in 605 s, though the process is up;
+- the key is missing or wrong, so the check-ins fail;
+- `co-processor` is down, the tailnet path to `status` is gone, or Status refuses.
+
+It never means the queue is empty. A broker outage isn't it either: that backs off, which counts as consuming, and the variables say `backing_off: true`. To find out which:
+
+```bash
+systemctl status processor
+journalctl -u processor -o cat | jq -cR 'fromjson? | select(.message == "starting") | {timestamp, build, liveness}' | tail -n 1
+journalctl -u processor -o cat --since -1h | jq -cR 'fromjson? | select(.logger == "processor.liveness") | {timestamp, level, message, error, last_progress_age_s}'
+```
+
+| Record | Level | Means |
+|---|---|---|
+| `liveness check-in` | INFO | the first `ok` after start, a failure or a silence; a steady `ok` logs nothing |
+| `liveness check-in failed` | WARNING | Status refused or didn't answer (`error`) |
+| `consume loop stale; not checking in` | WARNING | the wedge: `systemctl restart processor` (a stop lets the in-flight command finish), and keep the journal for an issue |
+| `previous check-in still in flight; skipping this tick` | WARNING | Status hangs past the timeout |
+
+**A deliberate stop longer than 20 min pages.** Ask Status's operator to pause the monitor first (`"enabled": false`), and to resume it after.
+
 ## Containment
 
 The extraction child is assumed compromised by the document it parses (spec §3, #2). Three layers protect against that:
@@ -330,14 +380,15 @@ systemctl is-enabled docker.socket                               # disabled
 # The key as the unit receives it: readable by the service's uid through an ACL,
 # from anywhere on the host, so by the child's but for Landlock (CR 9). The control
 # proves the uid can read it, so the second line's refusal is Landlock's.
-key=/run/credentials/processor.service/gcs-writer-key
-(cd / && sudo -u processor head -c1 "$key" >/dev/null) && echo "control: readable"
-(cd / && sudo -u processor /srv/processor/live/.venv/bin/python -I -c \
-  "from processor._contain import contain; contain('required'); open('$key')") # PermissionError
+for key in /run/credentials/processor.service/{gcs-writer-key,status-checkin-key}; do
+  (cd / && sudo -u processor head -c1 "$key" >/dev/null) && echo "control: readable"
+  (cd / && sudo -u processor /srv/processor/live/.venv/bin/python -I -c \
+    "from processor._contain import contain; contain('required'); open('$key')") # PermissionError
+done
 journalctl -u processor -o cat | jq -cR 'fromjson? | select(.message == "starting") | {build, child_containment, landlock_abi}' | tail -n 1
 ```
 
-`tests/test_child.py` proves each denial on the host it runs on, against the real `/etc/processor/.env`, the key (on disk, and as the unit's credential) and the repo's `.env` when they're readable there. After the install `exedev` can read none of the first three, so on `co-processor` those tests skip, and the two `key` lines above are the evidence. Each denial is paired with an uncontained control. `tests/test_contain.py` proves each layer alone. On `co-processor` the suite never skips them.
+`tests/test_child.py` proves each denial on the host it runs on, against the real `/etc/processor/.env`, both keys (on disk, and as the unit's credentials) and the repo's `.env` when they're readable there. After the install `exedev` can read none but the last, so on `co-processor` those tests skip, and the `key` loop above is the evidence. Each denial is paired with an uncontained control. `tests/test_contain.py` proves each layer alone. On `co-processor` the suite never skips them.
 
 **Rollback A, containment alone:** add `CO_PROCESSOR_CHILD_CONTAINMENT=off` to `/etc/processor/.env` and `sudo systemctl restart processor`. A deploy then fails its verify, which requires `required`, so take the line out before the next deploy.
 
@@ -363,6 +414,7 @@ Then run § Containment's checks, and wait for the next shadow command: `ack: co
 
 - **A failed deploy** switches back by itself (exit 1). `scripts/deploy.sh <old build>` rolls back on purpose; the old release still exists among the 5 kept, so nothing is rebuilt. It is gated on the old build's CI like any deploy; if GitHub can't answer, add `--skip-ci` (§ The CI gate).
 - **Past #35** (to `428af0e2a016` or older): the old release has no `processor-drift.*` units and no `processor drift`. A deploy never removes a unit, and it names each one the release lacks, so the timer keeps firing. Each run then exits 2 with a usage line and checks in nothing, and `co-processor-drift` goes `missing`. So when rolling back past #35, run `sudo systemctl disable --now processor-drift.timer`, and ask Status's operator to pause the monitor (`"enabled": false`). Rolling forward again doesn't re-enable a timer that is still installed: `sudo systemctl enable --now processor-drift.timer`.
+- **Past #39** (to a build before the liveness check-in): the old unit loads no Status key and the old build never checks in, so `co-processor-live` goes `missing` 20 min later. Ask Status's operator to pause it before rolling back.
 - **The install** (Stage B), back to `exedev` running `~/processor`:
 
   ```bash
@@ -393,7 +445,8 @@ On boot, the service preflights both buckets and exits non-zero if either is unr
 ## Operate
 
 - **Drift:** `journalctl -u processor-drift` (§ The drift check).
-- **Logs:** `journalctl -u processor`. `starting` names the `build`, `child_containment` and `landlock_abi`. Deploys: `journalctl -t processor-deploy`. Each outcome has `command_id`, `info_source_id`, `action` (`ack` / `strike` / `leave_pending` / `dead_letter`), `reason`, `detail`, and timings in `*_ms`. Each also has `input_digest` once it is valid, as bare hex like the command's. A complete fact adds `output_digest` (`sha256:<hex>`, as on the fact; the object is `blobs/<hex>.bin`; absent when `empty`), `output_size_bytes`, `empty` and `processor_version`, and so does a `leave_pending` whose publish failed after the store. A shadow command's output: `journalctl -u processor -o cat | jq -cR 'fromjson? | select(.command_id == "<id>") | {action, reason, input_digest, output_digest}'` (`-R … fromjson?` skips systemd's own lines, which `-u` includes and plain `jq` aborts on).
+- **Liveness:** `journalctl -u processor -o cat | jq -cR 'fromjson? | select(.logger == "processor.liveness")'` (§ Liveness).
+- **Logs:** `journalctl -u processor`. `starting` names the `build`, `child_containment`, `landlock_abi` and `liveness`. Deploys: `journalctl -t processor-deploy`. Each outcome has `command_id`, `info_source_id`, `action` (`ack` / `strike` / `leave_pending` / `dead_letter`), `reason`, `detail`, and timings in `*_ms`. Each also has `input_digest` once it is valid, as bare hex like the command's. A complete fact adds `output_digest` (`sha256:<hex>`, as on the fact; the object is `blobs/<hex>.bin`; absent when `empty`), `output_size_bytes`, `empty` and `processor_version`, and so does a `leave_pending` whose publish failed after the store. A shadow command's output: `journalctl -u processor -o cat | jq -cR 'fromjson? | select(.command_id == "<id>") | {action, reason, input_digest, output_digest}'` (`-R … fromjson?` skips systemd's own lines, which `-u` includes and plain `jq` aborts on).
 - **Dead letters:** `processor_cli dlq list | show <id> | drop <id>` (§ `/etc/processor/`). There is no replay. An entry failed to decode, was not a command, or is a command that raised outside the handler on every attempt (`reason` starts `gave up on attempt`): that one is a bug to fix. Before dead-lettering such a command, Processor published a terminal `extraction_error` whose `detail` starts `dead-lettered:` (best effort), so Watcher has closed it (#17). The journal's `dead-lettering` record says which: `failure_fact` is `published`, `skipped` (a fact had already gone out) or `refused`. On a command given up at the cap, `handle_skipped` is `true` when the record retries a give-up that did not finish (the failure fact refused transiently, or the dead-letter refused), with no re-run of the command and the original traceback (#28). The same entry logging that every ~11 min while it stays pending means `content.process.dlq` refuses it: `journalctl -u processor -o cat | jq -cR 'fromjson? | select(.handle_skipped) | {timestamp, command_id, message_id, reason}'`.
 - **Lag / missing group:** the broker probe watches `processor.process` (broker#75).
 - **Strikes** are counted in memory. A restart resets them, so a poison command gets at most 3 more attempts.

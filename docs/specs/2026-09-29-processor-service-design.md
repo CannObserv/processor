@@ -127,8 +127,9 @@ processor-version pin on the command; no job API — the bus is the interface.
 | VM | exe.dev `co-processor`, 8 GB, default `exeuntu` image, tag `processor` |
 | Service | systemd unit `processor`: `MemoryMax` below VM RAM, `Restart=on-failure`, `OOMPolicy=continue` (Section 4). Runs as its own user `processor` (no sudo, not in `docker`, no home), from a read-only release at `/srv/processor/live` that `scripts/deploy.sh` builds from a commit on `origin/main` (amended 2026-10-06, #2: the cohort's release standard, broker#22 / status#9) |
 | Env | `/etc/processor/.env` (root 600, read by systemd before it switches users), `CO_PROCESSOR_*` via pydantic-settings — never `os.getenv`. The GCS key reaches the service by `LoadCredential=` (amended 2026-10-06, #2) |
-| Tailnet | `tag:processor`; policy `tag:processor` → `tag:broker` on 6379, and → `tag:status` on 9000 (amended 2026-10-07, #35: the drift check) |
+| Tailnet | `tag:processor`; policy `tag:processor` → `tag:broker` on 6379, and → `tag:status` on 9000 (amended 2026-10-07, #35: the drift check; since 2026-10-08 also the liveness check-in, #39) |
 | Drift check | `processor-drift.timer` → `processor-drift.service`, hourly, as `processor`: `processor drift` asks GitHub (unauthenticated) whether live's `REVISION` lags `origin/main` in code that runs, and checks in to Status's monitor `co-processor-drift` at `http://status:9000`; `alert` once code has waited past 8 h, nothing when GitHub can't say. Apart from `processor run`: an outage of either costs only the check. Its key is a `LoadCredential=` from `/etc/processor/status-checkin.key`; it reads no `.env` (amended 2026-10-07, #35; CannObserv/status#24) |
+| Liveness | `processor run` checks in `ok` to Status's monitor `co-processor-live` every 5 min, only while its consume loop is making progress (a finished read, message or backoff within 605 s). Never `alert`: silence past the monitor's grace (900 s) is the page. Each check-in runs in a daemon thread, bounded at 10 s, one attempt per tick, so a Status outage never touches consumption. The same key as the drift check, by `LoadCredential=` (amended 2026-10-08, #39; CannObserv/status#24) |
 | Bus URL | `redis://processor:<pw>@broker:6379/0` — the MagicDNS name, never the address, which a broker rebuild changes; the VM runs Tailscale with `--accept-dns=true`, as the cohort does (amended 2026-10-01, #8) |
 
 **Grants.**
@@ -140,7 +141,7 @@ processor-version pin on the command; no job API — the bus is the interface.
 | ACL user `processor` | `content.process.dlq` | selector `(+xdel ~content.process.dlq)` |
 | `co-gcs-processor-writer` | `gs://co-gcs-processor` | `objectCreator` + `objectViewer`; **no delete** — append-only, never deleted |
 | `co-gcs-processor-writer` | `gs://co-gcs-blobs` | `objectViewer` (Replicator's raw blobs — the input) |
-| Status tenant `co-processor` (production key, `/etc/processor/status-checkin.key`) | Status monitor `co-processor-drift` | check-in only (`POST /api/v1/monitors/{id}/checkin`); Status's operator owns the monitor and its channels (CannObserv/status#24, #35) |
+| Status tenant `co-processor` (production key, `/etc/processor/status-checkin.key`) | Status monitors `co-processor-drift` and `co-processor-live` | check-in only (`POST /api/v1/monitors/{id}/checkin`); Status's operator owns the monitors and their channels (CannObserv/status#24, #35, #39) |
 | Watcher's service account, `co-gcs-blob-reader` (its `GCS_BLOB_CREDENTIALS`; confirmed on watcher#325, granted 2026-10-02) | `gs://co-gcs-processor` | `objectViewer`, bucket-level |
 
 The ACL shape copies broker#62's `observo` user. Withheld on purpose, as there:
@@ -237,8 +238,8 @@ connection. Now, in layers:
    `processor run`), so no same-uid process reads its environment, which
    holds the broker credential.
 3. **A dedicated user, `processor`**, owns nothing it runs: the release is
-   `exedev`'s and read-only, `/etc/processor` is root's, and the key comes
-   through `LoadCredential=`. `ProtectHome=yes` and `ProtectSystem=strict`.
+   `exedev`'s and read-only, `/etc/processor` is root's, and the keys (GCS's,
+   and since #39 Status's) come through `LoadCredential=`. `ProtectHome=yes` and `ProtectSystem=strict`.
 
 What stays reachable from a compromised child: the kernel's other syscalls;
 its own code, the stdlib and the shared libraries; CPU to the timeout and
@@ -256,8 +257,25 @@ Watcher's comparison checks.
 - A processor registry keyed by `command.processor`; org adapters later join as
   registry entries or spec-selected variants without touching the shells.
 
-**Health (no HTTP server in v1):** systemd for liveness; the broker probe and
-`XINFO GROUPS` for lag and a missing group; structured JSON logs in the cohort
+**Health (no HTTP server in v1):** systemd restarts a crash. **The liveness
+check-in** (amended 2026-10-08, #39; `processor.liveness`) is a task beside the
+consume loop on the same event loop. The loop stamps `last_progress` after every
+step, backoff included, and after every message, reclaimed ones included. A
+reclaim walk over a backlog takes one command's time per entry, so it is not a
+wedge. The heartbeat checks in `ok` to `co-processor-live` every
+`live_interval_s` while that stamp is no older than `reclaim_min_idle_ms +
+read_block_ms`, the reclaim's own bound for a dead command plus one read.
+Otherwise it stays silent:
+- an idle queue still turns the loop, so it never reads as an outage;
+- a broker outage backs off and counts as alive;
+- a wedged loop goes silent while the process stays up.
+
+The check-in is blocking `requests`, so it runs in a daemon thread, not the
+default executor. The handler's GCS calls use that executor, and `asyncio.run`
+waits for it at exit. Each check-in is awaited for at most
+`live_checkin_timeout_s`. A tick whose predecessor is still in flight is
+skipped, and nothing raises into the loop. The broker probe and
+`XINFO GROUPS` cover lag and a missing group; structured JSON logs in the cohort
 schema (`timestamp` ISO 8601 UTC, `level`, `logger`, `message` — the fields
 Observo adopted in #395/#407) so the later plane can ingest them unchanged.
 
