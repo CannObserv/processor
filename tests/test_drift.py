@@ -13,6 +13,7 @@ import logging
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -518,12 +519,17 @@ class TestTheGetter:
 
     def test_every_call_shares_one_deadline(self, http_stub, monkeypatch):
         """Bounded inside the unit's TimeoutStartSec, however many calls the walk makes."""
-        monkeypatch.setattr(drift, "CHECK_TIMEOUT_SECONDS", 0.3)
-        http_stub.route("GET", "/x", body={}, delay=0.2)
+        # The deadline's clock is the test's (#40): 0.2 s of a real 0.3 s left a 1.5x margin.
+        now = [0.0]
+        monkeypatch.setattr(drift, "time", SimpleNamespace(monotonic=lambda: now[0]))
+        monkeypatch.setattr(drift, "CHECK_TIMEOUT_SECONDS", 10)
+        http_stub.route("GET", "/x", body={})
+        http_stub.route("GET", "/y", body={}, delay=0.5)
         get = drift.github(http_stub.url)
         get("x")
+        now[0] = 9.9  # the walk so far took 9.9 s: this call gets the 0.1 s left, not 10 s
         with pytest.raises(GitHubSilent, match="Timeout"):
-            get("x")
+            get("y")
 
     def test_past_the_deadline_no_call_starts(self, http_stub, monkeypatch):
         monkeypatch.setattr(drift, "CHECK_TIMEOUT_SECONDS", 0)
