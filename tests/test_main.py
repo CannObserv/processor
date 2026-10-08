@@ -79,10 +79,12 @@ async def test_run_processes_a_command_and_stops_on_sigterm(admin, env, tmp_path
         env=os.environ | env, stderr=asyncio.subprocess.PIPE,
     )  # fmt: skip
     try:
-        for _ in range(100):  # the group exists once the loop is up
-            if await admin.exists(CONTENT_PROCESS):
-                break
-            await asyncio.sleep(0.1)
+        # Bounded, never fallen through (#40): a command issued before the group exists
+        # is skipped (the group starts at `$`), and the test would fail far from why.
+        async with asyncio.timeout(30):  # the group exists once the loop is up
+            while not await admin.exists(CONTENT_PROCESS):
+                assert proc.returncode is None, "processor run exited before its loop was up"
+                await asyncio.sleep(0.1)
         digest = hashlib.sha256(HTML).hexdigest()
         store = LocalBlobStore(tmp_path / "in")
         store.store(HTML, digest, "text/html")
@@ -97,15 +99,16 @@ async def test_run_processes_a_command_and_stops_on_sigterm(admin, env, tmp_path
             media_type="text/html",
         )
         await admin.xadd(CONTENT_PROCESS, to_wire(command))
-        for _ in range(100):
-            if await admin.xlen(CONTENT_DERIVED):
-                break
-            await asyncio.sleep(0.1)
+        async with asyncio.timeout(30):
+            while not await admin.xlen(CONTENT_DERIVED):
+                assert proc.returncode is None, "processor run exited before its fact"
+                await asyncio.sleep(0.1)
         ((_id, fields),) = await admin.xrange(CONTENT_DERIVED)
         fact = from_wire(fields, topic=CONTENT_DERIVED).payload
         assert isinstance(fact, ProcessingCompleteEvent) and fact.command_id == "e2e-1"
     finally:
-        proc.send_signal(signal.SIGTERM)
+        if proc.returncode is None:  # an exit's own assertion is the failure, not this
+            proc.send_signal(signal.SIGTERM)
         _, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
     assert proc.returncode == 0
     records = [json.loads(line) for line in stderr.decode().splitlines() if line.startswith("{")]
