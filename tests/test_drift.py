@@ -527,8 +527,8 @@ class TestTheGetter:
         http_stub.route("GET", "/y", body={}, delay=0.5)
         get = drift.github(http_stub.url)
         get("x")
-        now[0] = 9.9  # the walk so far took 9.9 s: this call gets the 0.1 s left, not 10 s
-        with pytest.raises(GitHubSilent, match="Timeout"):
+        now[0] = 9.875  # the walk so far took 9.875 s: this call gets the 0.125 s left, not 10 s
+        with pytest.raises(GitHubSilent, match=r"read timeout=0\.125\)"):
             get("y")
 
     def test_past_the_deadline_no_call_starts(self, http_stub, monkeypatch):
