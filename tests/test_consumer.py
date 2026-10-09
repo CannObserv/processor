@@ -9,6 +9,7 @@ commands. Two tests narrow the grant or cap memory on purpose to show ``NOPERM``
 """
 
 import asyncio
+import contextlib
 import hashlib
 import itertools
 import json
@@ -847,6 +848,12 @@ async def test_oom_leaves_the_entry_pending(admin, bus, stores) -> None:
 # --- liveness (#39): the consumer's progress, and the heartbeat beside it -------------
 
 
+async def _cancelled(task: asyncio.Task) -> None:
+    """Wait out a cancelled task, so none outlives its test into the fixtures (CR 5)."""
+    with contextlib.suppress(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5)
+
+
 def _beat(consumer: Consumer, url: str, **knobs) -> Heartbeat:
     post = partial(post_checkin, url, "01M46EXP45TVCVAMQXK043N1Q7", "sk-test-key", "ok",
                    timeout=knobs["timeout_s"])  # fmt: skip
@@ -939,6 +946,7 @@ async def test_a_hung_status_never_delays_a_command(admin, bus, stores, hung_sta
         heartbeat.cancel()
         stop.set()
         await asyncio.wait_for(run, timeout=5)
+        await _cancelled(heartbeat)
     (fact,) = await facts(admin)
     assert isinstance(fact, ProcessingCompleteEvent)
 
@@ -968,6 +976,8 @@ async def test_a_wedged_loop_goes_silent_while_the_event_loop_stays_up(
     finally:
         heartbeat.cancel()
         run.cancel()
+        await _cancelled(heartbeat)
+        await _cancelled(run)
     assert sent >= 1  # it checked in while fresh
     assert len(http_stub.requests) == sent  # then silence
     later = [r for r in caplog.records if r.getMessage().startswith("consume loop stale")]
