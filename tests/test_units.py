@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from processor.settings import DriftSettings
+from processor.settings import DriftSettings, Settings
 
 DEPLOY = Path(__file__).resolve().parent.parent / "deploy"
 SERVICE = DEPLOY / "processor.service"
@@ -59,6 +59,15 @@ def test_secrets_come_from_etc_processor_and_the_key_as_a_credential() -> None:
     credentials = dict(c.partition(":")[::2] for c in _all("LoadCredential", SERVICE))
     assert credentials["gcs-writer-key"] == "/etc/processor/co-gcs-processor-writer.json"
     assert "GOOGLE_APPLICATION_CREDENTIALS=%d/gcs-writer-key" in _all("Environment", SERVICE)
+
+
+def test_it_names_co_processor_live() -> None:
+    # The monitor's id, posted on CannObserv/status#29 (2026-10-09): not a secret.
+    # Settings must accept it, or `processor run` exits 2 and the unit crash-loops.
+    (env,) = [e for e in _all("Environment", SERVICE) if e.startswith("CO_PROCESSOR_LIVE")]
+    name, _, value = env.partition("=")
+    assert (name, value) == ("CO_PROCESSOR_LIVE_MONITOR_ID", "01M4H5FH3PTPGEB24XYQJ4NG7A")
+    assert Settings(bus_url="redis://x", live_monitor_id=value).live_monitor_id == value
 
 
 def test_the_status_key_is_a_credential_with_an_empty_fallback() -> None:
