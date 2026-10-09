@@ -198,7 +198,7 @@ A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pypr
 3. **Restart.** `reset-failed` comes first, in case a crash loop hit the start limit. The restart lets the in-flight command finish (`KillMode=mixed`: SIGTERM reaches the consumer, not its extraction child), for up to `TimeoutStopSec=240`.
 4. **Verify,** within `PROCESSOR_DEPLOY_VERIFY_SECONDS` (300):
    - the new `MainPID` logs `starting` with this build and `child_containment: required`, then `consuming`;
-   - then the **smoke run** passes on this build under `required`. It runs `scripts/smoke_scratch_bus.py` through `systemd-run` with the unit's user, env file, credential and sandboxing:
+   - then the **smoke run** passes on this build under `required`. It runs `scripts/smoke_scratch_bus.py` through `systemd-run` with the unit's user, env file, credentials (and their `SetCredential=` fallbacks, #39 CR 1) and sandboxing:
      - **Bus:** the scratch Redis (db 14), never the broker.
      - **Command:** one real command through the real consumer loop and the contained child.
      - **Input:** from the committed real corpus.
