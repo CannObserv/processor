@@ -29,6 +29,10 @@ Environment=GOOGLE_APPLICATION_CREDENTIALS=%d/gcs-writer-key
 # newline: systemd 255 refuses an empty value (#35).
 LoadCredential=status-checkin-key:/etc/processor/status-checkin.key
 SetCredential=status-checkin-key:\n
+# co-processor-live, tenant co-processor (CannObserv/status#29). Not a secret; the
+# base URL defaults to http://status:9000 (src/processor/settings.py). The env file
+# overrides it if it sets the same name, so it never should.
+Environment=CO_PROCESSOR_LIVE_MONITOR_ID=01M4H5FH3PTPGEB24XYQJ4NG7A
 # The venv's own entry point: it never syncs, and needs no uv (cohort R5). Its
 # scripts carry the release's physical path, so a later switch of the link never
 # mixes two releases in one process or its children.
