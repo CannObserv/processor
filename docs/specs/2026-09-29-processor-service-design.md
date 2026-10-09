@@ -499,6 +499,15 @@ TDD, red first.
   nothing. `scripts/deploy.sh` installing every unit under `deploy/`, and
   enabling a new timer once verified, has its own cases in
   `tests/test_deploy.py`.
+- **The liveness check-in (amended 2026-10-08, #39).** The heartbeat's rules
+  (fresh or stale, a refusal, an unreachable or hung Status, a tick that
+  raises, cancel mid-check-in) run against local HTTP stubs and a socket that
+  takes the connection and never answers (`tests/test_liveness.py`). Beside the
+  real consumer on the scratch Redis, a hung Status never delays a command, and
+  a wedged loop goes silent while the event loop keeps ticking
+  (`tests/test_consumer.py`). `processor run` checking in end to end, and
+  starting with liveness off on a missing key, is in `tests/test_main.py`. The
+  smoke run's credential fallback is in `tests/test_deploy.py`.
 - **Integration.** A scratch Redis on `co-processor` with the real stream names;
   a test issuer `XADD`s real commands; assert facts, stored bytes, and `XINFO
   GROUPS` lag, against a scratch GCS prefix or the local store.
