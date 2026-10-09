@@ -336,6 +336,16 @@ def test_the_smoke_runs_as_the_unit_with_the_credentials_dir_spelled_out(w: Env)
     assert "%d" not in run
 
 
+def test_the_smoke_carries_the_status_keys_fallback(w: Env) -> None:
+    # CR 1 (#39): without SetCredential=, a missing status-checkin.key fails the smoke's
+    # transient unit at start (exit 243, probed), and the deploy switches back, where
+    # the unit itself starts with liveness off. systemd-run unescapes the \n (probed).
+    assert w.deploy().returncode == 0
+    run = w.log("systemd-run")
+    assert "-p LoadCredential=status-checkin-key:/etc/processor/status-checkin.key" in run
+    assert "-p SetCredential=status-checkin-key:\\n" in run
+
+
 @pytest.mark.parametrize(
     ("ref_kind", "message"),
     [("unpushed", "not on origin/main"), ("bogus", "cannot resolve")],

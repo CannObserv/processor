@@ -464,15 +464,16 @@ started_on() { # <build> <restart time, epoch seconds>
   return 1
 }
 
-# The smoke run, as the unit runs: its user, environment file, credential and
-# sandboxing, read from the release's own unit. systemd-run does not expand %d,
-# so the credentials directory is spelled out.
+# The smoke run, as the unit runs: its user, environment file, credentials (with
+# their SetCredential= fallbacks: without one, a missing key fails the transient unit
+# where the service itself starts; #39 CR 1) and sandboxing, read from the release's
+# own unit. systemd-run does not expand %d, so the credentials directory is spelled out.
 smoke() { # <build>
   local dir="$ROOT/releases/$1" key value out props=()
   while IFS='=' read -r key value; do
     case "$key" in
-      User | Group | EnvironmentFile | LoadCredential | Environment | NoNewPrivileges | PrivateTmp | \
-        ProtectSystem | ProtectHome)
+      User | Group | EnvironmentFile | LoadCredential | SetCredential | Environment | \
+        NoNewPrivileges | PrivateTmp | ProtectSystem | ProtectHome)
         props+=(-p "$key=${value//%d//run/credentials/$SMOKE_UNIT.service}")
         ;;
     esac
