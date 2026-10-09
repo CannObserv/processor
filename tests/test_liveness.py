@@ -194,3 +194,35 @@ async def test_cancel_ends_run_promptly_mid_check_in(hung_status, progress):
     with pytest.raises(asyncio.CancelledError):
         await task
     assert time.monotonic() - started < 0.5
+
+
+async def test_a_tick_that_raises_is_logged_and_the_heartbeat_lives_on(caplog):
+    # CR 2: a bug outside tick's own handlers ended the task silently; the monitor
+    # went missing with no record why, and processor run's stop re-raised it.
+    reads = []
+
+    class Broken:
+        backing_off = False
+
+        @property
+        def last_progress(self) -> float:
+            reads.append(1)
+            raise RuntimeError("bug")
+
+    beat = Heartbeat(
+        Broken(), lambda v: 202, build="b", interval_s=0.05, stale_after_s=605, timeout_s=0.04
+    )
+    with caplog.at_level(logging.INFO, logger="processor.liveness"):
+        task = asyncio.create_task(beat.run())
+        try:
+            async with asyncio.timeout(5):
+                while len(reads) < 3:
+                    assert not task.done(), task
+                    await asyncio.sleep(0.01)
+        finally:
+            task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    raised = records(caplog, "liveness tick raised")
+    assert len(raised) >= 2 and raised[0].levelno == logging.ERROR
+    assert raised[0].exc_info is not None

@@ -70,10 +70,18 @@ class Heartbeat:
         self._ok = False
 
     async def run(self) -> None:
-        """Tick at once, then every ``interval_s``, until cancelled."""
+        """Tick at once, then every ``interval_s``, until cancelled. Never raises.
+
+        A tick that raises (a bug outside its own handlers) is logged with its
+        traceback, and the next tick runs: the heartbeat never ends silently (CR 2).
+        """
         next_tick = time.monotonic()
         while True:
-            await self.tick()
+            try:
+                await self.tick()
+            except Exception:
+                self._ok = False
+                logger.exception("liveness tick raised")
             next_tick += self._interval_s
             await asyncio.sleep(max(0.0, next_tick - time.monotonic()))
 

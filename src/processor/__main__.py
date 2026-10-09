@@ -232,7 +232,7 @@ async def _run(settings: Settings) -> int:
         await consumer.run(stop)
     finally:
         if beating is not None:
-            beating.cancel()
+            beating.cancel()  # its run() never raises; a cancel is all it ends on
             with contextlib.suppress(asyncio.CancelledError):
                 await beating
         await client.aclose()
