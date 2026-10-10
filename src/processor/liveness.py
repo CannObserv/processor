@@ -129,7 +129,12 @@ class Heartbeat:
         logger.warning("liveness check-in failed", extra={"error": error})
 
     def _in_thread(self, variables: dict[str, str]) -> asyncio.Future:
-        """``post(variables)`` in a daemon thread; its future settles on the loop."""
+        """``post(variables)`` in a daemon thread; its future settles on the loop.
+
+        Owns ``_in_flight``: set here before the thread starts, cleared by the thread
+        once ``post`` returns and before the loop can see the result (#45). A post
+        cut off by the timeout clears it only when it returns (#39 trap 1).
+        """
         loop = asyncio.get_running_loop()
         future = loop.create_future()
 
