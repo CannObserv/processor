@@ -1,10 +1,13 @@
 """Write the synthetic parity-corpus inputs to tests/fixtures/parity/inputs/.
 
-Run once; the outputs are committed, and the goldens are derived from the committed
-bytes (scripts/gen_parity_goldens.py). Regenerating changes the xlsx bytes (its zip
-carries timestamps), so regenerate the goldens with it.
+Ran once, for v1. The outputs are committed, and the goldens are derived from the
+committed bytes (scripts/gen_parity_goldens.py). **Do not rerun it.** The inputs are
+frozen with the goldens' v1 record. Rerunning rewrites the xlsx bytes, because its zip
+carries timestamps, which would move a v1 golden outside a co-core bump (#47). Add a
+new input as its own committed file, then regenerate the goldens at the bump that
+needs it.
 
-    uv run python scripts/make_parity_inputs.py
+    uv run python scripts/make_parity_inputs.py   # how the v1 inputs were written
 """
 
 import io
