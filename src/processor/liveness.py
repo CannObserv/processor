@@ -13,7 +13,9 @@ so it never reads as an outage.
 in a daemon thread, awaited for at most ``timeout_s``:
 - not the default executor, which the handler's GCS calls use, and which
   ``asyncio.run`` waits for at exit;
-- a check-in still running at the next tick skips that tick, so threads never pile up;
+- a check-in still running at the next tick skips that tick, so threads never pile up.
+  "Running" means its ``post`` has not returned, not that its thread is alive: the
+  thread hands back its result a moment before it exits (#45);
 - one attempt per tick, never a retry loop;
 - a failure is one WARNING record, and the monitor's grace absorbs a missed tick.
 
@@ -65,7 +67,9 @@ class Heartbeat:
         self._stale_after_s = stale_after_s
         self._timeout_s = timeout_s
         self._clock = clock
-        self._thread: threading.Thread | None = None
+        # Set before a check-in thread starts; cleared by that thread once its post
+        # returns, never by the timeout path (#39 trap 1, #45).
+        self._in_flight = False
         # Whether the last tick checked in: an ok is logged only when it was not.
         self._ok = False
 
@@ -95,7 +99,7 @@ class Heartbeat:
                 extra={"last_progress_age_s": age, "stale_after_s": self._stale_after_s},
             )
             return
-        if self._thread is not None and self._thread.is_alive():
+        if self._in_flight:
             self._ok = False
             logger.warning("previous check-in still in flight; skipping this tick")
             return
@@ -142,11 +146,16 @@ class Heartbeat:
                 result, error = self._post(variables), None
             except BaseException as exc:
                 result, error = None, exc
+            self._in_flight = False  # before the loop can see the result (#45)
             try:
                 loop.call_soon_threadsafe(settle, result, error)
             except RuntimeError:
                 pass  # the loop closed while this thread waited on Status
 
-        self._thread = threading.Thread(target=target, name="liveness-checkin", daemon=True)
-        self._thread.start()
+        self._in_flight = True
+        try:
+            threading.Thread(target=target, name="liveness-checkin", daemon=True).start()
+        except BaseException:
+            self._in_flight = False  # no thread will clear it
+            raise
         return future

@@ -941,7 +941,7 @@ async def test_a_hung_status_never_delays_a_command(admin, bus, stores, hung_sta
             await issue(admin, stores)
             while not await admin.xlen(CONTENT_DERIVED):
                 await asyncio.sleep(0.01)
-        assert beat._thread is not None and beat._thread.is_alive()  # still hung on Status
+        assert beat._in_flight  # still hung on Status
     finally:
         heartbeat.cancel()
         stop.set()
