@@ -560,6 +560,8 @@ bash deploy/nodesource.sh check          # exit 0 in sync (a pending update is a
 
 `node` is the package's `/usr/bin/node`, so it is on every PATH: hooks, systemd user units, VS Code sessions. Installed 2026-09-30: 24.21.0, with npm 11.19.0 bundled (no Ubuntu `npm`); nothing restarted.
 
+**SocratiCode** (#5) runs as `exedev`, pinned to `socraticode@1.16.0` with a capped pre-install under `~/.socraticode/pin`, against co-index's shared store; it never touches the release, and the service can't read `exedev`'s home (`ProtectHome=yes`). They share 7.7 GiB with no swap, and `processor.service` carries no `MemoryLow=`: inert on this host, and the unit's `OOMScoreAdjust=-500` is the protection that counts. Pin, link stubs, memory reasoning: [docs/SOCRATICODE.md](SOCRATICODE.md#repo-specific-notes).
+
 ### Patching
 
 The cohort's posture is `scheduled` (gregoryfoster/skills `patching-hosts`): one owner-approved monthly window, apt timers masked, so nothing updates Node on its own. Processor declares it nowhere yet: there is no `.skills/patching-hosts` knob (see below for why), so the skill would read this host as its no-knob default, `automatic`, report-only. NodeSource ships security fixes in its own repo, never `noble-security`, so its policy is **follow**: `nodejs` rides the monthly maintenance lane. Never a bare `apt-get upgrade`.
