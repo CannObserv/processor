@@ -104,10 +104,10 @@ def _image(spec: object) -> str | None:
     return None
 
 
-def _images() -> list[tuple[str, str]]:
-    """``(workflow:job[:service], image)`` for every container image a job pulls."""
+def _images(workflows: Path = WORKFLOW.parent) -> list[tuple[str, str]]:
+    """``(workflow:job[:service|:step n], image)`` for every container image a job pulls."""
     found = []
-    for path in sorted(WORKFLOW.parent.glob("*.y*ml")):
+    for path in sorted(workflows.glob("*.y*ml")):
         jobs = yaml.safe_load(path.read_text()).get("jobs", {})
         for name, job in jobs.items():
             if (image := _image(job.get("container"))) is not None:
@@ -115,7 +115,19 @@ def _images() -> list[tuple[str, str]]:
             for service, spec in (job.get("services") or {}).items():
                 if (image := _image(spec)) is not None:
                     found.append((f"{path.name}:{name}:{service}", image))
+            for n, step in enumerate(job.get("steps") or [], start=1):
+                if (uses := step.get("uses", "")).startswith("docker://"):
+                    found.append((f"{path.name}:{name}:step {n}", uses.removeprefix("docker://")))
     return found
+
+
+def test_the_image_sweep_finds_docker_step_images(tmp_path: Path) -> None:
+    # `uses: docker://<image>` runs a step in a container: a pull like a service's.
+    (tmp_path / "x.yml").write_text(
+        "jobs:\n  j:\n    steps:\n      - uses: actions/checkout@v5\n"
+        "      - uses: docker://redis:7\n"
+    )
+    assert _images(tmp_path) == [("x.yml:j:step 2", "redis:7")]
 
 
 def test_the_image_sweep_finds_the_redis_service() -> None:
