@@ -11,7 +11,9 @@ WIF_SA = "co-pypi-reader@co-gcs.iam.gserviceaccount.com"
 # The broker's exact version (broker deploy/redis-acl.conf: "this broker is 7.0.15").
 # Not 7.2: redis-py sends CLIENT SETINFO there, which the broker's ACL cannot grant
 # until it upgrades, so a 7.2 container reports denials the broker never sees.
-BROKER_REDIS = "redis:7.0.15"
+# Docker Hub's official image via Google's mirror (#43): see test_image_comes_from_the_mirror.
+BROKER_REDIS = "mirror.gcr.io/library/redis:7.0.15"
+MIRROR = "mirror.gcr.io/"
 # Node 24 majors: setup-uv@v5 and auth@v2 target Node 20, which GitHub deprecated
 # (run 36962791709 warned it was forcing them onto Node 24).
 ACTIONS = {
@@ -91,6 +93,46 @@ def test_the_whole_suite_runs_against_the_brokers_redis(ci: dict) -> None:
     assert "6379:6379" in redis["ports"]
     (pytest_run,) = [line for line in _runs(job).splitlines() if "pytest" in line]
     assert " -m " not in pytest_run, "a marker filter would drop the integration tests"
+
+
+def _image(spec: object) -> str | None:
+    """The image a ``services.<id>`` or ``container`` value names."""
+    if isinstance(spec, str):
+        return spec
+    if isinstance(spec, dict):
+        return spec.get("image")
+    return None
+
+
+def _images() -> list[tuple[str, str]]:
+    """``(workflow:job[:service], image)`` for every container image a job pulls."""
+    found = []
+    for path in sorted(WORKFLOW.parent.glob("*.y*ml")):
+        jobs = yaml.safe_load(path.read_text()).get("jobs", {})
+        for name, job in jobs.items():
+            if (image := _image(job.get("container"))) is not None:
+                found.append((f"{path.name}:{name}", image))
+            for service, spec in (job.get("services") or {}).items():
+                if (image := _image(spec)) is not None:
+                    found.append((f"{path.name}:{name}:{service}", image))
+    return found
+
+
+def test_the_image_sweep_finds_the_redis_service() -> None:
+    # Guard the guard: a sweep that finds nothing passes vacuously.
+    assert "ci.yml:test:redis" in {site for site, _ in _images()}
+
+
+@pytest.mark.parametrize(("site", "image"), _images(), ids=[s for s, _ in _images()])
+def test_image_comes_from_the_mirror(site: str, image: str) -> None:
+    # An image named without a registry is an anonymous Docker Hub pull, whose limit
+    # GitHub's shared runners exhaust: on 2026-10-09 the redis service failed to pull
+    # twice, and since #34 a red main run blocks scripts/deploy.sh (#43). The mirror
+    # serves the same official images (same index digest) with no limit or credential.
+    assert image.startswith(MIRROR), (
+        f"{site} pulls {image!r} from Docker Hub anonymously. "
+        f"Use {MIRROR}library/<image> for an official image."
+    )
 
 
 def test_the_wheelhouse_sync_ignores_project_config(ci: dict) -> None:

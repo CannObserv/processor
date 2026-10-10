@@ -81,10 +81,12 @@ jobs:
     # SETINFO is an ACL denial the broker's grant cannot cover until it upgrades
     # (granting it is a required step of that upgrade, per the broker). The
     # integration suite runs here in full: db 15, a throwaway ACL user, and briefly
-    # maxmemory, all of which a service container absorbs.
+    # maxmemory, all of which a service container absorbs. Docker Hub's official
+    # image via Google's mirror: GitHub's shared runners exhaust Hub's anonymous
+    # pull limit, and a red main run blocks deploys (#43, tests/test_ci.py).
     services:
       redis:
-        image: redis:7.0.15
+        image: mirror.gcr.io/library/redis:7.0.15
         ports:
           - 6379:6379
         options: >-
