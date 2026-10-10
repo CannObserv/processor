@@ -88,6 +88,7 @@ jobs:
     # "manifest unknown" at Initialize containers means 7.0.15 left the cache, not
     # a broken commit. The fallback is Ubuntu 24.04's apt redis-server, which is
     # 7.0.15: pin runs-on, assert the version, and wait on redis-cli ping (#43).
+    # broker#85 decides the broker's next Redis; this pin moves with it.
     services:
       redis:
         image: mirror.gcr.io/library/redis:7.0.15

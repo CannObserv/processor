@@ -11,6 +11,7 @@ WIF_SA = "co-pypi-reader@co-gcs.iam.gserviceaccount.com"
 # The broker's exact version (broker deploy/redis-acl.conf: "this broker is 7.0.15").
 # Not 7.2: redis-py sends CLIENT SETINFO there, which the broker's ACL cannot grant
 # until it upgrades, so a 7.2 container reports denials the broker never sees.
+# 7.0 is upstream EOL: broker#85 decides the next version, and this pin moves with it.
 # Docker Hub's official image via Google's mirror (#43): see test_image_comes_from_the_mirror.
 BROKER_REDIS = "mirror.gcr.io/library/redis:7.0.15"
 MIRROR = "mirror.gcr.io/"
