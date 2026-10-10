@@ -224,11 +224,12 @@ async def test_a_thread_that_fails_to_start_does_not_wedge_the_heartbeat(
     # The in-flight marker is set before start(): a start that raises must clear it,
     # or every later tick would skip and the monitor would page for nothing.
     real_start = threading.Thread.start
-    starts = []
+    calls = 0
 
     def start(self) -> None:
-        starts.append(self.name)
-        if len(starts) == 1:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
             raise RuntimeError("can't start new thread")
         real_start(self)
 
