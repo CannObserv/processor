@@ -1,0 +1,49 @@
+{
+  "artifacts": [
+    {
+      "name": "agent-guidelines",
+      "path": "./AGENTS.md",
+      "description": "Agent working agreements: what processor owns and does not, the co-core pin, infrastructure table, failure classes, the contained extraction child, parity goldens, cross-repo policy, commit and workflow conventions."
+    },
+    {
+      "name": "service-spec",
+      "path": "./docs/specs/2026-09-29-processor-service-design.md",
+      "description": "The design of record: decisions D1-D8, grants, runtime and containment, the failure table (deterministic vs infrastructure), versioning and processor_version, cutover, testing, and the content.process / content.derived contract quick reference."
+    },
+    {
+      "name": "deployment-runbook",
+      "path": "./docs/DEPLOYMENT.md",
+      "description": "Operating processor on co-processor: prerequisites, the broker credential, /etc/processor/, releases and scripts/deploy.sh, the drift check, liveness, containment, install and rollback, co-core bumps, Tailscale DNS, Node.js."
+    },
+    {
+      "name": "skills-doc",
+      "path": "./docs/SKILLS.md",
+      "description": "The vendored agent skills: inventory, the brainstorming override, the daily refresh hook, provisioning a worktree."
+    },
+    {
+      "name": "socraticode-doc",
+      "path": "./docs/SOCRATICODE.md",
+      "description": "Semantic search reference: tool table, the prefetch hook, per-tool notes, graph health and index scope, plus this repo's link stubs, one-host-per-projectId rule, the pin and the memory decision."
+    },
+    {
+      "name": "implementation-plans",
+      "path": "./docs/plans",
+      "description": "Dated implementation plans, one per issue (v1, outcome digests, DLQ retry, containment, deploy CI gate, drift, liveness, the post-cutover pin, SocratiCode). History: a later plan or the code supersedes an earlier one."
+    },
+    {
+      "name": "deploy-units",
+      "path": "./deploy",
+      "description": "What this VM deploys: processor.service (memory cap, OOM policy, hardening, LoadCredential), the drift service and timer, tailscaled's OOM drop-in, and the NodeSource apt pin and script."
+    },
+    {
+      "name": "ci-workflow",
+      "path": "./.github/workflows/ci.yml",
+      "description": "GitHub Actions: lint, then the full suite against redis 7.0.15 from mirror.gcr.io, with keyless WIF to co-pypi-reader for the cannobserv wheelhouse."
+    },
+    {
+      "name": "project-config",
+      "path": "./pyproject.toml",
+      "description": "Dependency and tool contract: Python 3.12, the exact co-core pin, the wheelhouse find-links, ruff rules and excludes, pytest config."
+    }
+  ]
+}
