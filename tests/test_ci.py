@@ -146,7 +146,8 @@ def test_image_comes_from_the_mirror(site: str, image: str) -> None:
     # twice, and since #34 a red main run blocks scripts/deploy.sh (#43). The mirror
     # serves the same official images (same index digest) with no limit or credential.
     assert image.startswith(MIRROR), (
-        f"{site} pulls {image!r} from Docker Hub anonymously. "
+        f"{site} pulls {image!r}, which is not on {MIRROR}: an image with no registry, "
+        f"or on docker.io, is an anonymous Docker Hub pull. "
         f"Use {MIRROR}library/<image> for an official image."
     )
 
