@@ -51,16 +51,16 @@ def golden(raw: bytes, essence: str | None, spec: dict) -> dict:
 
 
 def goldens(corpus: Path) -> dict[str, dict]:
-    """Every case in ``corpus/cases.json``, by id."""
+    """Every case in ``corpus/cases.json``, by id. A case that raises is named."""
     cases = json.loads((corpus / "cases.json").read_text())
-    return {
-        case["id"]: golden(
-            (corpus / "inputs" / case["input"]).read_bytes(),
-            case["media_type"],
-            case["source_spec"],
-        )
-        for case in cases
-    }
+    out: dict[str, dict] = {}
+    for case in cases:
+        raw = (corpus / "inputs" / case["input"]).read_bytes()
+        try:
+            out[case["id"]] = golden(raw, case["media_type"], case["source_spec"])
+        except Exception as exc:
+            raise RuntimeError(f"case {case['id']!r}: {exc}") from exc
+    return out
 
 
 def moved(old: dict[str, dict], new: dict[str, dict]) -> list[str]:

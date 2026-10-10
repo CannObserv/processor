@@ -103,3 +103,24 @@ def test_refuses_to_drop_the_v1_record(corpus: Path) -> None:
 
     with pytest.raises(SystemExit, match="v1_provenance"):
         gen.main(corpus)
+
+
+def test_an_extractor_that_raises_names_its_case_and_writes_nothing(corpus: Path) -> None:
+    cases = json.loads((corpus / "cases.json").read_text())
+    (corpus / "inputs" / "broken.pdf").write_bytes(b"this is not a pdf")
+    cases.append(
+        {
+            "id": "broken",
+            "input": "broken.pdf",
+            "media_type": "application/pdf",
+            "source_spec": {"extraction": {"algorithm": "full_page"}},
+        }
+    )
+    (corpus / "cases.json").write_text(json.dumps(cases))
+    before = (corpus / "goldens.json").read_text()
+
+    with pytest.raises(RuntimeError, match="case 'broken'") as raised:
+        gen.main(corpus)
+
+    assert raised.value.__cause__ is not None
+    assert (corpus / "goldens.json").read_text() == before
