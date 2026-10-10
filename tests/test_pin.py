@@ -1,8 +1,8 @@
-"""The co-core pin is exact and in lockstep with Watcher (spec D5, §5).
+"""The co-core pin is exact, and Processor owns it (spec D5, amended 2026-10-10; §5).
 
-A bump changes ``processor_version`` on every fact Watcher compares, so it must be
-a deliberate act: edit ``EXPECTED`` here, in the same commit as the pin, after the
-parity corpus passes on the new version.
+A bump changes ``processor_version`` on every fact, and Watcher re-baselines on it, so
+it must be a deliberate act: edit ``EXPECTED`` here, in the same commit as the pin,
+with the goldens regenerated co-core-direct and every moved digest in the bump note.
 """
 
 import tomllib
@@ -41,5 +41,5 @@ def test_installed_matches_the_pin(name: str) -> None:
 
 
 def test_processor_version_is_co_core_plus_generation() -> None:
-    assert LOCAL_GENERATION == 1  # matches Watcher's LOCAL_EXTRACTION_GENERATION
+    assert LOCAL_GENERATION == 1  # Watcher's LOCAL_EXTRACTION_GENERATION at the cutover
     assert PROCESSOR_VERSION == f"{EXPECTED}+1"

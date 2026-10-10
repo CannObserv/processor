@@ -1,6 +1,6 @@
 {
   "co_core": "0.19.7",
-  "generated_by": "scripts/gen_parity_goldens.py (Watcher's _extract_and_fingerprint)",
+  "generated_by": "scripts/gen_parity_goldens.py (co-core's pure extract API, direct; #47)",
   "goldens": {
     "csv": {
       "content_fingerprint": "sha256:3aa128d2928d8d694df0f015dcffc146ee14d09e7dc12cc7434148b3af64e5d0",
@@ -81,6 +81,11 @@
       "spec_schema_version": 1
     }
   },
-  "watcher_commit": "a5d6f3417f4b559449a3f5d82f5c40438a4cc18d",
-  "watcher_processor_version": "0.19.7+1"
+  "v1_provenance": {
+    "co_core": "0.19.7",
+    "generated_by": "scripts/gen_parity_goldens.py (Watcher's _extract_and_fingerprint)",
+    "reproduced": "2026-10-10, #47: the co-core-direct generator matched every v1 golden byte for byte on co-core 0.19.7",
+    "watcher_commit": "a5d6f3417f4b559449a3f5d82f5c40438a4cc18d",
+    "watcher_processor_version": "0.19.7+1"
+  }
 }
