@@ -148,6 +148,41 @@ async def test_a_hung_status_is_cut_off_and_the_next_tick_is_skipped(hung_status
     assert skipped.levelno == logging.WARNING
 
 
+async def test_a_cut_off_check_in_frees_the_next_tick_once_its_post_returns(
+    progress, clock, caplog
+):
+    # #39 trap 1's other half (#45 CR 1): a post cut off by the timeout keeps later
+    # ticks skipping only until it returns. Were the marker cleared on the loop, where
+    # settle drops a cut-off result, one hung Status would silence the heartbeat.
+    release = threading.Event()
+    threads = []
+
+    def post(variables):
+        threads.append(threading.current_thread())
+        if len(threads) == 1:
+            release.wait(5)
+        return 202
+
+    beat = Heartbeat(
+        progress, post, build="b", clock=clock, interval_s=300, stale_after_s=605, timeout_s=0.05
+    )
+    try:
+        with caplog.at_level(logging.INFO, logger="processor.liveness"):
+            await beat.tick()  # cut off: the post is still running
+            await beat.tick()  # skipped
+            release.set()
+            threads[0].join(5)
+            await beat.tick()
+    finally:
+        release.set()
+    assert len(threads) == 2
+    (failed,) = records(caplog, "liveness check-in failed")
+    assert failed.error == "timed out after 0.05 s"
+    assert len(records(caplog, "previous check-in still in flight; skipping this tick")) == 1
+    (ok,) = records(caplog, "liveness check-in")
+    assert ok.checkin == 202
+
+
 async def test_a_finished_check_in_whose_thread_lingers_does_not_skip_the_next_tick(
     progress, clock, caplog, monkeypatch
 ):
