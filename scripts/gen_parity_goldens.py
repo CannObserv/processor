@@ -3,15 +3,18 @@
 Parity must not be self-referential: Processor's tests assert its pure core
 (``processors/extract.py``) reproduces what co-core's extractors compute for the same
 bytes, spec and essence (spec §7). This script therefore imports nothing from
-Processor, only the stdlib and ``co_core.pure.extract``, and spells the path itself.
-That path is the one Watcher took at ``a5d6f34``: essence → ``extractor_for_essence`` with
-``{**extraction_config_from_spec, **extraction_overrides_for_essence}`` →
-``canonical_text``. Since watcher#350 nothing else extracts, so co-core is the oracle.
+Processor, only the stdlib and ``co_core.pure.extract``, and spells the path itself:
+essence → ``extractor_for_essence`` with ``{**extraction_config_from_spec,
+**extraction_overrides_for_essence}`` → ``canonical_text``. That is Watcher's path at
+``a5d6f34``, except that Watcher dispatched through its ``ServiceRegistry``, whose map
+was entry for entry co-core's ``EXTRACTOR_BY_ESSENCE`` (spec Open Question 3). Since
+watcher#350 nothing else extracts, so co-core is the oracle.
 
-The goldens v1 were Watcher's (``_extract_and_fingerprint``, Watcher ``a5d6f34``,
-co-core 0.19.7). This generator reproduced every one byte for byte. ``v1_provenance``
-records that, and every run carries it forward. Run it at a co-core bump only, never to
-make a failing parity test pass. It prints each moved digest for the bump note.
+The v1 goldens were Watcher's (``_extract_and_fingerprint``, Watcher ``a5d6f34``,
+co-core 0.19.7). On 2026-10-10 this generator reproduced every one byte for byte.
+``v1_provenance`` records that, and every run carries it forward. Run it at a co-core
+bump only, never to make a failing parity test pass. It prints each moved digest for
+the bump note.
 
     uv run python scripts/gen_parity_goldens.py tests/fixtures/parity
 """
