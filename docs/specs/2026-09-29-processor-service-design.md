@@ -484,7 +484,9 @@ TDD, red first.
 
 - **Pure core — golden-digest parity.** A corpus of HTML / PDF / CSV fixtures,
   each with a spec and resolved `media_type`, asserting `output_digest` and
-  `empty`.
+  `empty`. Include: a one-page scanned PDF (one empty chunk → `empty`, not a
+  failure); an unknown essence (→ HTML); a spec whose `spec_fingerprint` raises
+  (→ `None`).
   - **The golden source (amended 2026-10-10, processor#47).** The v1 goldens
     were Watcher's: `_extract_and_fingerprint` at Watcher `a5d6f34`, on co-core
     0.19.7. watcher#350 deleted that code. `scripts/gen_parity_goldens.py` now
@@ -496,9 +498,7 @@ TDD, red first.
     on the pinned co-core, so after a bump they are the bump's re-baseline, not
     v1. `goldens.json` keeps the v1 provenance (`v1_provenance`) across
     regenerations. It is regenerated only at a bump, never to make a
-    failing parity test pass. Include: a one-page scanned PDF (one empty chunk → `empty`, not a
-  failure); an unknown essence (→ HTML); a spec whose `spec_fingerprint` raises
-  (→ `None`).
+    failing parity test pass.
   - Watcher's only file fixture is `tests/fixtures/sample.html`, so the corpus
     starts synthetic.
   - Before shadow it adds real samples: per watched item, the raw digest,
