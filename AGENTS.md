@@ -18,7 +18,7 @@ TDD required. Red → Green → Refactor. No production code without a failing t
 
 Python 3.12, uv, hatchling src layout, pytest, ruff.
 
-**co-core is pinned exactly (`==0.19.7`), in lockstep with Watcher** (spec D5, §5). `processor_version` = `"<co-core version>+<LOCAL_GENERATION>"`; a pin test makes every bump a deliberate, test-failing act. Never let a dependency bot or `uv lock --upgrade` move co-core; a bump is planned with Watcher and the parity corpus must pass unchanged.
+**co-core is pinned exactly (`==0.19.7`); Processor owns the pin** (spec D5, §5; since watcher#350 nothing else extracts). `processor_version` = `"<co-core version>+<LOCAL_GENERATION>"`; a pin test makes every bump a deliberate, test-failing act. Never let a dependency bot or `uv lock --upgrade` move co-core. A bump gives Watcher notice (it re-baselines on `processor_version`). It is coordinated with Watcher only if it changes the contract: the `content.process` / `content.derived` models, `canonical_text` semantics, or `resolve_dispatch_essence`. Procedure: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#bumping-co-core).
 
 **Cannobserv wheelhouse.** `co-core`, `co-core-aio`, `co-core-sync` resolve from `./.wheelhouse` (git-ignored) via `[tool.uv] find-links`. Populate it before any `uv` command:
 
@@ -52,7 +52,7 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 
 **Extraction runs in a killable child process** (`python -I -m processor._child`: timeout, `RLIMIT_AS`, `oom_score_adj` 1000, scrubbed env, allowlisting unpickler for its result), never a thread. The child is untrusted: it parses untrusted documents. **It contains itself** (`processor._contain`, #2, spec §3): Landlock (read-only on an allowlist derived from `sys.path`, no TCP, scoped signals) and seccomp (no socket at all). `processor run` is undumpable, and refuses to start where the child can't be contained (`CO_PROCESSOR_CHILD_CONTAINMENT=required`, the default). Keep the child's imports inside the allowlist: a new extractor that reads a data file outside it fails under containment, and the whole-corpus test in `tests/test_child.py` catches that. The test suite runs `required` where the kernel allows it (the pytest header says which), and never skips containment on `co-processor`.
 
-**Parity goldens** come from Watcher's own code (`scripts/gen_parity_goldens.py`), never from Processor's. A failing parity test means output diverged from Watcher; do not regenerate the goldens to make it pass. The real corpus, `tests/fixtures/parity/real/` (#16), is Watcher's export verbatim and the only copy of its blobs (gone from `gs://co-gcs-blobs` after the TTL): never edit or regenerate it; a bump that moves its output says so in the bump note.
+**Parity goldens** come from co-core's pure extract API directly (`scripts/gen_parity_goldens.py`), never from Processor's code. The script imports nothing from `processor`, and a test checks that. The v1 set was Watcher's, and the generator reproduces it byte for byte (`v1_provenance`, #47). Regenerate only at a co-core bump, and list every moved digest in the bump note. A failing parity test means the output diverged; do not regenerate the goldens to make it pass. The real corpus, `tests/fixtures/parity/real/` (#16), is Watcher's export verbatim and the only copy of its blobs (gone from `gs://co-gcs-blobs` after the TTL): never edit or regenerate it; a bump that moves its output says so in the bump note.
 
 ## Agent Skills
 

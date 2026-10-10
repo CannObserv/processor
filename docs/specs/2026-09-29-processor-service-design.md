@@ -43,6 +43,16 @@ on `co-processor`.
 - A command dead-lettered at the cap can get a failure fact, then a success;
   the failure stands (Section 4, processor#17).
 
+**Amended 2026-10-10 (the cutover closed and watcher#350, processor#47):**
+- The cutover is done (Section 6, step 5). Watcher deleted its local extraction
+  in watcher#350, so Processor is the only extractor.
+- D5 is restated: Processor owns the co-core pin. It coordinates with Watcher only
+  on a contract change, and gives notice whenever `processor_version` moves
+  (Section 5).
+- The goldens come from co-core's pure extract API directly. Watcher's v1 set is
+  frozen as the record, and the new generator reproduces it byte for byte
+  (Section 7).
+
 ---
 
 ## Why a new service
@@ -84,7 +94,7 @@ state and UI it should not have).
 | D2 | **Headless and stateless in v1**: no UI, no database. Idempotency is the write-if-absent store; correlation and dedupe are the issuer's (by `command_id`). |
 | D3 | **Own identities**: broker ACL user, GCS service account, bucket, tailnet tag. Observo's broker#62 `observo` user is stripped. |
 | D4 | **Own bucket** `gs://co-gcs-processor`, derived outputs only, so Watcher's read grant is a plain bucket-level `objectViewer`. |
-| D5 | **co-core pinned exactly, matched to Watcher** (0.19.7 today); bumps are deliberate and coordinated. Watcher agreed on 2026-10-02 (watcher#325): it pins `==0.19.7` when #325 lands, and neither side deploys a bump until the parity corpus passes on it unchanged. |
+| D5 | **co-core pinned exactly; Processor owns the pin** (0.19.7 today). Bumps are deliberate (Section 5). Processor coordinates with Watcher only when a bump changes the contract: the `content.process` / `content.derived` models, `canonical_text` semantics, or `resolve_dispatch_essence`. It **gives Watcher notice whenever `processor_version` moves**, because Watcher re-baselines on it. Watcher still pins `==0.19.7` for contracts and the bus, and that pin no longer has to equal Processor's. *Amended 2026-10-10 (processor#47, after watcher#350). Until then: matched to Watcher, in lockstep, since both sides extracted during shadow. Watcher agreed to that on 2026-10-02 (watcher#325), and neither side deployed a bump until the parity corpus passed on it unchanged.* |
 | D6 | **Extraction runs in a killable child process** with a timeout and an address-space limit, never a thread. |
 | D7 | Broker `NOPERM` and `OOM` are **transient**; a reclaim **re-runs** the extraction (no dedupe key). |
 | D8 | **v1 scope is #629's requirements only.** |
@@ -405,12 +415,22 @@ reclaim re-running (not re-publishing) the extraction.
   - This section named 0.19.4 until the 2026-09-29 amendment. That pin would
     have reported `"0.19.4+1"` against Watcher's `"0.19.7+1"`, which is Open
     Question 1's hazard from the first command.
-- **Bumps are deliberate and coordinated.** `processor_version` moves on every
-  co-core release whether or not output moves, and Watcher's Option A reacts to
-  it. No automatic lock refresh; dependency bots skip co-core. A bump is planned
-  with Watcher: the golden-digest corpus passes unchanged on the new version
-  before deploy, and the bump note says whether output moved. During the shadow
-  window both repos move together or neither does.
+- **Bumps are deliberate, and Processor decides them** (D5, amended 2026-10-10).
+  `processor_version` moves on every co-core release whether or not output
+  moves. No automatic lock refresh; dependency bots skip co-core. A bump:
+  - regenerates the goldens from co-core's pure extract API directly
+    (`scripts/gen_parity_goldens.py`, never through `processors/extract.py`).
+    Every moved digest is listed in the bump note, as a deliberate re-baseline;
+  - passes the real corpus (`real/`) unchanged, or the bump note says which
+    fingerprints moved;
+  - **gives Watcher notice**, because `processor_version` moves. Watcher's
+    Option A re-baselines silently on a processor change alone and audits it as
+    `check.rebaselined`;
+  - **is coordinated with Watcher** only when it changes the contract: the
+    `content.process` / `content.derived` models, `canonical_text` semantics,
+    or `resolve_dispatch_essence`.
+- Until watcher#350 (2026-10-10) both sides extracted, so the pin was in
+  lockstep with Watcher's, and both repos moved together or neither did.
 
 ## Section 6 — cross-repo changes and cutover
 
@@ -441,9 +461,17 @@ Status re-checked against each repo on 2026-10-05 (#23).
      the production output store, and the digest equal to Watcher's recorded
      fingerprint.
 4. Watcher #325 ships and runs **shadow**: Processor stores texts; Watcher's
-   comparator counts mismatches.
+   comparator counts mismatches. **Done:** watcher#325, closed 2026-10-03.
 5. Watcher #326 switches on zero mismatches across a window with at least one
-   real change event — Watcher's gate, unchanged.
+   real change event — Watcher's gate, unchanged. **Done:**
+   - [the gate verdict](https://github.com/CannObserv/watcher/issues/326#issuecomment-6026345941): 87 of 87 shadow
+     comparisons matched, 2026-10-03T18:39Z → 2026-10-06T21:07Z, including one
+     real change. The switch to `processor` happened at 2026-10-06T21:35:24Z;
+   - [the soak verdict](https://github.com/CannObserv/watcher/issues/326#issuecomment-6090059341): the 3-day soak
+     passed, and watcher#326 closed 2026-10-09T22:07Z;
+   - [watcher#350](https://github.com/CannObserv/watcher/issues/350) (closed 2026-10-10T01:52Z) deleted Watcher's local
+     extraction, `WATCHER_EXTRACT_MODE`, the shadow leg and its
+     `co-core[extract]` extra. Processor is the only extractor.
 
 **Hard ordering:** `processor.process` exists before Watcher's first command. A
 group created from `$` afterwards skips earlier entries — Watcher's reaper
@@ -456,7 +484,17 @@ TDD, red first.
 
 - **Pure core — golden-digest parity.** A corpus of HTML / PDF / CSV fixtures,
   each with a spec and resolved `media_type`, asserting `output_digest` and
-  `empty`. Include: a one-page scanned PDF (one empty chunk → `empty`, not a
+  `empty`.
+  - **The golden source (amended 2026-10-10, processor#47).** The v1 goldens
+    were Watcher's: `_extract_and_fingerprint` at Watcher `a5d6f34`, on co-core
+    0.19.7. watcher#350 deleted that code. `scripts/gen_parity_goldens.py` now
+    drives co-core's pure extract API directly (`extractor_for_essence`,
+    `extraction_config_from_spec`, `extraction_overrides_for_essence`,
+    `canonical_text`, `spec_fingerprint`), and imports nothing from Processor,
+    which a test checks. On 0.19.7 it reproduces every v1 golden byte for byte,
+    also a standing test. `goldens.json` keeps the v1 provenance (`v1_provenance`)
+    across regenerations. It is regenerated only at a bump, never to make a
+    failing parity test pass. Include: a one-page scanned PDF (one empty chunk → `empty`, not a
   failure); an unknown essence (→ HTML); a spec whose `spec_fingerprint` raises
   (→ `None`).
   - Watcher's only file fixture is `tests/fixtures/sample.html`, so the corpus
@@ -511,7 +549,8 @@ TDD, red first.
 - **Integration.** A scratch Redis on `co-processor` with the real stream names;
   a test issuer `XADD`s real commands; assert facts, stored bytes, and `XINFO
   GROUPS` lag, against a scratch GCS prefix or the local store.
-- **Production acceptance** is Watcher's shadow mismatch count.
+- **Production acceptance** was Watcher's shadow mismatch count: 87 of 87
+  matched, and the cutover followed (Section 6, step 5).
 
 ## Section 8 — standup and handoff
 

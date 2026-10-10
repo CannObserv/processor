@@ -453,11 +453,13 @@ On boot, the service preflights both buckets and exits non-zero if either is unr
 
 ## Bumping co-core
 
-co-core is pinned `==` in lockstep with Watcher (spec §5). A bump changes `processor_version` on every fact, so it is planned with Watcher:
+co-core is pinned `==`, and Processor owns the pin (spec D5, §5; amended 2026-10-10, #47). Until watcher#350 it was in lockstep with Watcher. A bump changes `processor_version` on every fact, and Watcher re-baselines on that:
 
 1. Rebuild the wheelhouse at the new tag, then update the pin in `pyproject.toml` and `EXPECTED` in `tests/test_pin.py`, and `uv lock`.
-2. Regenerate the goldens from Watcher on the new version (`scripts/gen_parity_goldens.py`). They must not change, or the bump note says why output moved.
-3. Deploy together with Watcher's bump, or neither moves.
+2. Regenerate the goldens from co-core directly: `uv run python scripts/gen_parity_goldens.py tests/fixtures/parity`. It prints every digest that moved. Paste that list into the bump note: each line is a deliberate re-baseline. Never regenerate to make a parity test pass outside a bump.
+3. The real corpus (`tests/fixtures/parity/real/`) is never regenerated. It passes unchanged, or the bump note says which recorded fingerprints moved.
+4. **Notice to Watcher** before deploy: the new `processor_version`, and the moved digests. A change to the contract needs coordination with Watcher first, not just notice. The contract is the `content.process` / `content.derived` models, `canonical_text` semantics and `resolve_dispatch_essence`.
+5. Merge, then `scripts/deploy.sh`.
 
 ## Tailscale DNS
 
