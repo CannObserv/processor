@@ -83,7 +83,11 @@ jobs:
     # integration suite runs here in full: db 15, a throwaway ACL user, and briefly
     # maxmemory, all of which a service container absorbs. Docker Hub's official
     # image via Google's mirror: GitHub's shared runners exhaust Hub's anonymous
-    # pull limit, and a red main run blocks deploys (#43, tests/test_ci.py).
+    # pull limit, and a red main run blocks deploys (#43, tests/test_ci.py). The
+    # mirror serves only tags it has cached (an old one 404s), and 7.0 is past EOL:
+    # "manifest unknown" at Initialize containers means 7.0.15 left the cache, not
+    # a broken commit. The fallback is Ubuntu 24.04's apt redis-server, which is
+    # 7.0.15: pin runs-on, assert the version, and wait on redis-cli ping (#43).
     services:
       redis:
         image: mirror.gcr.io/library/redis:7.0.15
