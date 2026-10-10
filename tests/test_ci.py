@@ -121,6 +121,9 @@ def _images(workflows: Path = WORKFLOW.parent) -> list[tuple[str, str]]:
     return found
 
 
+IMAGES = _images()
+
+
 def test_the_image_sweep_finds_docker_step_images(tmp_path: Path) -> None:
     # `uses: docker://<image>` runs a step in a container: a pull like a service's.
     (tmp_path / "x.yml").write_text(
@@ -132,10 +135,10 @@ def test_the_image_sweep_finds_docker_step_images(tmp_path: Path) -> None:
 
 def test_the_image_sweep_finds_the_redis_service() -> None:
     # Guard the guard: a sweep that finds nothing passes vacuously.
-    assert "ci.yml:test:redis" in {site for site, _ in _images()}
+    assert "ci.yml:test:redis" in {site for site, _ in IMAGES}
 
 
-@pytest.mark.parametrize(("site", "image"), _images(), ids=[s for s, _ in _images()])
+@pytest.mark.parametrize(("site", "image"), IMAGES, ids=[s for s, _ in IMAGES])
 def test_image_comes_from_the_mirror(site: str, image: str) -> None:
     # An image named without a registry is an anonymous Docker Hub pull, whose limit
     # GitHub's shared runners exhaust: on 2026-10-09 the redis service failed to pull
