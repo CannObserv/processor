@@ -491,9 +491,11 @@ TDD, red first.
     drives co-core's pure extract API directly (`extractor_for_essence`,
     `extraction_config_from_spec`, `extraction_overrides_for_essence`,
     `canonical_text`, `spec_fingerprint`), and imports nothing from Processor,
-    which a test checks. On 0.19.7 it reproduces every v1 golden byte for byte,
-    also a standing test. `goldens.json` keeps the v1 provenance (`v1_provenance`)
-    across regenerations. It is regenerated only at a bump, never to make a
+    which a test checks. On 0.19.7 it reproduced every v1 golden byte for byte
+    (2026-10-10). A standing test holds the committed goldens equal to its output
+    on the pinned co-core, so after a bump they are the bump's re-baseline, not
+    v1. `goldens.json` keeps the v1 provenance (`v1_provenance`) across
+    regenerations. It is regenerated only at a bump, never to make a
     failing parity test pass. Include: a one-page scanned PDF (one empty chunk → `empty`, not a
   failure); an unknown essence (→ HTML); a spec whose `spec_fingerprint` raises
   (→ `None`).
