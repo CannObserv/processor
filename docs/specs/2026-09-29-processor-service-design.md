@@ -399,14 +399,16 @@ reclaim re-running (not re-publishing) the extraction.
 
 - `processor_version = processor_version(LOCAL_GENERATION)` (co-core,
   `co_core.pure.extract.canonical`), spelled `"<co-core version>+<generation>"`.
-  **`LOCAL_GENERATION = 1`**, matching Watcher's `LOCAL_EXTRACTION_GENERATION =
-  1` — the dispatch Processor runs is Watcher's, lifted into co-core. Bump it by
+  **`LOCAL_GENERATION = 1`**, which matched Watcher's `LOCAL_EXTRACTION_GENERATION =
+  1` at the cutover: the dispatch Processor runs is Watcher's, lifted into
+  co-core. Since watcher#350 nothing on Watcher's side has to match. Bump it by
   hand only when Processor's own logic (config merging, dispatch) changes output
   in a way co-core's version cannot see.
-- **co-core `==0.19.7`**, the version Watcher's `uv.lock` resolves. Watcher's
-  `pyproject.toml` allows `>=0.19.6,<0.20`. Both sides then report `"0.19.7+1"`
-  from the first shadow command. Processor needs `GcsBlobStore` (0.19.3+) and
-  the `content.process` types (0.19.4).
+- **co-core `==0.19.7`**, the version Watcher's `uv.lock` resolved at the
+  cutover (Watcher's `pyproject.toml` allowed `>=0.19.6,<0.20`), so both sides
+  reported `"0.19.7+1"` from the first shadow command. Since D5's 2026-10-10
+  amendment, Watcher's lock no longer constrains this pin. Processor needs
+  `GcsBlobStore` (0.19.3+) and the `content.process` types (0.19.4).
   - Between 0.19.4 and 0.19.7, `co_core.pure.extract` and `co_core_aio.bus` are
     byte-identical, and the `content.process` types did not change. 0.19.6 only
     added the `content.persist` pair.
