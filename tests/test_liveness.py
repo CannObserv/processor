@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import socket
+import threading
 import time
 from functools import partial
 from types import SimpleNamespace
@@ -145,6 +146,74 @@ async def test_a_hung_status_is_cut_off_and_the_next_tick_is_skipped(hung_status
     assert failed.error == "timed out after 0.2 s"
     (skipped,) = records(caplog, "previous check-in still in flight; skipping this tick")
     assert skipped.levelno == logging.WARNING
+
+
+async def test_a_finished_check_in_whose_thread_lingers_does_not_skip_the_next_tick(
+    progress, clock, caplog, monkeypatch
+):
+    # #45: the result reaches the loop before its thread exits. A tick that awaits
+    # nothing (a stale one) let the next run while that thread was still alive, and
+    # it skipped. Here every check-in thread is held after its target returns.
+    linger = threading.Event()
+
+    class Lingering(threading.Thread):
+        def run(self) -> None:
+            super().run()
+            if self.name == "liveness-checkin":
+                linger.wait(5)
+
+    monkeypatch.setattr(threading, "Thread", Lingering)
+    posts = []
+    beat = Heartbeat(
+        progress,
+        lambda v: posts.append(v) or 202,
+        build="b",
+        clock=clock,
+        interval_s=300,
+        stale_after_s=605,
+        timeout_s=10,
+    )
+    try:
+        with caplog.at_level(logging.INFO, logger="processor.liveness"):
+            await beat.tick()
+            await beat.tick()
+    finally:
+        linger.set()
+    assert len(posts) == 2
+    assert records(caplog, "previous check-in still in flight; skipping this tick") == []
+
+
+async def test_a_thread_that_fails_to_start_does_not_wedge_the_heartbeat(
+    progress, clock, caplog, monkeypatch
+):
+    # The in-flight marker is set before start(): a start that raises must clear it,
+    # or every later tick would skip and the monitor would page for nothing.
+    real_start = threading.Thread.start
+    starts = []
+
+    def start(self) -> None:
+        starts.append(self.name)
+        if len(starts) == 1:
+            raise RuntimeError("can't start new thread")
+        real_start(self)
+
+    monkeypatch.setattr(threading.Thread, "start", start)
+    beat = Heartbeat(
+        progress,
+        lambda v: 202,
+        build="b",
+        clock=clock,
+        interval_s=300,
+        stale_after_s=605,
+        timeout_s=10,
+    )
+    with caplog.at_level(logging.INFO, logger="processor.liveness"):
+        await beat.tick()
+        await beat.tick()
+    (failed,) = records(caplog, "liveness check-in failed")
+    assert failed.error == "RuntimeError: can't start new thread"
+    (ok,) = records(caplog, "liveness check-in")
+    assert ok.checkin == 202
 
 
 async def test_ok_is_logged_on_the_first_and_after_a_failure_only(
