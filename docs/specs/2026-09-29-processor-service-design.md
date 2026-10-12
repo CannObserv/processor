@@ -58,8 +58,9 @@ on `co-processor`.
   cannobserv#523 (Sections 2 and 5). The four XML essences dispatch to co-core's
   `XmlExtractor`. A spec the dispatched extractor can't honour raises
   `UnsupportedExtractionError`, a terminal `extraction_error` (Section 4).
-- The bump changes `resolve_dispatch_essence`, so it was coordinated with Watcher
-  (watcher#366, Section 5).
+- The bump changes `resolve_dispatch_essence`, so it is coordinated with Watcher
+  on watcher#366: Processor posted on 2026-10-12, and Watcher's acknowledgement
+  gates the deploy (Section 5).
 - The corpus covers the XML essences, and a refusal is a golden (Section 7).
 
 ---
