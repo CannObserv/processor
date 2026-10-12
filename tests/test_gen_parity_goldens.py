@@ -126,6 +126,24 @@ def test_a_spec_co_core_refuses_is_recorded_as_refused(corpus: Path) -> None:
     assert doc["goldens"]["regex"] == {"refused": "UnsupportedExtractionError"}
 
 
+def test_a_case_that_starts_or_stops_being_refused_is_listed(corpus: Path) -> None:
+    # The bump note's view of e.g. cannobserv#557, when HTML starts honouring xpath.
+    doc = json.loads((corpus / "goldens.json").read_text())
+    was_refused = doc["goldens"]["refused_xpath_on_html"]
+    was_extracted = doc["goldens"]["xml_xpath"]
+    doc["goldens"]["refused_xpath_on_html"] = was_extracted
+    doc["goldens"]["xml_xpath"] = was_refused
+    (corpus / "goldens.json").write_text(json.dumps(doc))
+
+    moved = gen.main(corpus)
+
+    assert "refused_xpath_on_html refused: None -> UnsupportedExtractionError" in moved
+    assert "xml_xpath refused: UnsupportedExtractionError -> None" in moved
+    assert (
+        f"xml_xpath content_fingerprint: None -> {was_extracted['content_fingerprint']}"
+    ) in moved
+
+
 def test_a_malformed_xml_body_is_not_a_refusal(corpus: Path) -> None:
     # A parse failure is a plain ValueError: it names its case, never becomes a golden.
     spec = {"extraction": {"algorithm": "full_page"}}
