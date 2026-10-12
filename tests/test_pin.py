@@ -5,6 +5,7 @@ it must be a deliberate act: edit ``EXPECTED`` here, in the same commit as the p
 with the goldens regenerated co-core-direct and every moved digest in the bump note.
 """
 
+import re
 import tomllib
 from importlib.metadata import version
 from pathlib import Path
@@ -38,6 +39,14 @@ def test_lock_resolves_the_pin(name: str) -> None:
 @pytest.mark.parametrize("name", PINNED)
 def test_installed_matches_the_pin(name: str) -> None:
     assert version(name) == EXPECTED
+
+
+def test_the_wheelhouse_builder_defaults_to_the_pin() -> None:
+    # A fresh checkout runs it with no tag (AGENTS.md); a stale default builds wheels
+    # the lock can't resolve.
+    script = (ROOT / "scripts" / "build_wheelhouse.sh").read_text()
+    (default,) = re.findall(r'^tag="\$\{1:-(v[^}]+)\}"$', script, re.MULTILINE)
+    assert default == f"v{EXPECTED}"
 
 
 def test_processor_version_is_co_core_plus_generation() -> None:
