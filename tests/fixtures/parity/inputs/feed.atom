@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Board notices</title>
+  <id>urn:example:board-notices</id>
+  <updated>2026-10-12T09:00:00Z</updated>
+  <link rel="self" href="https://example.org/notices.atom"/>
+  <entry>
+    <id>urn:example:notice:42</id>
+    <title type="html">Special &lt;em&gt;meeting&lt;/em&gt; called</title>
+    <link rel="self" href="https://example.org/api/notices/42"/>
+    <link rel="alternate" href="https://example.org/notices/42"/>
+    <published>2026-10-11T17:30:00-07:00</published>
+    <updated>2026-10-12T08:00:00Z</updated>
+    <summary>The board meets on Thursday.</summary>
+  </entry>
+  <entry>
+    <id>urn:example:notice:41</id>
+    <title>Agenda posted</title>
+    <link href="https://example.org/notices/41"/>
+    <updated>2026-10-01T12:00:00</updated>
+  </entry>
+</feed>

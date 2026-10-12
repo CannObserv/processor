@@ -171,9 +171,13 @@ def _whole_corpus() -> list[tuple[str, tuple]]:
 
 async def test_the_whole_parity_corpus_is_identical_through_the_child() -> None:
     # cases.json and real/ (#16), under CONTAINMENT: the allowlist must cover every
-    # import and data file an extractor reaches for (#2).
+    # import and data file an extractor reaches for (#2). A spec co-core refuses comes
+    # back raised, which the handler publishes as extraction_error, terminal (#29).
     jobs = _whole_corpus()
     assert len(jobs) > len(json.loads((Path(TESTS) / "fixtures/parity/cases.json").read_text()))
+    goldens = json.loads((Path(TESTS) / "fixtures/parity/goldens.json").read_text())["goldens"]
+    refused = {case_id for case_id, golden in goldens.items() if "refused" in golden}
+    assert refused
     for job_id, args in jobs:
         result = await run_in_child(
             transform_target(extract),
@@ -182,6 +186,10 @@ async def test_the_whole_parity_corpus_is_identical_through_the_child() -> None:
             rlimit_as_bytes=3 * GiB,
             containment=CONTAINMENT,
         )
+        if job_id in refused:
+            assert result.kind == "raised", (job_id, result.detail)
+            assert result.detail.startswith("UnsupportedExtractionError: "), job_id
+            continue
         assert result.kind == "ok", (job_id, result.detail)
         assert result.value == extract(*args), job_id
 

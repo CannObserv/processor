@@ -105,6 +105,39 @@ def test_refuses_to_drop_the_v1_record(corpus: Path) -> None:
         gen.main(corpus)
 
 
+def _append_case(
+    corpus: Path, case_id: str, name: str, body: bytes, essence: str, spec: dict
+) -> None:
+    cases = json.loads((corpus / "cases.json").read_text())
+    (corpus / "inputs" / name).write_bytes(body)
+    cases.append({"id": case_id, "input": name, "media_type": essence, "source_spec": spec})
+    (corpus / "cases.json").write_text(json.dumps(cases))
+
+
+def test_a_spec_co_core_refuses_is_recorded_as_refused(corpus: Path) -> None:
+    # #29: the refusal is co-core's output, so it is a golden like any digest.
+    spec = {"extraction": {"algorithm": "regex", "selector": "x"}}
+    _append_case(corpus, "regex", "page.html", b"<p>x</p>", "text/html", spec)
+
+    moved = gen.main(corpus)
+
+    assert moved == ["regex: added"]
+    doc = json.loads((corpus / "goldens.json").read_text())
+    assert doc["goldens"]["regex"] == {"refused": "UnsupportedExtractionError"}
+
+
+def test_a_malformed_xml_body_is_not_a_refusal(corpus: Path) -> None:
+    # A parse failure is a plain ValueError: it names its case, never becomes a golden.
+    spec = {"extraction": {"algorithm": "full_page"}}
+    _append_case(corpus, "broken_xml", "broken.xml", b"<rss><channel>", "application/xml", spec)
+    before = (corpus / "goldens.json").read_text()
+
+    with pytest.raises(RuntimeError, match="case 'broken_xml'"):
+        gen.main(corpus)
+
+    assert (corpus / "goldens.json").read_text() == before
+
+
 def test_an_extractor_that_raises_names_its_case_and_writes_nothing(corpus: Path) -> None:
     cases = json.loads((corpus / "cases.json").read_text())
     (corpus / "inputs" / "broken.pdf").write_bytes(b"this is not a pdf")

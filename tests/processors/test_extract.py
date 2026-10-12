@@ -17,6 +17,7 @@ from importlib.metadata import version
 from pathlib import Path
 
 import pytest
+from co_core.pure.extract.errors import UnsupportedExtractionError
 
 from processor.processors import TRANSFORMS
 from processor.processors.extract import (
@@ -37,6 +38,11 @@ REAL = CORPUS / "real"
 REAL_EXPORT = json.loads((REAL / "export.json").read_text())
 REAL_ITEMS = REAL_EXPORT["items"]
 EMPTY_SHA256 = "sha256:" + hashlib.sha256(b"").hexdigest()
+REFUSED = {i for i, g in GOLDENS["goldens"].items() if "refused" in g}
+EXTRACTED = [c for c in CASES if c["id"] not in REFUSED]
+# co-core's own test pins this digest for the same fixture, worked out by hand from the
+# feed-line contract (cannobserv v0.32.0, tests/co_core/pure/extract/test_canonical.py).
+TAILSCALE_FEED_SHA256 = "sha256:78e284978faf41fbe8ccd8dc06e6d2803d9788097fca633486dfbbbdc024be09"
 
 
 def _run(case: dict) -> ExtractOutcome:
@@ -57,7 +63,7 @@ def test_processor_version_is_the_goldens_co_core_plus_generation() -> None:
     assert PROCESSOR_VERSION == f"{GOLDENS['co_core']}+{LOCAL_GENERATION}"
 
 
-@pytest.mark.parametrize("case", CASES, ids=[c["id"] for c in CASES])
+@pytest.mark.parametrize("case", EXTRACTED, ids=[c["id"] for c in EXTRACTED])
 def test_parity_with_goldens(case: dict) -> None:
     golden = GOLDENS["goldens"][case["id"]]
     outcome = _run(case)
@@ -76,7 +82,34 @@ def test_parity_with_goldens(case: dict) -> None:
     assert outcome.processor_version == PROCESSOR_VERSION
 
 
-@pytest.mark.parametrize("case", CASES, ids=[c["id"] for c in CASES])
+@pytest.mark.parametrize("case", sorted(REFUSED))
+def test_parity_with_refusals(case: str) -> None:
+    # co-core refused the spec when the goldens were generated (#29, cannobserv#523):
+    # the core must raise too, never fall back to the whole page.
+    (spec,) = [c for c in CASES if c["id"] == case]
+    assert GOLDENS["goldens"][case] == {"refused": "UnsupportedExtractionError"}
+    with pytest.raises(UnsupportedExtractionError):
+        _run(spec)
+
+
+def test_the_corpus_covers_the_refusals_and_the_xml_essences() -> None:
+    # The #523 surface: every XML essence dispatched, and a spec refused at each layer.
+    essences = {c["media_type"] for c in EXTRACTED}
+    assert {"text/xml", "application/xml", "application/rss+xml", "application/atom+xml"} <= (
+        essences
+    )
+    assert len(REFUSED) >= 10
+
+
+def test_the_feed_golden_is_co_cores_own_pin() -> None:
+    # Independent of the generator: co-core worked this digest out by hand.
+    assert GOLDENS["goldens"]["feed_rss"]["content_fingerprint"] == TAILSCALE_FEED_SHA256
+    assert GOLDENS["goldens"]["feed_rss_rss_essence"]["content_fingerprint"] == (
+        TAILSCALE_FEED_SHA256
+    )
+
+
+@pytest.mark.parametrize("case", EXTRACTED, ids=[c["id"] for c in EXTRACTED])
 def test_digest_covers_the_returned_bytes(case: dict) -> None:
     outcome = _run(case)
     if not outcome.empty:
@@ -89,18 +122,25 @@ def test_extractor_errors_propagate() -> None:
         extract(b"this is not a pdf", "application/pdf", {"extraction": {}})
 
 
+def _extract_or_refuse(raw: bytes, case: dict) -> None:
+    try:
+        extract(raw, case["media_type"], case["source_spec"])
+    except UnsupportedExtractionError:
+        assert case["id"] in REFUSED
+
+
 def test_no_io(monkeypatch: pytest.MonkeyPatch) -> None:
     inputs = [(CORPUS / "inputs" / c["input"]).read_bytes() for c in CASES]
     for case, raw in zip(CASES, inputs, strict=True):  # warm lazy imports first
-        extract(raw, case["media_type"], case["source_spec"])
+        _extract_or_refuse(raw, case)
 
     def refuse(*_a, **_k):
         raise AssertionError("the pure core performed I/O")
 
     monkeypatch.setattr(builtins, "open", refuse)
     monkeypatch.setattr(socket, "socket", refuse)
-    for case, raw in zip(CASES, inputs, strict=True):
-        extract(raw, case["media_type"], case["source_spec"])
+    for case, raw in zip(CASES, inputs, strict=True):  # a refusal does no I/O either
+        _extract_or_refuse(raw, case)
 
 
 def test_registry_routes_extract() -> None:

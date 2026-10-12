@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+    <channel>
+        <title>Security Bulletins on Tailscale</title>
+        <link>https://tailscale.com/security-bulletins/</link>
+        <description>Recent security bulletins from Tailscale</description>
+        <lastBuildDate>Mon, 12 Oct 2026 14:39:44 GMT</lastBuildDate>
+        <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
+        <generator>tailscale.com</generator>
+        <language>en-US</language>
+        <copyright>© 2026 Tailscale Inc. All rights reserved.</copyright>
+        <atom:link href="https://tailscale.com/security-bulletins/index.xml" rel="self" type="application/rss+xml"/>
+        <item>
+            <title>TS-2026-011</title>
+            <link>https://tailscale.com/security-bulletins/#ts-2026-011</link>
+            <guid>https://tailscale.com/security-bulletins/#ts-2026-011</guid>
+            <pubDate>Tue, 18 Aug 2026 00:00:00 GMT</pubDate>
+            <description>&lt;p&gt;&lt;strong&gt;&lt;em&gt;Description&lt;/em&gt;&lt;/strong&gt;: Insufficient validation of 4via6 subnet router destinations permitted access to host-scoped addresses, including cloud metadata and loopback services.&lt;/p&gt;
+&lt;h4&gt;What happened?&lt;/h4&gt;
+&lt;p&gt;&lt;a href=&quot;/docs/features/subnet-routers/4via6-subnets&quot;&gt;4via6 subnet routers&lt;/a&gt; embed an IPv4 address within an IPv6 address. When a peer sends traffic to such an address, the router unmaps the embedded IPv4 address and forwards the traffic to it.&lt;/p&gt;
+&lt;p&gt;Previously, this forwarding path did not check the class of the embedded IPv4 address. A peer with ACL access to an advertised 4via6 site could therefore reach host-scoped addresses as seen from the router, including its cloud metadata service and services bound to loopback. Tailscale&#039;s packet filter already drops link-local destinations, but for 4via6 traffic it only sees the outer IPv6 address, so that check previously did not run against the embedded IPv4 destination.&lt;/p&gt;
+&lt;p&gt;Tailscale now refuses host-scoped IPv4 destinations (loopback, link-local, multicast and broadcast) at every point that acts on an unmapped 4via6 address.&lt;/p&gt;
+&lt;p&gt;This vulnerability is fixed in Tailscale version 1.102.3 or newer.&lt;/p&gt;
+&lt;h4&gt;What was the impact?&lt;/h4&gt;
+&lt;p&gt;A peer with ACL access to an advertised 4via6 route could reach host-scoped addresses from the router&#039;s network namespace. On cloud-hosted routers, this included the cloud metadata service, allowing the peer to obtain the router&#039;s instance credentials. On any router, services bound to loopback became reachable, bypassing the host firewall.&lt;/p&gt;
+&lt;h4&gt;Who was affected?&lt;/h4&gt;
+&lt;p&gt;Tailnets using 4via6 subnet routing where a subnet router advertises a site prefix and a peer has ACL access to it.&lt;/p&gt;
+&lt;h4&gt;What do I need to do?&lt;/h4&gt;
+&lt;p&gt;If you use 4via6 subnet routing, upgrade your subnet routers to Tailscale version 1.102.3 or newer.&lt;/p&gt;
+&lt;h4&gt;Credits&lt;/h4&gt;
+&lt;p&gt;We would like to thank the Anthropic infrastructure security team for reporting this issue.&lt;/p&gt;
+</description>
+        </item>
+        <item>
+            <title>TS-2026-010</title>
+            <link>https://tailscale.com/security-bulletins/#ts-2026-010</link>
+            <guid>https://tailscale.com/security-bulletins/#ts-2026-010</guid>
+            <pubDate>Fri, 24 Jul 2026 00:00:00 GMT</pubDate>
+            <description>&lt;p&gt;&lt;strong&gt;&lt;em&gt;Description&lt;/em&gt;&lt;/strong&gt;: Tailscale SSH exposed accepted environment variable values on the command line of a local process, disclosing them to other local users and to logs.&lt;/p&gt;
+&lt;h4&gt;What happened?&lt;/h4&gt;
+&lt;p&gt;&lt;a href=&quot;/docs/features/tailscale-ssh&quot;&gt;Tailscale SSH&lt;/a&gt; allows the configured &lt;code&gt;acceptEnv&lt;/code&gt; environment variables to be forwarded from an SSH client to the process launched on the host. Previously, these accepted variables were JSON-encoded and passed to a child process via an &lt;code&gt;--encoded-env&lt;/code&gt; command line flag.&lt;/p&gt;
+&lt;p&gt;As a result, the names and values of the forwarded environment variables were visible in &lt;code&gt;/proc/&amp;#x3C;pid&gt;/cmdline&lt;/code&gt; to any other local user on the host for the duration of process startup. They were also recorded in the session-start arguments that Tailscale logs locally and, unless the node was configured with &lt;code&gt;--no-logs-no-support&lt;/code&gt;, to &lt;code&gt;log.tailscale.com&lt;/code&gt;. Environment variables commonly carry secrets such as tokens or credentials, which could therefore be disclosed to unintended parties.&lt;/p&gt;
+&lt;p&gt;Tailscale SSH now passes accepted environment variables to the child process through an inherited file descriptor rather than on the command line and keeps their values out of session logs.&lt;/p&gt;
+&lt;p&gt;This vulnerability is fixed in Tailscale version 1.102.1 or newer.&lt;/p&gt;
+&lt;h4&gt;What was the impact?&lt;/h4&gt;
+&lt;p&gt;Secrets carried in forwarded environment variables could be disclosed to other local users on the host via &lt;code&gt;/proc&lt;/code&gt;, and were written to session logs both locally and to &lt;code&gt;log.tailscale.com&lt;/code&gt;.&lt;/p&gt;
+&lt;h4&gt;Who was affected?&lt;/h4&gt;
+&lt;p&gt;Users of Tailscale SSH who forward environment variables via &lt;code&gt;acceptEnv&lt;/code&gt;, particularly on shared hosts with other local users.&lt;/p&gt;
+&lt;h4&gt;What do I need to do?&lt;/h4&gt;
+&lt;p&gt;If you use Tailscale SSH with &lt;code&gt;acceptEnv&lt;/code&gt;, upgrade to Tailscale version 1.102.1 or newer. If you use &lt;code&gt;acceptEnv&lt;/code&gt; to pass credentials, revoke and rotate any impacted credentials.&lt;/p&gt;
+&lt;h4&gt;Credits&lt;/h4&gt;
+&lt;p&gt;We would like to thank Dante Bertana for reporting this issue.&lt;/p&gt;
+</description>
+        </item>
+        <item>
+            <title>TS-2026-008</title>
+            <link>https://tailscale.com/security-bulletins/#ts-2026-008</link>
+            <guid>https://tailscale.com/security-bulletins/#ts-2026-008</guid>
+            <pubDate>Mon, 13 Jul 2026 00:00:00 GMT</pubDate>
+            <description>&lt;p&gt;&lt;strong&gt;&lt;em&gt;Description&lt;/em&gt;&lt;/strong&gt;: A single malformed HTTP request to a node running Tailscale Serve or Funnel could pin a CPU core indefinitely, causing denial of service.&lt;/p&gt;
+&lt;h4&gt;What happened?&lt;/h4&gt;
+&lt;p&gt;&lt;a href=&quot;/docs/features/tailscale-serve&quot;&gt;Tailscale Serve&lt;/a&gt; and &lt;a href=&quot;/docs/features/tailscale-funnel&quot;&gt;Tailscale Funnel&lt;/a&gt; proxy incoming HTTP requests to local backends by matching the request path against the configured mount points. When resolving the handler for a request, Tailscale walked the request path upward one directory at a time, expecting the walk to eventually terminate at the root path &lt;code&gt;/&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;For requests whose path did not begin with &lt;code&gt;/&lt;/code&gt;, this walk never reached &lt;code&gt;/&lt;/code&gt; and never matched a mount point, causing the loop to spin forever. As the server enforced no request timeout, nothing interrupted the spin, and the goroutine held one core at 100% for the life of the process.&lt;/p&gt;
+&lt;p&gt;Tailscale now terminates the path walk for non-absolute paths, returning no handler and closing the request.&lt;/p&gt;
+&lt;p&gt;This vulnerability is fixed in Tailscale version 1.98.9 or newer.&lt;/p&gt;
+&lt;h4&gt;What was the impact?&lt;/h4&gt;
+&lt;p&gt;An attacker could send a crafted HTTP request to permanently consume one CPU core on the target node.&lt;/p&gt;
+&lt;p&gt;For Tailscale Serve, the request could originate from any peer on the tailnet with access to the node. For Tailscale Funnel, the request could originate from any unauthenticated host on the internet.&lt;/p&gt;
+&lt;h4&gt;Who was affected?&lt;/h4&gt;
+&lt;p&gt;Nodes running Tailscale Serve or Tailscale Funnel on versions prior to 1.98.9.&lt;/p&gt;
+&lt;h4&gt;What do I need to do?&lt;/h4&gt;
+&lt;p&gt;If you run Tailscale Serve or Tailscale Funnel, upgrade to Tailscale version 1.98.9 or newer.&lt;/p&gt;
+&lt;h4&gt;Credits&lt;/h4&gt;
+&lt;p&gt;We would like to thank Anthropic and Ada Logics for reporting this issue.&lt;/p&gt;
+</description>
+        </item>
+    </channel>
+</rss>
