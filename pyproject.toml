@@ -5,12 +5,12 @@ description = "The cohort's headless discrete-transform service: consume content
 readme = "AGENTS.md"
 requires-python = ">=3.12"
 dependencies = [
-    # Exact, in lockstep with Watcher (spec D5, §5). processor_version is
+    # Exact, and Processor owns the pin (spec D5, §5). processor_version is
     # "<co-core version>+<LOCAL_GENERATION>", so a bump moves every fact Watcher
     # compares; tests/test_pin.py makes one a deliberate, test-failing act.
-    "co-core[extract]==0.19.7",
-    "co-core-aio[bus]==0.19.7",
-    "co-core-sync[gcs]==0.19.7",
+    "co-core[extract]==0.32.0",
+    "co-core-aio[bus]==0.32.0",
+    "co-core-sync[gcs]==0.32.0",
     "pydantic>=2.12,<3",
     "pydantic-settings>=2.6,<3",
     # Imported directly: the consumer classifies redis-py's ResponseError /

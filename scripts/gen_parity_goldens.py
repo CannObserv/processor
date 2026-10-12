@@ -16,6 +16,10 @@ co-core 0.19.7). On 2026-10-10 this generator reproduced every one byte for byte
 bump only, never to make a failing parity test pass. It prints each moved digest for
 the bump note.
 
+A spec co-core refuses (``UnsupportedExtractionError``, cannobserv#523) is co-core's
+output too, so it is recorded as ``{"refused": "<error>"}`` (#29). Any other raise,
+a parse failure included, names its case and writes nothing.
+
     uv run python scripts/gen_parity_goldens.py tests/fixtures/parity
 """
 
@@ -26,6 +30,7 @@ from pathlib import Path
 
 from co_core.pure.extract.canonical import canonical_text, canonical_text_fingerprint
 from co_core.pure.extract.dispatch import extractor_for_essence
+from co_core.pure.extract.errors import UnsupportedExtractionError
 from co_core.pure.extract.extraction_defaults import extraction_config_from_spec
 from co_core.pure.extract.media_type import extraction_overrides_for_essence
 from co_core.pure.extract.spec_fingerprint import spec_fingerprint, spec_schema_version
@@ -34,9 +39,13 @@ GENERATED_BY = "scripts/gen_parity_goldens.py (co-core's pure extract API, direc
 
 
 def golden(raw: bytes, essence: str | None, spec: dict) -> dict:
-    """One case's golden: the text's digest and size, and the spec's identity."""
-    config = {**extraction_config_from_spec(spec), **extraction_overrides_for_essence(essence)}
-    chunks = extractor_for_essence(essence).extract(raw, config=config).chunks
+    """One case's golden: the text's digest and size, and the spec's identity; or the
+    refusal, when co-core can't honour the spec for this essence."""
+    try:
+        config = {**extraction_config_from_spec(spec), **extraction_overrides_for_essence(essence)}
+        chunks = extractor_for_essence(essence).extract(raw, config=config).chunks
+    except UnsupportedExtractionError as exc:
+        return {"refused": type(exc).__name__}
     try:
         spec_fp = spec_fingerprint(spec)
     except ValueError:  # SpecFingerprintError: a diagnostic, reported as None
