@@ -1,8 +1,9 @@
 """The co-core pin is exact, and Processor owns it (spec D5, amended 2026-10-10; §5).
 
 A bump changes ``processor_version`` on every fact, and Watcher re-baselines on it, so
-it must be a deliberate act: edit ``EXPECTED`` here, in the same commit as the pin,
-with the goldens regenerated co-core-direct and every moved digest in the bump note.
+it must be a deliberate act: edit ``EXPECTED`` here, in the same commit as the pin
+and ``scripts/build_wheelhouse.sh``'s default tag, with the goldens regenerated
+co-core-direct and every moved digest in the bump note.
 """
 
 import re
