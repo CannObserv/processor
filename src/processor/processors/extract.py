@@ -1,8 +1,9 @@
 """The ``extract`` transform: raw bytes + one ``source_spec`` → canonical text (spec §3).
 
-Pure: no I/O. The golden-digest parity target against Watcher's local extraction
-(``tests/fixtures/parity``). Extractor exceptions propagate unclassified; the child
-runner reports them as ``extraction_error``.
+Pure: no I/O. The golden-digest parity target against co-core's pure extract API
+(``tests/fixtures/parity``, #47). Extractor exceptions propagate unclassified, a spec
+co-core refuses (``UnsupportedExtractionError``, #29) among them; the child runner
+reports them as ``extraction_error``.
 """
 
 from dataclasses import dataclass

@@ -53,6 +53,15 @@ on `co-processor`.
   frozen as the record, and the new generator reproduces it byte for byte
   (Section 7).
 
+**Amended 2026-10-12 (co-core 0.32.0, processor#29):**
+- The pin moves from 0.19.7 to **0.32.0**: the catch-up jump, carrying
+  cannobserv#523 (Sections 2 and 5). The four XML essences dispatch to co-core's
+  `XmlExtractor`. A spec the dispatched extractor can't honour raises
+  `UnsupportedExtractionError`, a terminal `extraction_error` (Section 4).
+- The bump changes `resolve_dispatch_essence`, so it was coordinated with Watcher
+  (watcher#366, Section 5).
+- The corpus covers the XML essences, and a refusal is a golden (Section 7).
+
 ---
 
 ## Why a new service
@@ -94,7 +103,7 @@ state and UI it should not have).
 | D2 | **Headless and stateless in v1**: no UI, no database. Idempotency is the write-if-absent store; correlation and dedupe are the issuer's (by `command_id`). |
 | D3 | **Own identities**: broker ACL user, GCS service account, bucket, tailnet tag. Observo's broker#62 `observo` user is stripped. |
 | D4 | **Own bucket** `gs://co-gcs-processor`, derived outputs only, so Watcher's read grant is a plain bucket-level `objectViewer`. |
-| D5 | **co-core pinned exactly; Processor owns the pin** (0.19.7 today). Bumps are deliberate (Section 5). Processor coordinates with Watcher only when a bump changes the contract: the `content.process` / `content.derived` models, `canonical_text` semantics, or `resolve_dispatch_essence`. It **gives Watcher notice whenever `processor_version` moves**, because Watcher re-baselines on it. Watcher still pins co-core for contracts and the bus (`==0.19.7` on 2026-10-10), and that pin no longer has to equal Processor's. *Amended 2026-10-10 (processor#47, after watcher#350). Until then: matched to Watcher, in lockstep, since both sides extracted during shadow. Watcher agreed to that on 2026-10-02 (watcher#325), and neither side deployed a bump until the parity corpus passed on it unchanged.* |
+| D5 | **co-core pinned exactly; Processor owns the pin** (0.32.0 today, processor#29). Bumps are deliberate (Section 5). Processor coordinates with Watcher only when a bump changes the contract: the `content.process` / `content.derived` models, `canonical_text` semantics, or `resolve_dispatch_essence`. It **gives Watcher notice whenever `processor_version` moves**, because Watcher re-baselines on it. Watcher still pins co-core for contracts and the bus (`==0.19.7` on 2026-10-10), and that pin no longer has to equal Processor's. *Amended 2026-10-10 (processor#47, after watcher#350). Until then: matched to Watcher, in lockstep, since both sides extracted during shadow. Watcher agreed to that on 2026-10-02 (watcher#325), and neither side deployed a bump until the parity corpus passed on it unchanged.* |
 | D6 | **Extraction runs in a killable child process** with a timeout and an address-space limit, never a thread. |
 | D7 | Broker `NOPERM` and `OOM` are **transient**; a reclaim **re-runs** the extraction (no dedupe key). |
 | D8 | **v1 scope is #629's requirements only.** |
@@ -111,7 +120,7 @@ an ops concern (logs, the broker probe, lag); a cohort-wide plane is later work.
 function of (input bytes, spec, `processor_version`). Consumes
 `content.process`, publishes `content.derived`.
 
-**Owns:** the transforms (co-core's generic HTML/PDF/CSV extractors now; org
+**Owns:** the transforms (co-core's generic HTML/PDF/CSV/XML extractors now; org
 adapters later, selected by `command.processor` + spec); its bucket; draining
 `content.process.dlq` (the writer of a queue is its drainer).
 
@@ -132,7 +141,7 @@ processor-version pin on the command; no job API — the bus is the interface.
 | Thing | Value |
 |---|---|
 | Repo | `CannObserv/processor` — Python 3.12, uv, hatchling src layout |
-| Dependencies | `co-core[extract]`, `co-core-aio[bus]`, `co-core-sync[gcs]`, all `==0.19.7` (Section 5), from the private CannObserv index |
+| Dependencies | `co-core[extract]`, `co-core-aio[bus]`, `co-core-sync[gcs]`, all `==0.32.0` (Section 5), from the private CannObserv index |
 | CI | wheelhouse pulled through WIF as `co-pypi-reader` (org var `GCP_WIF_PROVIDER`), as in the other cohort repos |
 | VM | exe.dev `co-processor`, 8 GB, default `exeuntu` image, tag `processor` |
 | Service | systemd unit `processor`: `MemoryMax` below VM RAM, `Restart=on-failure`, `OOMPolicy=continue` (Section 4). Runs as its own user `processor` (no sudo, not in `docker`, no home), from a read-only release at `/srv/processor/live` that `scripts/deploy.sh` builds from a commit on `origin/main` (amended 2026-10-06, #2: the cohort's release standard, broker#22 / status#9) |
@@ -298,7 +307,7 @@ Observo adopted in #395/#407) so the later plane can ingest them unchanged.
 | Malformed digest, or `input_uri` the input store does not recognize | `invalid_input`, terminal (issuer does not re-fetch) | yes |
 | Input bytes gone, or the download fails its checksum (`DataCorruption`, amended 2026-09-30) | `input_unreadable`, terminal for the command (issuer re-fetches, capped) | yes |
 | Bytes hash ≠ `input_digest` | `input_digest_mismatch`, terminal | yes |
-| Extractor raises, including `MemoryError` under `RLIMIT_AS` | `extraction_error`, terminal | yes |
+| Extractor raises, including `MemoryError` under `RLIMIT_AS`, and a spec co-core refuses (`UnsupportedExtractionError` since 0.32.0, cannobserv#523: `regex`, `jsonpath`, an empty or invalid `xpath`, an unknown algorithm, `xpath` on HTML, `css` on XML / PDF / CSV), amended 2026-10-12 | `extraction_error`, terminal | yes |
 | Child timeout or crash | — | no; the 3rd attempt publishes `extraction_error`, terminal, and acks |
 | A non-transient exception escaping the handler (a bug, or an ack or dead-letter refused), amended 2026-09-30, 2026-10-02 and 2026-10-05 | at the cap, `extraction_error`, terminal, unless this entry's fact already went out (a fact published before a refused ack stands) | no; counted like a strike, and the 3rd attempt publishes, then dead-letters the entry with the exception as its reason. A dead-letter that does not land is retried alone, without running the command again (#28) |
 | GCS 5xx / 429 / timeout / auth; broker `NOPERM`; broker `OOM command not allowed`; broker `MISCONF` / `BUSY` / `MASTERDOWN` / `TRYAGAIN` / `CLUSTERDOWN` / `NOREPLICAS` (amended 2026-09-30) | — | no; the entry is reclaimed |
@@ -404,10 +413,19 @@ reclaim re-running (not re-publishing) the extraction.
   co-core. Since watcher#350 nothing on Watcher's side has to match. Bump it by
   hand only when Processor's own logic (config merging, dispatch) changes output
   in a way co-core's version cannot see.
-- **co-core `==0.19.7`**, the version Watcher's `uv.lock` resolved at the
-  cutover (Watcher's `pyproject.toml` allowed `>=0.19.6,<0.20`), so both sides
-  reported `"0.19.7+1"` from the first shadow command. Since D5's 2026-10-10
-  amendment, Watcher's lock no longer constrains this pin. Processor needs
+- **co-core `==0.32.0`** since processor#29 (2026-10-12), the catch-up jump from
+  0.19.7, the version Watcher's `uv.lock` resolved at the cutover (Watcher's
+  `pyproject.toml` allowed `>=0.19.6,<0.20`), so both sides reported `"0.19.7+1"`
+  from the first shadow command. Since D5's 2026-10-10 amendment, Watcher's lock
+  no longer constrains this pin.
+  - Across 0.19.7 → 0.32.0, the bus, the stores, `canonical_text`,
+    `spec_fingerprint` and the `content.process` / `content.derived` models are
+    unchanged in code (a `changes.py` docstring and `streams.py` comments aside).
+    The extract package gains `XmlExtractor` and the refusals (cannobserv#523),
+    and `resolve_dispatch_essence` maps `.xml` / `.rss` / `.atom` to the XML
+    essences: a contract change, coordinated on watcher#366. Processor never
+    re-resolves the essence, so either side moving first keeps such a URL behind
+    an ambiguous header on the HTML path, as before. Processor needs
   `GcsBlobStore` (0.19.3+) and the `content.process` types (0.19.4).
   - Between 0.19.4 and 0.19.7, `co_core.pure.extract` and `co_core_aio.bus` are
     byte-identical, and the `content.process` types did not change. 0.19.6 only
@@ -445,7 +463,7 @@ Status re-checked against each repo on 2026-10-05 (#23).
 | processor | Founding spec (this file, at the same path), `AGENTS.md`, #1 (from observo#629). | **Done.** |
 | broker | New issue: ACL user `processor` (Section 2); strip `observo`'s grants; probe watches `processor.process`; participants table and `docs/STREAMS.md`; `docs/NETWORK-PATHS.md` client cells from `co-processor`. | **Done:** broker#75, closed 2026-10-05. |
 | watcher | On #325 or a design-doc PR: Section 3's processor is Processor; output root `gs://co-gcs-processor`; the reader grant; the `WATCHER_EXTRACT_MODE` value `observo` (rename is Watcher's call); the Section 5 question below; the lockstep bump policy. | **Done:** watcher#325, closed 2026-10-03. |
-| cannobserv | Doc-only issue: `CHANGE_BUS.md` names Observo / `observo.process` as the processor. | **Resolved upstream:** cannobserv#503 (closed 2026-10-05) names the group `processor.process` (on `main`, unreleased; the pinned 0.19.7 still carries the old docstrings). No issue filed from here. The row named the wrong file. The stale text was co-core's, not `CHANGE_BUS.md`: `streams.py` (module docstring, `CONTENT_PROCESS` comment) and `test_streams.py`. |
+| cannobserv | Doc-only issue: `CHANGE_BUS.md` names Observo / `observo.process` as the processor. | **Resolved upstream:** cannobserv#503 (closed 2026-10-05) names the group `processor.process` (released in 0.24.3; the pin carries it since 0.32.0, processor#29). No issue filed from here. The row named the wrong file. The stale text was co-core's, not `CHANGE_BUS.md`: `streams.py` (module docstring, `CONTENT_PROCESS` comment) and `test_streams.py`. |
 | replicator | New issue amending #69's roles charter (closed): "Observo transforms" becomes Observo = stream transforms and interpretation, Processor = discrete transforms. | **Moot, no post.** The quoted "Observo transforms" is in no Replicator file. The committed charter (`docs/contracts/replicator-boundaries.md`, "The successor question left this repo") keeps Replicator out of processing, points to archiver#179 and names no home. "Leaning Observo" survives only in #69's closing comment, which points to archiver#179, so the archiver comment corrects the chain. |
 | archiver | Informational comment on #179: the processor is Processor. | **Done:** [archiver#179 comment](https://github.com/CannObserv/archiver/issues/179#issuecomment-6002156775), 2026-10-05. |
 | GCP / tailnet | Bucket, service account and grants (Section 2); the tailnet rule. Operator acts. | **Done.** GCP: #14; the tailnet rule 2026-09-29 ([DEPLOYMENT.md](../DEPLOYMENT.md) prerequisites). |
@@ -484,11 +502,20 @@ from `$` on an empty stream, ahead of Watcher's first command.
 
 TDD, red first.
 
-- **Pure core — golden-digest parity.** A corpus of HTML / PDF / CSV fixtures,
-  each with a spec and resolved `media_type`, asserting `output_digest` and
-  `empty`. Include: a one-page scanned PDF (one empty chunk → `empty`, not a
-  failure); an unknown essence (→ HTML); a spec whose `spec_fingerprint` raises
-  (→ `None`).
+- **Pure core — golden-digest parity.** A corpus of HTML / PDF / CSV / XML
+  fixtures, each with a spec and resolved `media_type`, asserting `output_digest`
+  and `empty`, or the refusal. Include: a one-page scanned PDF (one empty chunk →
+  `empty`, not a failure); an unknown essence (→ HTML); a spec whose
+  `spec_fingerprint` raises (→ `None`).
+  - **XML and refusals (amended 2026-10-12, processor#29).** Each XML essence:
+    an RSS feed (co-core's own trimmed copy of Tailscale's security bulletins,
+    whose digest co-core pins by hand), an Atom feed, a feed with no items
+    (`empty`), a generic document, and an `xpath`. A spec co-core refuses is
+    recorded by the generator as `{"refused": "UnsupportedExtractionError"}`;
+    the core must raise it, and through the child it comes back `raised`. One
+    refusal at each layer: `extraction_config_from_spec` (`regex`, `jsonpath`,
+    an empty `xpath`, an unknown algorithm) and each extractor (`xpath` on HTML
+    and CSV; `css` on XML, PDF and CSV; an invalid `xpath` on XML).
   - **The golden source (amended 2026-10-10, processor#47).** The v1 goldens
     were Watcher's: `_extract_and_fingerprint` at Watcher `a5d6f34`, on co-core
     0.19.7. watcher#350 deleted that code. `scripts/gen_parity_goldens.py` now
@@ -510,12 +537,12 @@ TDD, red first.
     `tests/fixtures/parity/real/` keeps the export verbatim and the raw blobs,
     copied before Replicator's 7-day TTL. Processor reproduces every recorded
     fingerprint and `spec_fingerprint`, 9/9, including two revisions from before
-    fetch commands existed and one recorded under `0.19.4+1`. PDF, CSV and XLSX
-    still rest on the synthetic corpus.
+    fetch commands existed and one recorded under `0.19.4+1`. PDF, CSV, XLSX and
+    XML still rest on the synthetic corpus.
   - Parity with Watcher's local path should be proven before shadow, not
     discovered in it.
 - **Pin test.** The lock's co-core equals the expected exact version and
-  `processor_version(LOCAL_GENERATION) == "0.19.7+1"` — a bump is a deliberate,
+  `processor_version(LOCAL_GENERATION) == "0.32.0+1"` — a bump is a deliberate,
   test-failing act.
 - **Shells — one test per Section 4 row.** Input/output stores: a local co-core
   store on a temp dir behind the same interface, plus fakes raising GCS 5xx /
@@ -587,7 +614,7 @@ writing-plans for v1 there. Implementation happens on `co-processor`.
 
 ---
 
-## Contract quick reference (co-core 0.19.4–0.19.7, unchanged across them)
+## Contract quick reference (co-core 0.19.4–0.32.0, unchanged across them but the refusal, added in 0.32.0)
 
 | Need | Name | Module |
 |---|---|---|
@@ -596,6 +623,7 @@ writing-plans for v1 there. Implementation happens on `co-processor`.
 | Command / facts | `ContentProcessCommand`, `ProcessingCompleteEmit`, `ProcessingFailedEmit`, `ProcessingFailureReason` | `co_core.pure.models.changes` |
 | Dispatch | `extractor_for_essence` | `co_core.pure.extract.dispatch` (needs the `extract` extra) |
 | Config | `extraction_config_from_spec` | `co_core.pure.extract.extraction_defaults` |
+| Refusal (0.32.0+) | `UnsupportedExtractionError` (a `ValueError`) | `co_core.pure.extract.errors` |
 | Essence overrides | `extraction_overrides_for_essence` | `co_core.pure.extract.media_type` |
 | Canonical bytes | `canonical_text`, `canonical_text_fingerprint`, `CANONICAL_TEXT_MEDIA_TYPE`, `processor_version` | `co_core.pure.extract.canonical` |
 | Spec identity | `spec_fingerprint`, `spec_schema_version` | `co_core.pure.extract.spec_fingerprint` |
@@ -627,7 +655,7 @@ echoed, reporting only.
    `ChangeRevision.processor_version` is never rewritten. `spec_fingerprint`
    gets the same treatment.
 2. ~~**co-core-aio:** does `AsyncBusConsumer` expose a delivery count or a
-   max-deliveries hook?~~ **Answered, no (0.19.4 through 0.19.7).** It offers
+   max-deliveries hook?~~ **Answered, no (0.19.4 through 0.32.0).** It offers
    primitives only: `ensure_group`, `read`, `ack`, `claim_stale` /
    `claim_stale_page`, and `dead_letter`. It has no delivery count, no hook
    and no run loop. The in-memory counter stays, and Processor owns its loop.
