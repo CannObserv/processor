@@ -417,7 +417,8 @@ reclaim re-running (not re-publishing) the extraction.
   0.19.7, the version Watcher's `uv.lock` resolved at the cutover (Watcher's
   `pyproject.toml` allowed `>=0.19.6,<0.20`), so both sides reported `"0.19.7+1"`
   from the first shadow command. Since D5's 2026-10-10 amendment, Watcher's lock
-  no longer constrains this pin.
+  no longer constrains this pin. Processor needs `GcsBlobStore` (0.19.3+) and the
+  `content.process` types (0.19.4).
   - Across 0.19.7 → 0.32.0, the bus, the stores, `canonical_text`,
     `spec_fingerprint` and the `content.process` / `content.derived` models are
     unchanged in code (a `changes.py` docstring and `streams.py` comments aside).
@@ -425,8 +426,7 @@ reclaim re-running (not re-publishing) the extraction.
     and `resolve_dispatch_essence` maps `.xml` / `.rss` / `.atom` to the XML
     essences: a contract change, coordinated on watcher#366. Processor never
     re-resolves the essence, so either side moving first keeps such a URL behind
-    an ambiguous header on the HTML path, as before. Processor needs
-  `GcsBlobStore` (0.19.3+) and the `content.process` types (0.19.4).
+    an ambiguous header on the HTML path, as before.
   - Between 0.19.4 and 0.19.7, `co_core.pure.extract` and `co_core_aio.bus` are
     byte-identical, and the `content.process` types did not change. 0.19.6 only
     added the `content.persist` pair.
