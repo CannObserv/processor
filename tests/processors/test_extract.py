@@ -98,7 +98,22 @@ def test_the_corpus_covers_the_refusals_and_the_xml_essences() -> None:
     assert {"text/xml", "application/xml", "application/rss+xml", "application/atom+xml"} <= (
         essences
     )
-    assert len(REFUSED) >= 10
+    # extraction_config_from_spec refuses these whatever the essence...
+    assert {
+        "refused_regex",
+        "refused_jsonpath",
+        "refused_empty_xpath",
+        "refused_unknown_algorithm",
+    } <= REFUSED
+    # ...and the dispatched extractor these. xpath on HTML moves at cannobserv#557.
+    assert {
+        "refused_xpath_on_html",
+        "refused_xpath_on_csv",
+        "refused_css_on_xml",
+        "refused_css_on_pdf",
+        "refused_css_on_csv",
+        "refused_invalid_xpath",
+    } <= REFUSED
 
 
 def test_the_feed_golden_is_co_cores_own_pin() -> None:
