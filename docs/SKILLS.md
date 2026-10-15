@@ -34,7 +34,7 @@ The first session in a fresh clone or worktree fails the hook with exit 127 (hoo
 
 ## Selection
 
-**gregoryfoster-skills (12):** `auditing-ci-cost` (CI since #12), `curating-context`, `enforcing-architecture` (`reviewing-architecture` delegates to it), `init-socraticode`, `managing-skills`, `orchestrating-issue-backlog`, `reviewing-architecture`, `reviewing-code-python-fastapi`, `shipping-work-python-fastapi`, `using-git-worktrees`, `using-mayfly-chat`, `writing-plans`.
+**gregoryfoster-skills (13):** `auditing-ci-cost` (CI since #12), `coordinating-epics` (#24 since #52), `curating-context`, `enforcing-architecture` (`reviewing-architecture` delegates to it), `init-socraticode`, `managing-skills`, `orchestrating-issue-backlog`, `reviewing-architecture`, `reviewing-code-python-fastapi`, `shipping-work-python-fastapi`, `using-git-worktrees`, `using-mayfly-chat`, `writing-plans`.
 
 **obra-superpowers (11 + override):** `dispatching-parallel-agents`, `executing-plans`, `finishing-a-development-branch`, `receiving-code-review`, `requesting-code-review`, `subagent-driven-development`, `systematic-debugging`, `test-driven-development`, `using-superpowers`, `verification-before-completion`, `writing-skills`; `brainstorming` as an override.
 
