@@ -8,10 +8,13 @@ handler decides; the consumer loop acts on the returned ``Disposition``:
 - ``leave_pending`` — infrastructure failed (``errors.is_transient``), the publish
   included: nothing published, the reclaim re-runs it. Uncapped. A non-transient
   publish failure escapes instead, and the consumer caps it: at the cap it
-  publishes ``publish_gave_up``'s terminal fact, then dead-letters (#17).
+  publishes ``publish_gave_up``'s terminal ``dead_lettered``, then dead-letters
+  (#17, #21).
 - ``strike`` — the child timed out or crashed, or something unexpected raised:
   nothing published, counted toward ``max_attempts``; on the last attempt the
-  handler publishes ``extraction_error`` instead and returns ``ack``.
+  handler publishes ``extraction_error`` instead and returns ``ack``. Not
+  ``dead_lettered``: a timeout or crash can't be told from a document that defeats
+  the parser (cannobserv#536's scope).
 
 A download that fails its checksum (``DataCorruption``) is ``input_unreadable``.
 
@@ -274,14 +277,15 @@ async def _read_input(command: ContentProcessCommand, deps: Deps, timer: _Timer)
 
 
 async def publish_gave_up(command: ContentProcessCommand, deps: Deps, detail: str) -> None:
-    """Publish a terminal ``extraction_error`` for a command about to be dead-lettered.
+    """Publish a terminal ``dead_lettered`` for a command about to be dead-lettered.
 
     Without a fact, Watcher waits on the command: its reaper re-issues only once a
     later command is answered, and its health reads the silence as Processor down
-    (#17, #20).
+    (#17, #20). ``dead_lettered`` (cannobserv#536, #21) says the fault is Processor's,
+    not the spec's or the bytes'.
     Raises whatever the publish raises; the consumer decides.
     """
-    fact = _failed(command, deps, "extraction_error", detail)
+    fact = _failed(command, deps, "dead_lettered", detail)
     await deps.publish(BusPublish(topic=CONTENT_DERIVED, fields=to_wire(fact)))
 
 
