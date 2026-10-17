@@ -415,12 +415,13 @@ async def test_a_publish_failure_record_names_the_stored_output(h: Harness) -> N
 # --- the consumer's cap (#17) -----------------------------------------------------------
 
 
-async def test_publish_gave_up_publishes_one_terminal_extraction_error(h: Harness) -> None:
+async def test_publish_gave_up_publishes_one_terminal_dead_lettered(h: Harness) -> None:
+    # The processor's fault, not the spec's: cannobserv#536's token, not extraction_error.
     command = h.message(store=False).payload
     await publish_gave_up(command, h.deps, "dead-lettered: gave up on attempt 3: " + "x" * 2000)
 
     fact = h.only_failure()
-    assert fact.reason == "extraction_error"
+    assert (fact.reason, fact.terminal) == ("dead_lettered", True)
     assert fact.occurred_at == NOW
     assert fact.detail.startswith("dead-lettered: gave up on attempt 3: x")
     assert len(fact.detail) == 1000  # the same cap as every failure fact

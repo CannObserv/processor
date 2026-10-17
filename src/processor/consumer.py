@@ -14,9 +14,9 @@ max-deliveries hook, no loop (spec Open Question 2) — so the loop is here:
   non-transient refusal of an ack or dead-letter) counts like a strike; at
   ``max_attempts`` the entry is dead-lettered with the exception as its reason.
   Transient escapes (broker, GCS) stay uncapped. Before that dead-letter, a
-  decodable command whose fact never went out gets a terminal ``extraction_error``
-  (#17), so Watcher closes it instead of waiting; a refused one is logged and the
-  entry dead-lettered anyway.
+  decodable command whose fact never went out gets a terminal ``dead_lettered``
+  (#17, #21), so Watcher closes it instead of waiting; a refused one is logged and
+  the entry dead-lettered anyway.
 - A strike count clears only once the entry's ack or dead-letter lands, so a failed
   one on the last attempt does not restart the count. A give-up at the cap that does
   not finish (the failure fact or the dead-letter refused) is retried alone (#28):

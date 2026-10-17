@@ -1,5 +1,5 @@
 {
-  "co_core": "0.32.0",
+  "co_core": "0.37.0",
   "generated_by": "scripts/gen_parity_goldens.py (co-core's pure extract API, direct; #47)",
   "goldens": {
     "csv": {
