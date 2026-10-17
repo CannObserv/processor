@@ -245,6 +245,8 @@ async def test_a_foreign_event_is_dead_lettered(admin, bus, stores) -> None:
 
 
 async def test_three_strikes_then_a_terminal_failure(admin, bus, stores) -> None:
+    # The handler's own cap stays extraction_error: a timeout can't be told from a
+    # document that defeats the parser. dead_lettered is the DLQ path's (#21).
     async def timeout(*_a, **_k) -> ChildResult:
         return ChildResult(kind="timeout", detail="no result after 60s")
 
@@ -463,7 +465,7 @@ async def test_an_escaping_exception_strikes_then_dead_letters(
     assert (await group_info(admin))["pending"] == 0
     (fact,) = await facts(admin)
     assert isinstance(fact, ProcessingFailedEvent)
-    assert (fact.command_id, fact.reason, fact.terminal) == ("cmd-1", "extraction_error", True)
+    assert (fact.command_id, fact.reason, fact.terminal) == ("cmd-1", "dead_lettered", True)
     assert fact.detail.startswith("dead-lettered: gave up on attempt 3: KeyError")
 
 
@@ -537,7 +539,7 @@ async def test_a_transiently_refused_failure_fact_leaves_the_entry_pending(
     await consumer.step()  # still at the cap
 
     assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 1
-    assert [f.reason for f in await facts(admin)] == ["extraction_error"]
+    assert [f.reason for f in await facts(admin)] == ["dead_lettered"]
 
 
 async def test_a_failure_fact_is_published_once_when_the_dead_letter_is_retried(
@@ -567,7 +569,7 @@ async def test_a_failure_fact_is_published_once_when_the_dead_letter_is_retried(
     await consumer.step()
 
     assert await admin.xlen(dlq_name(CONTENT_PROCESS)) == 1
-    assert [f.reason for f in await facts(admin)] == ["extraction_error"]
+    assert [f.reason for f in await facts(admin)] == ["dead_lettered"]
 
 
 async def test_a_refused_ack_at_the_cap_adds_no_failure_fact(
@@ -705,7 +707,7 @@ async def test_a_failed_dead_letter_at_the_cap_keeps_the_count(
     assert meta.reason.startswith("gave up on attempt 3: KeyError")
     assert (await group_info(admin))["pending"] == 0
     (fact,) = await facts(admin)
-    assert fact.reason == "extraction_error"
+    assert fact.reason == "dead_lettered"
     assert fact.detail == f"dead-lettered: {meta.reason}"  # the DLQ and the fact agree
 
 
@@ -767,7 +769,7 @@ async def test_a_dead_letter_refused_every_time_never_reruns_the_command(
 
     assert calls == [1, 2, 3]
     assert (await group_info(admin))["pending"] == 1
-    assert [f.reason for f in await facts(admin)] == ["extraction_error"]
+    assert [f.reason for f in await facts(admin)] == ["dead_lettered"]
     dead = [r for r in caplog.records if r.getMessage() == "dead-lettering"]
     assert [(r.levelno, r.attempt, r.handle_skipped) for r in dead] == [
         (logging.ERROR, 3, False),
