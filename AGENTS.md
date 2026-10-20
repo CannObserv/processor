@@ -8,7 +8,7 @@ The cohort's **headless discrete-transform service**. Consumes `content.process`
 
 Design of record: [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) (the spec). Tracking issue: #1. **Read the spec before changing behaviour**; it is self-contained and names every co-core symbol used.
 
-**Owns:** transforms (co-core's HTML/PDF/CSV/XML extractors now; org adapters later), `gs://co-gcs-processor`, draining `content.process.dlq`. **Does not own:** spec authoring or interpretation (issuers), fetching (Replicator), change detection/diffing (Watcher), the registry (Archiver).
+**Owns:** transforms (co-core's HTML/PDF/CSV/XML/JSON extractors now; org adapters later), `gs://co-gcs-processor`, draining `content.process.dlq`. **Does not own:** spec authoring or interpretation (issuers), fetching (Replicator), change detection/diffing (Watcher), the registry (Archiver).
 
 ## Development Methodology
 
@@ -18,7 +18,7 @@ TDD required. Red → Green → Refactor. No production code without a failing t
 
 Python 3.12, uv, hatchling src layout, pytest, ruff.
 
-**co-core is pinned exactly (`==0.37.0`); Processor owns the pin** (spec D5, §5; since watcher#350 nothing else extracts). `processor_version` = `"<co-core version>+<LOCAL_GENERATION>"`; a pin test makes every bump a deliberate, test-failing act. Never let a dependency bot or `uv lock --upgrade` move co-core. A bump gives Watcher notice (it re-baselines on `processor_version`). It is coordinated with Watcher only if it changes the contract: the `content.process` / `content.derived` models, `canonical_text` semantics, or `resolve_dispatch_essence`. Procedure: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#bumping-co-core).
+**co-core is pinned exactly (`==0.38.0`); Processor owns the pin** (spec D5, §5; since watcher#350 nothing else extracts). `processor_version` = `"<co-core version>+<LOCAL_GENERATION>"`; a pin test makes every bump a deliberate, test-failing act. Never let a dependency bot or `uv lock --upgrade` move co-core. A bump gives Watcher notice (it re-baselines on `processor_version`). It is coordinated with Watcher only if it changes the contract: the `content.process` / `content.derived` models, `canonical_text` semantics, or `resolve_dispatch_essence`. Procedure: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#bumping-co-core).
 
 **Cannobserv wheelhouse.** `co-core`, `co-core-aio`, `co-core-sync` resolve from `./.wheelhouse` (git-ignored) via `[tool.uv] find-links`. Populate it before any `uv` command:
 
