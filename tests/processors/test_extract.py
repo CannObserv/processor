@@ -17,6 +17,7 @@ from importlib.metadata import version
 from pathlib import Path
 
 import pytest
+from co_core.pure.extract.dispatch import EXTRACTOR_BY_ESSENCE
 from co_core.pure.extract.errors import UnsupportedExtractionError
 
 from processor.processors import TRANSFORMS
@@ -92,28 +93,54 @@ def test_parity_with_refusals(case: str) -> None:
         _run(spec)
 
 
-def test_the_corpus_covers_the_refusals_and_the_xml_essences() -> None:
-    # The #523 surface: every XML essence dispatched, and a spec refused at each layer.
+def test_the_corpus_covers_the_refusals_and_the_dispatched_essences() -> None:
+    # The #523 and cannobserv#354 surface: every XML and JSON essence dispatched, and a
+    # spec refused at each layer.
     essences = {c["media_type"] for c in EXTRACTED}
     assert {"text/xml", "application/xml", "application/rss+xml", "application/atom+xml"} <= (
         essences
     )
+    assert {"application/json", "application/vnd.api+json"} <= essences
     # extraction_config_from_spec refuses these whatever the essence...
     assert {
         "refused_regex",
-        "refused_jsonpath",
         "refused_empty_xpath",
+        "refused_empty_jsonpath",
         "refused_unknown_algorithm",
     } <= REFUSED
-    # ...and the dispatched extractor these. xpath on HTML moves at cannobserv#557.
+    # ...and the dispatched extractor these. An unlisted +json essence goes to HTML.
     assert {
-        "refused_xpath_on_html",
         "refused_xpath_on_csv",
         "refused_css_on_xml",
         "refused_css_on_pdf",
         "refused_css_on_csv",
+        "refused_css_on_json",
         "refused_invalid_xpath",
+        "refused_jsonpath_on_html",
+        "refused_jsonpath_on_unlisted_plus_json",
     } <= REFUSED
+    # Refused until 0.38.0: jsonpath (cannobserv#354) and xpath on HTML (cannobserv#557).
+    assert {"json_jsonpath", "json_jsonpath_titles", "html_xpath"}.isdisjoint(REFUSED)
+
+
+def test_the_fallback_case_uses_an_essence_co_core_does_not_map() -> None:
+    # application/json was this case's "unknown" essence until cannobserv#354 mapped it.
+    (case,) = [c for c in CASES if c["id"] == "unknown_essence_is_html"]
+    assert case["media_type"] not in EXTRACTOR_BY_ESSENCE
+
+
+def test_jsonpath_narrows_to_the_selected_nodes() -> None:
+    # #37 Ask 2: one chunk per selected node, not the whole document.
+    (case,) = [c for c in CASES if c["id"] == "json_jsonpath_titles"]
+    assert _run(case).text == b"Agenda item one\nItem two"
+
+
+def test_ignore_selectors_removes_the_matched_elements() -> None:
+    # cannobserv#570: the sidebar goes, the rest of the page stays.
+    (case,) = [c for c in CASES if c["id"] == "html_ignore_selectors"]
+    text = _run(case).text
+    assert b"Sidebar text" not in text
+    assert b"Work session on cannabis retail licensing" in text
 
 
 def test_the_feed_golden_is_co_cores_own_pin() -> None:
@@ -135,6 +162,24 @@ def test_extractor_errors_propagate() -> None:
     # The core does not classify; the child reports a raise as extraction_error.
     with pytest.raises(Exception):
         extract(b"this is not a pdf", "application/pdf", {"extraction": {}})
+
+
+# Bodies JsonExtractor can't extract: a ValueError, the PDF and XML parse failures' shape.
+UNEXTRACTABLE_JSON = {
+    "nan": b'{"a": NaN}',
+    "infinity": b'{"a": Infinity}',
+    "float_overflow": b'{"a": 1e400}',
+    "too_deep": b"[" * 100_000 + b"]" * 100_000,
+    "unpaired_surrogate": b'["\\ud800"]',
+    "not_json": b"<html>not json</html>",
+}
+
+
+@pytest.mark.parametrize("body", UNEXTRACTABLE_JSON.values(), ids=UNEXTRACTABLE_JSON)
+def test_a_json_parse_failure_is_a_value_error_not_a_refusal(body: bytes) -> None:
+    with pytest.raises(ValueError) as raised:
+        extract(body, "application/json", {"extraction": {"algorithm": "full_page"}})
+    assert not isinstance(raised.value, UnsupportedExtractionError)
 
 
 def _extract_or_refuse(raw: bytes, case: dict) -> None:

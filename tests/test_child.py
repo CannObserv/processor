@@ -194,6 +194,32 @@ async def test_the_whole_parity_corpus_is_identical_through_the_child() -> None:
         assert result.value == extract(*args), job_id
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"this is not a pdf",
+        b'{"a": NaN}',
+        b'{"a": 1e400}',
+        b"[" * 100_000 + b"]" * 100_000,
+        b'["\\ud800"]',
+    ],
+    ids=["pdf", "json_nan", "json_float_overflow", "json_too_deep", "json_unpaired_surrogate"],
+)
+async def test_a_parse_failure_comes_back_raised(body: bytes) -> None:
+    # A JSON body JsonExtractor can't extract takes a PDF parse failure's path: raised,
+    # a ValueError, which the handler publishes as extraction_error, terminal (#37).
+    essence = "application/pdf" if body.startswith(b"this") else "application/json"
+    result = await run_in_child(
+        transform_target(extract),
+        (body, essence, {"extraction": {"algorithm": "full_page"}}),
+        timeout_s=60,
+        rlimit_as_bytes=3 * GiB,
+        containment=CONTAINMENT,
+    )
+    assert result.kind == "raised", result.detail
+    assert result.detail.startswith("ValueError: "), result.detail
+
+
 async def test_a_compromised_child_cannot_run_code_in_the_parent(tmp_path: Path) -> None:
     marker = tmp_path / "pwned"
     result = await _run("evil", str(marker))

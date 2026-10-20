@@ -15,7 +15,7 @@ import pytest
 
 from processor.processors.extract import LOCAL_GENERATION, PROCESSOR_VERSION
 
-EXPECTED = "0.37.0"
+EXPECTED = "0.38.0"
 ROOT = Path(__file__).resolve().parent.parent
 PINNED = ("co-core", "co-core-aio", "co-core-sync")
 

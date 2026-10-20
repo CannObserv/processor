@@ -127,17 +127,17 @@ def test_a_spec_co_core_refuses_is_recorded_as_refused(corpus: Path) -> None:
 
 
 def test_a_case_that_starts_or_stops_being_refused_is_listed(corpus: Path) -> None:
-    # The bump note's view of e.g. cannobserv#557, when HTML starts honouring xpath.
+    # The bump note's view of e.g. cannobserv#557, when HTML started honouring xpath (#37).
     doc = json.loads((corpus / "goldens.json").read_text())
-    was_refused = doc["goldens"]["refused_xpath_on_html"]
+    was_refused = doc["goldens"]["refused_css_on_xml"]
     was_extracted = doc["goldens"]["xml_xpath"]
-    doc["goldens"]["refused_xpath_on_html"] = was_extracted
+    doc["goldens"]["refused_css_on_xml"] = was_extracted
     doc["goldens"]["xml_xpath"] = was_refused
     (corpus / "goldens.json").write_text(json.dumps(doc))
 
     moved = gen.main(corpus)
 
-    assert "refused_xpath_on_html refused: None -> UnsupportedExtractionError" in moved
+    assert "refused_css_on_xml refused: None -> UnsupportedExtractionError" in moved
     assert "xml_xpath refused: UnsupportedExtractionError -> None" in moved
     assert (
         f"xml_xpath content_fingerprint: None -> {was_extracted['content_fingerprint']}"
