@@ -8,7 +8,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-tag="${1:-v0.37.0}"
+tag="${1:-v0.38.0}"
 : "${GH_TOKEN_CANNOBSERV:?set GH_TOKEN_CANNOBSERV (read access to CannObserv/cannobserv)}"
 
 work="$(mktemp -d)"

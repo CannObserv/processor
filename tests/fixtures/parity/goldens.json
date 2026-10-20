@@ -1,5 +1,5 @@
 {
-  "co_core": "0.37.0",
+  "co_core": "0.38.0",
   "generated_by": "scripts/gen_parity_goldens.py (co-core's pure extract API, direct; #47)",
   "goldens": {
     "csv": {
@@ -50,9 +50,45 @@
       "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
       "spec_schema_version": 1
     },
+    "html_ignore_selectors": {
+      "content_fingerprint": "sha256:54fb39f5ee423006094f811bc0a36e0345187dfbbdb9935bd0425d954d6a77b6",
+      "content_size_bytes": 142,
+      "spec_fingerprint": "spec1:sha256:7d23a355be19080eba7e55104ec097fd2573a49f12db3fa5f38f42193421a5c3",
+      "spec_schema_version": 1
+    },
     "html_latin1": {
       "content_fingerprint": "sha256:449e97f5b3d7bb19f30da0d29126d21417d3b7fe722ffb7556ec3d23fceb72ee",
       "content_size_bytes": 35,
+      "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
+      "spec_schema_version": 1
+    },
+    "html_xpath": {
+      "content_fingerprint": "sha256:c331fdd4416460510d486e08aa51245cf42b53482beee1e70f2f369dff81962f",
+      "content_size_bytes": 90,
+      "spec_fingerprint": "spec1:sha256:88f08919e886596ef061e38187464eb95d52a0c468f3cfc3a3580a5494daa022",
+      "spec_schema_version": 1
+    },
+    "json_full_page": {
+      "content_fingerprint": "sha256:d1da45850448ef0dc317a67de8685e7a6e505db6fe94a1cd553786a888f74eac",
+      "content_size_bytes": 74,
+      "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
+      "spec_schema_version": 1
+    },
+    "json_jsonpath": {
+      "content_fingerprint": "sha256:d6be94c49f4d0c9c4084abadf66e4974c89e591c729aa792438ee51d47dee587",
+      "content_size_bytes": 64,
+      "spec_fingerprint": "spec1:sha256:e3a8d6e4efe2e815eef50bbedb7d13591a6b0594f90e374eaa6e84920ab75141",
+      "spec_schema_version": 1
+    },
+    "json_jsonpath_titles": {
+      "content_fingerprint": "sha256:7ac461583fec44c91e6e12ab3b76fd84c9c962c7fe4ab7fd8fce852ff70caa0c",
+      "content_size_bytes": 24,
+      "spec_fingerprint": "spec1:sha256:d94d5bbb60fb07feaf139a9201523c7be96079adb14afe6ca53c0d43b8524103",
+      "spec_schema_version": 1
+    },
+    "json_vnd_api": {
+      "content_fingerprint": "sha256:d1da45850448ef0dc317a67de8685e7a6e505db6fe94a1cd553786a888f74eac",
+      "content_size_bytes": 74,
       "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
       "spec_schema_version": 1
     },
@@ -77,10 +113,16 @@
     "refused_css_on_csv": {
       "refused": "UnsupportedExtractionError"
     },
+    "refused_css_on_json": {
+      "refused": "UnsupportedExtractionError"
+    },
     "refused_css_on_pdf": {
       "refused": "UnsupportedExtractionError"
     },
     "refused_css_on_xml": {
+      "refused": "UnsupportedExtractionError"
+    },
+    "refused_empty_jsonpath": {
       "refused": "UnsupportedExtractionError"
     },
     "refused_empty_xpath": {
@@ -89,7 +131,10 @@
     "refused_invalid_xpath": {
       "refused": "UnsupportedExtractionError"
     },
-    "refused_jsonpath": {
+    "refused_jsonpath_on_html": {
+      "refused": "UnsupportedExtractionError"
+    },
+    "refused_jsonpath_on_unlisted_plus_json": {
       "refused": "UnsupportedExtractionError"
     },
     "refused_regex": {
@@ -99,9 +144,6 @@
       "refused": "UnsupportedExtractionError"
     },
     "refused_xpath_on_csv": {
-      "refused": "UnsupportedExtractionError"
-    },
-    "refused_xpath_on_html": {
       "refused": "UnsupportedExtractionError"
     },
     "spec_fingerprint_raises": {

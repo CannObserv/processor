@@ -268,14 +268,14 @@ wheels = [
 
 [[package]]
 name = "co-core"
-version = "0.37.0"
+version = "0.38.0"
 source = { registry = ".wheelhouse" }
 dependencies = [
     { name = "dateparser" },
     { name = "pydantic" },
 ]
 wheels = [
-    { path = "co_core-0.37.0-py3-none-any.whl" },
+    { path = "co_core-0.38.0-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
@@ -285,18 +285,20 @@ extract = [
     { name = "lxml" },
     { name = "openpyxl" },
     { name = "pypdf" },
+    { name = "python-jsonpath" },
+    { name = "soupsieve" },
 ]
 
 [[package]]
 name = "co-core-aio"
-version = "0.37.0"
+version = "0.38.0"
 source = { registry = ".wheelhouse" }
 dependencies = [
     { name = "co-core" },
     { name = "httpx" },
 ]
 wheels = [
-    { path = "co_core_aio-0.37.0-py3-none-any.whl" },
+    { path = "co_core_aio-0.38.0-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
@@ -306,7 +308,7 @@ bus = [
 
 [[package]]
 name = "co-core-sync"
-version = "0.37.0"
+version = "0.38.0"
 source = { registry = ".wheelhouse" }
 dependencies = [
     { name = "co-core" },
@@ -314,7 +316,7 @@ dependencies = [
     { name = "urllib3" },
 ]
 wheels = [
-    { path = "co_core_sync-0.37.0-py3-none-any.whl" },
+    { path = "co_core_sync-0.38.0-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
@@ -867,9 +869,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "co-core", extras = ["extract"], specifier = "==0.37.0" },
-    { name = "co-core-aio", extras = ["bus"], specifier = "==0.37.0" },
-    { name = "co-core-sync", extras = ["gcs"], specifier = "==0.37.0" },
+    { name = "co-core", extras = ["extract"], specifier = "==0.38.0" },
+    { name = "co-core-aio", extras = ["bus"], specifier = "==0.38.0" },
+    { name = "co-core-sync", extras = ["gcs"], specifier = "==0.38.0" },
     { name = "google-api-core", specifier = ">=2.27,<3" },
     { name = "google-auth", specifier = ">=2,<3" },
     { name = "google-cloud-storage", specifier = ">=3,<4" },
@@ -1131,6 +1133,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6a/53/ed9d74092561d4b01a2ef1349d52cdbc135e526c245f366b089cfca6de49/python_dotenv-1.2.3.tar.gz", hash = "sha256:a20a594dabeaa385725aa239d5244871c143ecb356add8a20fcf23773a6c3a35", size = 58945, upload-time = "2026-08-16T16:54:54.067Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0d/17/c5c6b53ddc18f297992099b3d9ec16c855c0ccc83263a21fe4d1c625ec6c/python_dotenv-1.2.3-py3-none-any.whl", hash = "sha256:904552145e8bfed22162c09dab1c2b9b54fefa7b23ba780f4f26ca0316b0f0d9", size = 22780, upload-time = "2026-08-16T16:54:52.473Z" },
+]
+
+[[package]]
+name = "python-jsonpath"
+version = "2.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/10/6c/9fc15bfc9d311ba7d828e58daa7864cc5e92aff165fe5e58d9d24928627f/python_jsonpath-2.2.2.tar.gz", hash = "sha256:bb1a66e82b8c586fcdd53a1df46df92e1cd5e4164aa57f315b03afa76dd14947", size = 51619, upload-time = "2026-10-17T08:41:38.363Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/97/42/9f23be33ed490b89a4acf2e87dcc319f52f8a97239b23fb6409c90199e07/python_jsonpath-2.2.2-py3-none-any.whl", hash = "sha256:b088251c7b63ee8c8ac14e54cf2eefbfe0cf5f59f0d26609a96bacb444ec40ac", size = 65738, upload-time = "2026-10-17T08:41:36.832Z" },
 ]
 
 [[package]]
