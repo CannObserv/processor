@@ -195,20 +195,19 @@ async def test_the_whole_parity_corpus_is_identical_through_the_child() -> None:
 
 
 @pytest.mark.parametrize(
-    "body",
+    ("essence", "body"),
     [
-        b"this is not a pdf",
-        b'{"a": NaN}',
-        b'{"a": 1e400}',
-        b"[" * 100_000 + b"]" * 100_000,
-        b'["\\ud800"]',
+        ("application/pdf", b"this is not a pdf"),
+        ("application/json", b'{"a": NaN}'),
+        ("application/json", b'{"a": 1e400}'),
+        ("application/json", b"[" * 100_000 + b"]" * 100_000),
+        ("application/json", b'["\\ud800"]'),
     ],
     ids=["pdf", "json_nan", "json_float_overflow", "json_too_deep", "json_unpaired_surrogate"],
 )
-async def test_a_parse_failure_comes_back_raised(body: bytes) -> None:
+async def test_a_parse_failure_comes_back_raised(essence: str, body: bytes) -> None:
     # A JSON body JsonExtractor can't extract takes a PDF parse failure's path: raised,
     # a ValueError, which the handler publishes as extraction_error, terminal (#37).
-    essence = "application/pdf" if body.startswith(b"this") else "application/json"
     result = await run_in_child(
         transform_target(extract),
         (body, essence, {"extraction": {"algorithm": "full_page"}}),

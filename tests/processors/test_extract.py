@@ -182,6 +182,16 @@ def test_a_json_parse_failure_is_a_value_error_not_a_refusal(body: bytes) -> Non
     assert not isinstance(raised.value, UnsupportedExtractionError)
 
 
+def test_a_descendant_query_past_the_depth_limit_is_a_value_error() -> None:
+    # python-jsonpath stops ``..`` at 100 levels; co-core turns its RecursionError into
+    # a ValueError, so it is an extraction_error, never a crash.
+    body = b'{"a":' * 150 + b"1" + b"}" * 150
+    spec = {"extraction": {"algorithm": "jsonpath", "selector": "$..a"}}
+    with pytest.raises(ValueError) as raised:
+        extract(body, "application/json", spec)
+    assert not isinstance(raised.value, UnsupportedExtractionError)
+
+
 def _extract_or_refuse(raw: bytes, case: dict) -> None:
     try:
         extract(raw, case["media_type"], case["source_spec"])
