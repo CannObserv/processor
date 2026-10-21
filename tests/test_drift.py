@@ -169,6 +169,15 @@ class TestVerdict:
             "body": "b",
         }
 
+    @pytest.mark.parametrize("kind", ["lag", "off_main", "unstamped", "test"])
+    def test_every_alert_s_fault_is_its_kind(self, kind):
+        """The one value co-status compares: a change of fault reports at once (status#28)."""
+        assert Verdict(kind, "b", LIVE).metadata() == {"fault": kind}
+
+    @pytest.mark.parametrize("kind", ["ok", "silent"])
+    def test_an_ok_carries_no_metadata(self, kind):
+        assert Verdict(kind, "b", LIVE).metadata() is None
+
 
 class TestFirstLook:
     def test_unstamped_alerts(self):
@@ -611,6 +620,7 @@ class TestTheCommand:
         assert checkin["variables"]["live"] == LIVE
         assert checkin["variables"]["main"] == sha(1)[:12]
         assert "main's CI: success — scripts/deploy.sh" in checkin["variables"]["body"]
+        assert checkin["metadata"] == {"fault": "lag"}
         record = outcome(capsys)
         assert record["level"] == "WARNING"
         assert (record["build"], record["kind"], record["checkin"]) == (LIVE, "lag", 202)
@@ -621,6 +631,7 @@ class TestTheCommand:
         (checkin,) = world.checkins()
         assert checkin["status"] == "ok"
         assert checkin["variables"]["kind"] == "ok"
+        assert "metadata" not in checkin
         assert outcome(capsys)["level"] == "INFO"
 
     def test_a_runtime_lag_within_the_grace_is_ok(self, world):
@@ -723,4 +734,5 @@ class TestTheCommand:
         assert checkin["status"] == "alert"
         assert checkin["variables"]["kind"] == "test"
         assert set(checkin["variables"]) == {"kind", "live", "main", "body"}
+        assert checkin["metadata"] == {"fault": "test"}
         assert outcome(capsys)["kind"] == "test"

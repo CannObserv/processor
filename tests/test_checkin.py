@@ -1,8 +1,8 @@
 """``processor.checkin``: one check-in to a Status monitor (#35), against a local stub.
 
 Status's contract (CannObserv/status spec D6, notifier's unchanged):
-``POST /api/v1/monitors/{id}/checkin`` with ``{"status", "variables"}`` and an
-``X-API-Key``, answered 202.
+``POST /api/v1/monitors/{id}/checkin`` with ``{"status", "variables"}``, and
+``metadata`` only when given (status#28), and an ``X-API-Key``, answered 202.
 """
 
 import json
@@ -23,6 +23,27 @@ def test_a_check_in_posts_status_and_variables_with_the_key_as_a_header(http_stu
     assert json.loads(request["body"]) == {"status": "alert", "variables": {"kind": "lag"}}
     assert request["headers"]["X-API-Key"] == KEY
     assert request["headers"]["Content-Type"] == "application/json"
+
+
+def test_metadata_given_is_sent_beside_status_and_variables(http_stub):
+    """co-status compares ``metadata.fault``: a change of it reports at once (status#28)."""
+    http_stub.route("POST", PATH, 202)
+    post_checkin(http_stub.url, MONITOR, KEY, "alert", {"kind": "lag"}, metadata={"fault": "lag"})
+    (request,) = http_stub.requests
+    assert json.loads(request["body"]) == {
+        "status": "alert",
+        "variables": {"kind": "lag"},
+        "metadata": {"fault": "lag"},
+    }
+
+
+@pytest.mark.parametrize("metadata", [None, {}], ids=["none", "empty"])
+def test_no_metadata_is_no_key_at_all(http_stub, metadata):
+    """Absent, never ``null`` or ``{}``: the siblings' contract on an ``ok`` (status#51)."""
+    http_stub.route("POST", PATH, 202)
+    post_checkin(http_stub.url, MONITOR, KEY, "ok", {}, metadata=metadata)
+    (request,) = http_stub.requests
+    assert json.loads(request["body"]) == {"status": "ok", "variables": {}}
 
 
 def test_a_trailing_slash_on_the_base_url_is_harmless(http_stub):
