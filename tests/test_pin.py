@@ -91,6 +91,15 @@ def test_processor_version_is_co_core_plus_generation() -> None:
         ("# resolve_dispatch_essence is the issuer's", False),
         ("from co_core.pure.extract.dispatch import extractor_for_essence", False),
     ],
+    ids=[
+        "from-import",
+        "from-import-as",
+        "attribute",
+        "name",
+        "docstring",
+        "comment",
+        "dispatch-call",
+    ],
 )
 def test_the_guard_catches_code_not_text(source: str, caught: bool) -> None:
     assert bool(_resolver_uses(source)) is caught
