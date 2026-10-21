@@ -525,8 +525,9 @@ reclaim re-running (not re-publishing) the extraction.
   old extractor on an old Processor, and the new one on a new Processor. Such a
   bump is **notice**: it carries that reasoning and the moved digests, which
   already show any dispatch change for an essence Watcher sends today. It
-  becomes coordination again only if Processor starts resolving essences
-  itself, and `tests/test_pin.py` fails first if it does.
+  becomes coordination again only if Processor starts calling co-core's
+  resolvers itself, and `tests/test_pin.py` fails if it does. (Resolving any
+  other way is Section 3's to forbid, and a co-core bump wouldn't move it.)
 - Until watcher#350 (2026-10-10) both sides extracted, so the pin was in
   lockstep with Watcher's, and both repos moved together or neither did.
 

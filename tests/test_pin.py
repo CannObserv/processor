@@ -6,8 +6,9 @@ and ``scripts/build_wheelhouse.sh``'s default tag, with the goldens regenerated
 co-core-direct and every moved digest in the bump note.
 
 Whether a bump is notice or coordination turns on the contract (§5). Essence
-resolution is outside it only because Processor never resolves an essence itself, and
-a test holds that premise (processor#57).
+resolution is outside it only because Processor never calls co-core's resolvers
+(``resolve_dispatch_essence``, ``extension_media_type``), and a test holds that
+premise (processor#57).
 """
 
 import ast
