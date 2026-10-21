@@ -257,6 +257,7 @@ A stop mid-reclaim finishes the command in hand and leaves the rest pending. A c
 | unstamped: the release has no `REVISION` | `alert` (`unstamped`) | `live` names something that isn't a finished release: deploy |
 | GitHub can't answer: a rate limit, a 5xx, a timeout, a wrong-shaped answer | none; the run exits 1 | nothing. The monitor's grace absorbs one missed run |
 
+- **Each `alert` names its kind as `metadata.fault`** (#58; status#28, the contract of `co-archiver-drift` and `co-broker-drift`); an `ok` sends no `metadata`. Status groups a run of alerts into one fault by it, so a change of kind (`lag` → `off_main`, say) reports at once, not at the next daily reminder.
 - **What runs:** `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml`, `uv.lock`. A rename counts by either name. Docs, tests, CI, skills and the other scripts never count, however old.
 - **The check is itself runtime:** it lives in `src/` and its units in `deploy/`. A change to it needs a deploy, and lags like any other.
 - **The clock** starts at the push, from its CI run's `created_at`, never the commit date. Within the grace, the body names the oldest push since live, which may be docs only.
@@ -283,7 +284,7 @@ The level is INFO for `ok`, WARNING for an alert or a silent GitHub, and ERROR w
 
 **Silence a lag you mean to keep.** It alerts hourly until deployed. `sudo systemctl stop processor-drift.timer` stops the alerts, and the monitor then goes `missing`, which is honest. `start` resumes them. A deploy never re-enables a timer it installed before, so `disable --now` keeps it stopped across reboots too.
 
-**A deliberate alert** proves the channels end to end. It sends `kind: test`, and asks GitHub nothing:
+**A deliberate alert** proves the channels end to end. It sends `kind: test`, and asks GitHub nothing. Its fault is `test`, so sent while a real fault is open it reports at once, as a fault of its own; the next hourly run's alert, back to the real kind, reports at once too:
 
 ```bash
 sudo systemd-run --quiet --pipe --wait --collect -p User=processor -p Group=processor \
