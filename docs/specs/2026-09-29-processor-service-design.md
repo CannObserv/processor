@@ -89,6 +89,14 @@ on `co-processor`.
 - The corpus covers the JSON essences, `jsonpath` narrowing, and the new
   refusals (Section 7).
 
+**Amended 2026-10-21 (the bump rule, processor#57):**
+- Essence resolution leaves the contract (D5, Section 5). Processor never
+  calls `resolve_dispatch_essence` or `extension_media_type`; the issuer
+  resolves on its own pin. A change to them is notice, with the either-order
+  reasoning and the moved digests, not coordination. A test holds the premise.
+- So #29's coordination on watcher#366 was more than the rule needed, and #37's
+  notice on watcher#368 was what it needed. The entries above stand as written.
+
 ---
 
 ## Why a new service
@@ -131,7 +139,7 @@ state and UI it should not have).
 | D2 | **Headless and stateless in v1**: no UI, no database. Idempotency is the write-if-absent store; correlation and dedupe are the issuer's (by `command_id`). |
 | D3 | **Own identities**: broker ACL user, GCS service account, bucket, tailnet tag. Observo's broker#62 `observo` user is stripped. |
 | D4 | **Own bucket** `gs://co-gcs-processor`, derived outputs only, so Watcher's read grant is a plain bucket-level `objectViewer`. |
-| D5 | **co-core pinned exactly; Processor owns the pin** (0.38.0 today, processor#37). Bumps are deliberate (Section 5). Processor coordinates with Watcher only when a bump changes the contract: the `content.process` / `content.derived` models, `canonical_text` semantics, or `resolve_dispatch_essence`. It **gives Watcher notice whenever `processor_version` moves**, because Watcher re-baselines on it. Watcher still pins co-core for contracts and the bus (`==0.19.7` on 2026-10-10), and that pin no longer has to equal Processor's. *Amended 2026-10-10 (processor#47, after watcher#350). Until then: matched to Watcher, in lockstep, since both sides extracted during shadow. Watcher agreed to that on 2026-10-02 (watcher#325), and neither side deployed a bump until the parity corpus passed on it unchanged.* |
+| D5 | **co-core pinned exactly; Processor owns the pin** (0.38.0 today, processor#37). Bumps are deliberate (Section 5). Processor coordinates with Watcher only when a bump changes the contract: the `content.process` / `content.derived` models or `canonical_text` semantics. It **gives Watcher notice whenever `processor_version` moves**, because Watcher re-baselines on it. Watcher still pins co-core for contracts and the bus (`==0.19.7` on 2026-10-10), and that pin no longer has to equal Processor's. *Amended 2026-10-10 (processor#47, after watcher#350). Until then: matched to Watcher, in lockstep, since both sides extracted during shadow. Watcher agreed to that on 2026-10-02 (watcher#325), and neither side deployed a bump until the parity corpus passed on it unchanged. Amended 2026-10-21 (processor#57): essence resolution left the contract, so a change to it is notice (Section 5).* |
 | D6 | **Extraction runs in a killable child process** with a timeout and an address-space limit, never a thread. |
 | D7 | Broker `NOPERM` and `OOM` are **transient**; a reclaim **re-runs** the extraction (no dedupe key). |
 | D8 | **v1 scope is #629's requirements only.** |
@@ -505,8 +513,20 @@ reclaim re-running (not re-publishing) the extraction.
     Option A re-baselines silently on a processor change alone and audits it as
     `check.rebaselined`;
   - **is coordinated with Watcher** only when it changes the contract: the
-    `content.process` / `content.derived` models, `canonical_text` semantics,
-    or `resolve_dispatch_essence`.
+    `content.process` / `content.derived` models or `canonical_text`
+    semantics.
+- **Essence resolution is not in the contract** (amended 2026-10-21,
+  processor#57). The issuer resolves the dispatch essence
+  (`resolve_dispatch_essence`, with `extension_media_type`) on its own co-core
+  pin and puts it on the command. Processor dispatches the essence that arrives
+  and never re-resolves it (Section 3). So either adoption order is safe when a
+  bump changes resolution: an old issuer keeps sending the essence it sent,
+  which reaches the same extractor as before; a new issuer's essence reaches the
+  old extractor on an old Processor, and the new one on a new Processor. Such a
+  bump is **notice**: it carries that reasoning and the moved digests, which
+  already show any dispatch change for an essence Watcher sends today. It
+  becomes coordination again only if Processor starts resolving essences
+  itself, and `tests/test_pin.py` fails first if it does.
 - Until watcher#350 (2026-10-10) both sides extracted, so the pin was in
   lockstep with Watcher's, and both repos moved together or neither did.
 
