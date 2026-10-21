@@ -115,7 +115,12 @@ def _drift(settings: DriftSettings, *, test_alert: bool) -> int:
         return 1
     try:
         code = post_checkin(
-            settings.status_url, settings.drift_monitor_id, key, verdict.status, verdict.variables()
+            settings.status_url,
+            settings.drift_monitor_id,
+            key,
+            verdict.status,
+            verdict.variables(),
+            metadata=verdict.metadata(),
         )
     except CheckinFailed as exc:
         logger.error("drift check", extra=fields | {"checkin": f"failed: {exc}"})

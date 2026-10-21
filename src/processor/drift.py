@@ -90,6 +90,14 @@ class Verdict:
         """Every variable on every check-in, so the monitor's template always renders."""
         return {"kind": self.kind, "live": self.live, "main": self.main, "body": self.body}
 
+    def metadata(self) -> dict[str, str] | None:
+        """An alert's fault, its kind; ``None`` on an ``ok``, so the key is absent (#58).
+
+        co-status compares ``metadata.fault`` and opens a new fault, reported at
+        once, when it changes (status#28). The kind token only: never ``body``.
+        """
+        return {"fault": self.kind} if self.status == "alert" else None
+
 
 @dataclass(frozen=True)
 class Push:

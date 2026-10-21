@@ -5,6 +5,9 @@ Status's contract, notifier's unchanged (its spec D6):
 "variables": {...}}`` and an ``X-API-Key``, answered 202. An ``ok`` records the
 check-in; an ``alert`` renders the monitor's templates against ``variables``
 and dispatches them; silence past the interval and grace goes ``missing``.
+``"metadata": {"fault": ...}`` rides along only when given (status#28): co-status
+groups a run of alerts into one fault by it, and a change of it reports at once.
+With none, the key is absent, never ``null`` or ``{}`` (the siblings', status#51).
 
 **One attempt, never a loop** (#35 trap 4): the next run is the retry, and the
 monitor's grace absorbs one missed check-in. A failure raises
@@ -53,6 +56,7 @@ def post_checkin(
     status: Literal["ok", "alert"],
     variables: dict[str, str],
     *,
+    metadata: dict[str, str] | None = None,
     timeout: float = TIMEOUT_SECONDS,
 ) -> int:
     """Check in once; return Status's answer code (202), or raise :class:`CheckinFailed`."""
@@ -62,10 +66,13 @@ def post_checkin(
             "reinstall it (docs/DEPLOYMENT.md § The drift check)"
         )
     url = f"{base_url.rstrip('/')}/api/v1/monitors/{monitor_id}/checkin"
+    body: dict[str, object] = {"status": status, "variables": variables}
+    if metadata:
+        body["metadata"] = metadata
     try:
         response = requests.post(
             url,
-            json={"status": status, "variables": variables},
+            json=body,
             headers={"X-API-Key": key},
             timeout=timeout,
         )
