@@ -114,7 +114,34 @@ def test_skills_md_inventory_matches_the_links() -> None:
     )
     names = {repo: set(re.findall(r"`([\w-]+)`", line)) for repo, _, line in heads}
     assert set().union(*names.values()) == set(_names(SKILLS))
-    gf_count = next(int(n) for repo, n, _ in heads if repo == "gregoryfoster-skills")
-    assert gf_count == len(names["gregoryfoster-skills"])
+    for repo, count, _ in heads:
+        assert int(count) == len(names[repo]), (repo, count, sorted(names[repo]))
     (not_linked,) = re.findall(r"^Not linked: (.*)$", doc, re.M)
     assert not set(re.findall(r"`([\w-]+)`", not_linked)) & set(_names(SKILLS))
+
+
+def _vendor_of(name: str) -> str:
+    """The ``<owner>-<repo>`` a ``skills/`` entry links into, or that its override names."""
+    entry = SKILLS / name
+    if entry.is_symlink():
+        return entry.readlink().parts[2]
+    return _frontmatter(entry / "SKILL.md")["overrides"].split("/")[0]
+
+
+def test_superpowers_invocations_resolve_here() -> None:
+    """A superpowers skill's ``superpowers:<n>`` is ``skills/<n>``; AGENTS.md maps strays."""
+    agents = (ROOT / "AGENTS.md").read_text()
+    ours = [n for n in _names(SKILLS) if _vendor_of(n) == "obra-superpowers"]
+    invoked = {
+        m
+        for n in ours
+        for m in re.findall(r"superpowers:([\w-]+)", (SKILLS / n / "SKILL.md").read_text())
+    }
+    missing = sorted(n for n in invoked if not (SKILLS / n).exists())
+    assert not missing, missing
+    unmapped = sorted(
+        n
+        for n in invoked
+        if _vendor_of(n) != "obra-superpowers" and f"`superpowers:{n}`" not in agents
+    )
+    assert not unmapped, unmapped
