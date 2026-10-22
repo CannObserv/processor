@@ -14,6 +14,11 @@ Design of record: [docs/specs/2026-09-29-processor-service-design.md](docs/specs
 
 TDD required. Red → Green → Refactor. No production code without a failing test first. Non-trivial work gets a plan in `docs/plans/YYYY-MM-DD-<issue>-<slug>.md`, reviewed before implementation.
 
+**Brainstorming** (`skills/brainstorming`, superpowers' unmodified): these are the partner's preferences its *Where it goes* defers to.
+- A change to the service's behaviour amends the spec: a dated **Amended** entry in its header, plus the sections it touches. A design doc of its own only for work the spec doesn't cover: `docs/specs/YYYY-MM-DD-<issue>-<topic>-design.md`, never `docs/superpowers/specs/`.
+- `superpowers:<name>` means this repo's `skills/<name>`, whichever vendor it links. `superpowers:writing-plans` is gregoryfoster's `writing-plans`, which writes the plan above to `docs/plans/`; `superpowers:using-git-worktrees` is gregoryfoster's too (§ Conventions).
+- The builder check runs as written. On an amendment, hand it the spec and name the amended sections.
+
 ## Environment & Tooling
 
 Python 3.12, uv, hatchling src layout, pytest, ruff.
@@ -56,7 +61,7 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 
 ## Agent Skills
 
-`gregoryfoster/skills` and `obra/superpowers` vendored under `skills-vendor/`, symlinked into `skills/` (agentskills.io) and `.claude/skills/` (Claude Code). Symlinks dangle until the submodules are initialised: `bash .skills/doctor.sh`. A `SessionStart` hook bumps them daily on `main` and pushes. Inventory, override, refresh: [docs/SKILLS.md](docs/SKILLS.md).
+`gregoryfoster/skills` and `obra/superpowers` vendored under `skills-vendor/`, symlinked into `skills/` (agentskills.io) and `.claude/skills/` (Claude Code). Symlinks dangle until the submodules are initialised: `bash .skills/doctor.sh`. A `SessionStart` hook bumps them daily on `main` and pushes. Inventory, refresh, worktrees: [docs/SKILLS.md](docs/SKILLS.md).
 
 ## Environment Files
 
@@ -96,7 +101,7 @@ scripts/deploy.sh [<build>]              # ship: CI green, then build a release 
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, `/etc/processor/`, releases and `scripts/deploy.sh`, the drift check, liveness, containment, install and rollback, operate, co-core bumps, Tailscale DNS, Node.js
 - [docs/plans/](docs/plans/) — implementation plans
-- [docs/SKILLS.md](docs/SKILLS.md) — vendored agent skills, the brainstorming override, the refresh hook
+- [docs/SKILLS.md](docs/SKILLS.md) — vendored agent skills: inventory, overrides (none), the refresh hook, worktrees
 - [docs/SOCRATICODE.md](docs/SOCRATICODE.md) — semantic search: tools, the shared store, link stubs, the pin, the memory decision
 
 <!-- BEGIN socraticode-policy -->
