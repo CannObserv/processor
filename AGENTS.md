@@ -16,7 +16,7 @@ TDD required. Red → Green → Refactor. No production code without a failing t
 
 **Brainstorming** (`skills/brainstorming`, superpowers' unmodified): these are the partner's preferences its *Where it goes* defers to.
 - A change to the service's behaviour amends the spec: a dated **Amended** entry in its header, plus the sections it touches. A design doc of its own only for work the spec doesn't cover: `docs/specs/YYYY-MM-DD-<issue>-<topic>-design.md`, never `docs/superpowers/specs/`.
-- `superpowers:<name>` means this repo's `skills/<name>`, whichever vendor it links. `superpowers:writing-plans` is gregoryfoster's `writing-plans`, which writes the plan above to `docs/plans/`; `superpowers:using-git-worktrees` is gregoryfoster's too (§ Conventions).
+- `superpowers:<name>` means this repo's `skills/<name>`, whichever vendor it links. `superpowers:writing-plans` is gregoryfoster's `writing-plans`, which writes the plan above to `docs/plans/`; `superpowers:using-git-worktrees` is gregoryfoster's too (§ Conventions → Workflow).
 - The builder check runs as written. On an amendment, hand it the spec and name the amended sections.
 - Its sizes don't replace the rules above: a "small change" that is non-trivial still gets a plan, and every change goes issue → branch → PR.
 
