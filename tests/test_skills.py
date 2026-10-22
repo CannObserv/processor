@@ -132,6 +132,9 @@ def test_superpowers_invocations_resolve_here() -> None:
     """A superpowers skill's ``superpowers:<n>`` is ``skills/<n>``; AGENTS.md maps strays."""
     agents = (ROOT / "AGENTS.md").read_text()
     ours = [n for n in _names(SKILLS) if _vendor_of(n) == "obra-superpowers"]
+    # A dangling link globs nothing, and an empty scan passes: fail on it instead.
+    for n in ours:
+        assert (SKILLS / n / "SKILL.md").is_file(), (n, DOCTOR_HINT)
     invoked = {
         m
         for n in ours
