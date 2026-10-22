@@ -71,8 +71,8 @@ DRIVER_PIN = Path.home() / ".socraticode" / "pin" / "node_modules" / "socraticod
 #: (archiver), and notifier. Each has its own ``projectId`` collection on co-index.
 LINKED = {"../archiver", "../broker", "../notifier", "../replicator", "../watcher"}
 
-#: gregoryfoster/skills content and its installed tooling; ``skills/brainstorming``
-#: is an upstream copy with one path changed (docs/SKILLS.md), so ``skills/`` goes whole.
+#: Vendored skills and their installed tooling; nothing in ``skills/`` is first-party,
+#: bar upstream overrides (none since #62, docs/SKILLS.md), so ``skills/`` goes whole.
 VENDORED = {"skills-vendor/", "skills/", ".claude/skills/", ".skills/"}
 
 #: using-git-worktrees' root and the harness's, both inside this tree.

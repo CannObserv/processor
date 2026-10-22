@@ -3,8 +3,8 @@
 # graph only, never the context artifacts (docs/SOCRATICODE.md).
 
 # Vendored gregoryfoster/skills and obra/superpowers. skills/ and .claude/skills/ are
-# symlinks into skills-vendor/, bar skills/brainstorming, an upstream copy with one
-# path changed (docs/SKILLS.md); .skills/ holds the installed doctor.sh. Unexcluded
+# symlinks into skills-vendor/, bar any upstream override (none since #62;
+# docs/SKILLS.md); .skills/ holds the installed doctor.sh. Unexcluded
 # they outnumber processor's own files, and every sibling's includeLinked search
 # would serve them as processor.
 skills-vendor/

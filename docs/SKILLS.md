@@ -36,21 +36,19 @@ The first session in a fresh clone or worktree fails the hook with exit 127 (hoo
 
 **gregoryfoster-skills (13):** `auditing-ci-cost` (CI since #12), `coordinating-epics` (#24 since #52), `curating-context`, `enforcing-architecture` (`reviewing-architecture` delegates to it), `init-socraticode`, `managing-skills`, `orchestrating-issue-backlog`, `reviewing-architecture`, `reviewing-code-python-fastapi`, `shipping-work-python-fastapi`, `using-git-worktrees`, `using-mayfly-chat`, `writing-plans`.
 
-**obra-superpowers (11 + override):** `dispatching-parallel-agents`, `executing-plans`, `finishing-a-development-branch`, `receiving-code-review`, `requesting-code-review`, `subagent-driven-development`, `systematic-debugging`, `test-driven-development`, `using-superpowers`, `verification-before-completion`, `writing-skills`; `brainstorming` as an override.
+**obra-superpowers (12):** `brainstorming`, `dispatching-parallel-agents`, `executing-plans`, `finishing-a-development-branch`, `receiving-code-review`, `requesting-code-review`, `subagent-driven-development`, `systematic-debugging`, `test-driven-development`, `using-superpowers`, `verification-before-completion`, `writing-skills`.
 
 - **Review and ship are the `-python-fastapi` variants, though processor isn't FastAPI** (as broker). Their `pre-ship.sh` is processor's gate unmodified: `ruff check`, `ruff format --check`, `pytest` minus `integration`. The Alembic/route steps key on paths processor lacks; the `deploy/` review checks and the post-merge `systemctl restart processor` fit.
 - **`using-mayfly-chat` needs Node ≥ 18**; its wrapper exits 4 without it. co-processor has Node 24 LTS from NodeSource apt, installed 2026-09-30 (#6). Linked because the cohort adopts it together (gregoryfoster/skills#302). A channel URL is read/write/delete access: never commit one.
-- **Superpowers' `using-git-worktrees` and `writing-plans` are not linked**: gregoryfoster's own, same-named, win. So brainstorming's hand-off to `writing-plans` lands plans in `docs/plans/`. Its filename is `YYYY-MM-DD-<topic-slug>.md`: start the topic with the issue number, so the slug is AGENTS.md's `<issue>-<slug>` (e.g. `2026-09-29-1-processor-v1.md`).
+- **Superpowers' `using-git-worktrees` and `writing-plans` are not linked**: gregoryfoster's own, same-named, win. So brainstorming's hand-off to `superpowers:writing-plans` lands plans in `docs/plans/` (AGENTS.md → *Brainstorming* maps the name; a test holds every `superpowers:<name>` to a link or a mapping). Its filename is `YYYY-MM-DD-<topic-slug>.md`: start the topic with the issue number, so the slug is AGENTS.md's `<issue>-<slug>` (e.g. `2026-09-29-1-processor-v1.md`).
 
 Not linked: `init-project-fastapi` (scaffolder), `vendoring-openapi-client` (no sibling HTTP API called), the other stack variants of review/ship, `diagnosing-superpowers` (no sibling links it). The daily refresh never adds symlinks, so a newly published skill is a manual link: diff `ls skills-vendor/*/skills/` against this list.
 
 ## Overrides
 
-| Skill | Overrides | Delta |
-|---|---|---|
-| `brainstorming` | `obra-superpowers/brainstorming` | `docs/superpowers/specs/` → `docs/specs/`, in `SKILL.md` and `spec-document-reviewer-prompt.md`. Otherwise upstream verbatim; `visual-companion.md` and `scripts/` are vendor symlinks. Observo's pattern |
+None since #62. `brainstorming` was one, synced from v6.4.2 to move the design doc to `docs/specs/`, until v7 deferred that path to the partner's preferences; AGENTS.md → *Brainstorming* states them. Where upstream defers, a stated preference beats an override: it needs no re-sync.
 
-The doctor warns when the vendor moves past `synced-from:`. Re-sync by reapplying the delta onto the new upstream text (never the reverse), then bump `synced-from:`: `managing-skills` → *Updating a local override*. Kept minimal on purpose: the heavier cohort forks each needed re-sync issues.
+An override is a regular directory in `skills/` whose `SKILL.md` names `overrides:` and `synced-from:` (tests/test_skills.py holds it to both). The doctor warns when the vendor moves past `synced-from:`. Re-sync by reapplying the delta onto the new upstream text (never the reverse), then bump `synced-from:`: `managing-skills` → *Updating a local override*. Kept minimal on purpose: the heavier cohort forks each needed re-sync issues.
 
 ## Worktrees
 

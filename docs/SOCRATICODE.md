@@ -200,8 +200,8 @@ extraction child volunteers at +1000. The peak that took broker down on
 Revisit if the service's resident memory grows into hundreds of MiB.
 
 **Index scope here.** `.socraticodeignore` drops `skills-vendor/`, `skills/`,
-`.claude/skills/` and `.skills/` (vendored; `skills/brainstorming` is an upstream
-copy with one path changed), both worktree roots, `.wheelhouse`, and
+`.claude/skills/` and `.skills/` (vendored, or an upstream override; none since
+#62), both worktree roots, `.wheelhouse`, and
 `docs/plans/`. Plans stay searchable as the `implementation-plans` artifact
 (scope a search to it with `artifactName`); out of the code index, a superseded
 plan cannot outrank the source. What remains is about 95 tracked files, 48 of

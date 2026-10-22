@@ -18,7 +18,7 @@
     {
       "name": "skills-doc",
       "path": "./docs/SKILLS.md",
-      "description": "The vendored agent skills: inventory, the brainstorming override, the daily refresh hook, provisioning a worktree."
+      "description": "The vendored agent skills: inventory, overrides, the daily refresh hook, provisioning a worktree."
     },
     {
       "name": "socraticode-doc",
