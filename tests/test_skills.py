@@ -135,7 +135,8 @@ def test_superpowers_invocations_resolve_here() -> None:
     invoked = {
         m
         for n in ours
-        for m in re.findall(r"superpowers:([\w-]+)", (SKILLS / n / "SKILL.md").read_text())
+        for md in (SKILLS / n).rglob("*.md")
+        for m in re.findall(r"superpowers:([\w-]+)", md.read_text())
     }
     missing = sorted(n for n in invoked if not (SKILLS / n).exists())
     assert not missing, missing
