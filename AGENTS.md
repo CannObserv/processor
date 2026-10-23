@@ -100,7 +100,7 @@ scripts/deploy.sh [<build>]              # ship: CI green, then build a release 
 ## Detail Docs
 
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, `/etc/processor/`, releases and `scripts/deploy.sh`, the drift check, liveness, containment, install and rollback, operate, co-core bumps, Tailscale DNS, Node.js
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, `/etc/processor/`, releases and `scripts/deploy.sh`, the drift check, liveness, containment, install and rollback, operate, co-core bumps, TLS trust, Tailscale DNS, Node.js
 - [docs/plans/](docs/plans/) — implementation plans
 - [docs/SKILLS.md](docs/SKILLS.md) — vendored agent skills: inventory, overrides (none), the refresh hook, worktrees
 - [docs/SOCRATICODE.md](docs/SOCRATICODE.md) — semantic search: tools, the shared store, link stubs, the pin, the memory decision

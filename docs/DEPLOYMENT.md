@@ -462,6 +462,10 @@ co-core is pinned `==`, and Processor owns the pin (spec D5, §5; amended 2026-1
 4. **Notice to Watcher** before deploy: the new `processor_version`, and the moved digests. A change to the contract needs coordination with Watcher first, not just notice. The contract is the `content.process` / `content.derived` models and `canonical_text` semantics. A change to essence resolution is notice, not coordination (spec §5, #57).
 5. Merge, then `scripts/deploy.sh`.
 
+## TLS trust
+
+The service's TLS trust is certifi's bundle in the release venv, not the system store: GCS (`google-auth` / `google-cloud-storage` over `requests`) and the drift check's GitHub calls verify against `certifi.where()`, and nothing sets `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE`. A CA distrust (exe.dev's system-store remediation doesn't reach the venv) is a certifi bump: raise `constraint-dependencies` in `pyproject.toml` and the floor in `tests/test_tls_trust.py`, `uv lock --upgrade-package certifi` (the diff moves certifi alone, never `uv lock --upgrade`), merge, then `scripts/deploy.sh`. The restart is the fix: a running process keeps the bundle it loaded. Check from the release venv: `/srv/processor/live/.venv/bin/python -I -c "import certifi; print(certifi.__version__)"`. certifi isn't co-core, so `processor_version` doesn't move and Watcher needs no notice. Since #66: ≥ 2026.10.19, without `emSign ECC Root CA - G3` (the eMudhra compromise, https://exe.dev/security/emudhra-compromise).
+
 ## Tailscale DNS
 
 Since #8 (2026-10-01) this VM runs Tailscale with `--accept-dns=true`, as every cohort node does (observo#631, notifier#43 D8). It had run with DNS off since provisioning: the `tailscale up` of 2026-09-29, from an Observo session (observo#629), passed `--accept-dns=false`, and nothing records a reason.
