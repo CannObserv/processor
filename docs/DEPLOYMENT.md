@@ -548,6 +548,48 @@ The backup is gone afterwards (measured 2026-10-01), so there is nothing left to
 
 After this, `broker` stops resolving. Until DNS is back on, put the broker's address from `tailscale status` into `CO_PROCESSOR_BUS_URL` and restart the service.
 
+## Tailnet flaps
+
+**The rule** (operator, 2026-10-23, #67): "A tailnet flap gets an issue only if it delays a command, pages, or outlasts liveness's 900 s grace. Any other flap is logged on the epic with its window and signature."
+
+A flap is the tailnet path to `broker` going away for minutes while tailscaled keeps running. The consumer backs off and retries, with no restart (§ Liveness). It has ridden out both flaps so far:
+
+| Window | What it was | Processor |
+|---|---|---|
+| 2026-10-10 02:26–04:12Z | Path churn between direct (peers at the shared NAT `16.145.19.221`) and DERP. No `LinkChange` and no clock jump | 19 WARNINGs, 14 `open-conn-track` timeouts, no command affected |
+| 2026-10-22 04:13:38–04:15:30Z | A host-side event: memory-balloon pressure, then the VM most likely paused about 33 s | 6 WARNINGs, 1 failed check-in, no command delayed, nothing paged |
+
+**The 2026-10-22 signature,** in order:
+
+- kernel: `virtio_balloon virtio5: Out of puff! Can't get 1 pages` ×26, 04:13:26–38Z. The host was inflating the balloon, and the guest had no pages to give back. These were the only balloon messages on this boot (since 2026-10-03).
+- `processor`: `consumer loop error; backing off`, `error` `TimeoutError: Timeout reading from broker:6379`, then `Timeout connecting to server` until the path is back (backoff 1, 2, 4 … s).
+- The system journal: silent for about 68 s (04:13:38–04:14:46Z).
+- tailscaled:
+  - `magicsock: endpoints changed`, with a second STUN address beside the usual one;
+  - `LinkChange: major, rebinding … rebind-reason=[time-jumped(33s),ips-changed]`. The wall clock jumped 33 s, which is what a paused VM looks like from inside;
+  - `closing connection to derp-10 (rebind-ping-fail)`, then a reconnect;
+  - `open-conn-track` timeouts.
+- `processor`: possibly one `liveness check-in failed` (the 10 s bound). The next check-in lands inside the 900 s grace, so nothing pages.
+- Recovery on its own: `NRestarts=0`, and `ack: complete` resumes. A command issued during the gap stays in the stream and is acked once the path is back.
+
+exe.dev's docs don't describe maintenance, host migration, ballooning or pauses. So the cause is a host-side event they don't explain. Whether other cohort VMs saw the same windows is recorded on #67.
+
+**Telling it apart:**
+
+- **A broker-side problem** (a Redis restart, the broker's patch window, broker#91): this VM's tailscaled logs no `LinkChange` or `time-jumped`. The broker's patch run (2026-10-13 04:17–04:22Z) left backoff WARNINGs at its Redis restart and at its reboot, and `open-conn-track` timeouts during the reboot.
+- **A tailscaled restart here** (#65, 2026-10-22 23:40:29Z): tailscaled gets a new `MainPID` and logs `linkChange: in state NoState`. The tailnet is down for 2.3 s, and the broker socket survives with no WARNING.
+- **A flap:** this VM's tailscaled logs `endpoints changed` and `LinkChange` (and, on 2026-10-22, `time-jumped`), or peers go stale or relayed in `tailscale status`.
+
+```bash
+journalctl -u processor -o cat --since <start> | jq -cR 'fromjson? | select(.level != "INFO") | {timestamp, logger, message, error}'
+journalctl -u tailscaled -o short-iso --since <start> | grep -E 'LinkChange|endpoints changed|rebind-reason|closing connection to derp|open-conn-track'
+journalctl -k -o short-iso --since <start> | grep -E 'Out of puff|balloon'
+systemctl show processor -p NRestarts
+tailscale status
+```
+
+Log a flap on the epic as: the window (first WARNING to the first `ack: complete` after it), the counts above, and which kind it was.
+
 ## Node.js (agent tooling only)
 
 Node 24 LTS from NodeSource's apt repo, for `using-mayfly-chat` and SocratiCode (`npx`). The `processor` unit never runs it. The cohort survey and the reasons for NodeSource and for 24 are in #6.
