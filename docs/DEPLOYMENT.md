@@ -557,7 +557,7 @@ A flap is the tailnet path to `broker` going away for minutes while tailscaled k
 | Window | What it was | Processor |
 |---|---|---|
 | 2026-10-10 02:26–04:12Z | Path churn between direct (peers at the shared NAT `16.145.19.221`) and DERP. No `LinkChange` and no clock jump | 19 WARNINGs, 14 `open-conn-track` timeouts, no command affected |
-| 2026-10-22 04:13:38–04:15:30Z | A host-side event on the VMs behind egress `32.185.164.108` (broker, processor, replicator): memory-balloon pressure, then each VM paused about 31–33 s | 6 WARNINGs, 1 failed check-in, no command delayed, nothing paged |
+| 2026-10-22 04:13:38–04:15:30Z | A host-side event on the VMs behind egress `32.185.164.108` (broker, processor, replicator, notifier): memory-balloon pressure, then each VM paused 24–33 s, staggered over about 40 min | 6 WARNINGs, 1 failed check-in, no command delayed, nothing paged |
 
 **The 2026-10-22 signature,** in order:
 
@@ -574,9 +574,10 @@ A flap is the tailnet path to `broker` going away for minutes while tailscaled k
 
 **The cohort saw the same event** (a Mayfly questionnaire, 2026-10-23; synthesis on #67, the broker's timeline on CannObserv/broker#118):
 - co-broker and co-replicator, behind the same egress, each logged the first balloon pressure of their boot (04:13:07Z and 04:13:39Z), then a 31–33 s time jump;
+- notifier, behind it too, had the same 19 min later: balloon pressure at 04:32:48Z, then a 24 s pause logged at 04:51:10Z;
 - co-registrar (archiver), co-provisioner and co-watcher, each on its own egress, logged neither; they only lost `broker` for about 2 min.
 
-The broker paused too, so every bus client timed out at once. Whether the pauses were simultaneous or staggered isn't settled.
+The broker paused too, so every bus client timed out at once. The events were staggered per VM, not one simultaneous pause.
 
 exe.dev's docs don't describe maintenance, host migration, ballooning or pauses. The cause is a host-side memory reclaim they don't explain. Asking exe.dev is the operator's step (CannObserv/broker#118).
 
