@@ -577,7 +577,7 @@ A flap is the tailnet path to `broker` going away for minutes while tailscaled k
 - notifier, behind it too, had the same 19 min later: balloon pressure at 04:32:48Z, then a 24 s pause logged at 04:51:10Z;
 - co-registrar (archiver), co-provisioner and co-watcher, each on its own egress, logged neither; they only lost `broker` for about 2 min.
 
-The broker paused too, so every bus client timed out at once. The events were staggered per VM, not one simultaneous pause.
+The events were staggered per VM, not one simultaneous pause. Every bus client lost `broker` at once, from about 04:13:18 to 04:15:33Z. That window matches the broker's balloon reclaim, not its own pause, which its clock places about 04:16:14–43Z (CannObserv/broker#118).
 
 exe.dev's docs don't describe maintenance, host migration, ballooning or pauses. The cause is a host-side memory reclaim they don't explain. Asking exe.dev is the operator's step (CannObserv/broker#118).
 
