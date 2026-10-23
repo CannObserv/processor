@@ -557,13 +557,13 @@ A flap is the tailnet path to `broker` going away for minutes while tailscaled k
 | Window | What it was | Processor |
 |---|---|---|
 | 2026-10-10 02:26–04:12Z | Path churn between direct (peers at the shared NAT `16.145.19.221`) and DERP. No `LinkChange` and no clock jump | 19 WARNINGs, 14 `open-conn-track` timeouts, no command affected |
-| 2026-10-22 04:13:38–04:15:30Z | A host-side event: memory-balloon pressure, then the VM most likely paused about 33 s | 6 WARNINGs, 1 failed check-in, no command delayed, nothing paged |
+| 2026-10-22 04:13:38–04:15:30Z | A host-side event on the VMs behind egress `32.185.164.108` (broker, processor, replicator): memory-balloon pressure, then each VM paused about 31–33 s | 6 WARNINGs, 1 failed check-in, no command delayed, nothing paged |
 
 **The 2026-10-22 signature,** in order:
 
+- The journal: no entry at all 04:12:53–04:13:26Z (32.7 s, the length of the jump). An idle VM can be that quiet, so this suggests the pause rather than proving it.
 - kernel: `virtio_balloon virtio5: Out of puff! Can't get 1 pages` ×26, 04:13:26–38Z. The host was inflating the balloon, and the guest had no pages to give back. These were the only balloon messages on this boot (since 2026-10-03).
 - `processor`: `consumer loop error; backing off`, `error` `TimeoutError: Timeout reading from broker:6379`, then `Timeout connecting to server` until the path is back (backoff 1, 2, 4 … s).
-- The system journal: silent for about 68 s (04:13:38–04:14:46Z).
 - tailscaled:
   - `magicsock: endpoints changed`, with a second STUN address beside the usual one;
   - `LinkChange: major, rebinding … rebind-reason=[time-jumped(33s),ips-changed]`. The wall clock jumped 33 s, which is what a paused VM looks like from inside;
@@ -572,11 +572,17 @@ A flap is the tailnet path to `broker` going away for minutes while tailscaled k
 - `processor`: possibly one `liveness check-in failed` (the 10 s bound). The next check-in lands inside the 900 s grace, so nothing pages.
 - Recovery on its own: `NRestarts=0`, and `ack: complete` resumes. A command issued during the gap stays in the stream and is acked once the path is back.
 
-exe.dev's docs don't describe maintenance, host migration, ballooning or pauses. So the cause is a host-side event they don't explain. Whether other cohort VMs saw the same windows is recorded on #67.
+**The cohort saw the same event** (a Mayfly questionnaire, 2026-10-23; synthesis on #67, the broker's timeline on CannObserv/broker#118):
+- co-broker and co-replicator, behind the same egress, each logged the first balloon pressure of their boot (04:13:07Z and 04:13:39Z), then a 31–33 s time jump;
+- co-registrar (archiver), co-provisioner and co-watcher, each on its own egress, logged neither; they only lost `broker` for about 2 min.
+
+The broker paused too, so every bus client timed out at once. Whether the pauses were simultaneous or staggered isn't settled.
+
+exe.dev's docs don't describe maintenance, host migration, ballooning or pauses. The cause is a host-side memory reclaim they don't explain. Asking exe.dev is the operator's step (CannObserv/broker#118).
 
 **Telling it apart:**
 
-- **A broker-side problem** (a Redis restart, the broker's patch window, broker#91): this VM's tailscaled logs no `LinkChange` or `time-jumped`. The broker's patch run (2026-10-13 04:17–04:22Z) left backoff WARNINGs at its Redis restart and at its reboot, and `open-conn-track` timeouts during the reboot.
+- **A broker-side problem** (a Redis restart, the broker's patch window, broker#91, or a host pause of the broker alone, which is how archiver, provisioner and watcher saw 2026-10-22): this VM's tailscaled logs no `LinkChange` or `time-jumped`. The broker's patch run (2026-10-13 04:17–04:22Z) left backoff WARNINGs at its Redis restart and at its reboot, and `open-conn-track` timeouts during the reboot.
 - **A tailscaled restart here** (#65, 2026-10-22 23:40:29Z): tailscaled gets a new `MainPID` and logs `linkChange: in state NoState`. The tailnet is down for 2.3 s, and the broker socket survives with no WARNING.
 - **A flap:** this VM's tailscaled logs `endpoints changed` and `LinkChange` (and, on 2026-10-22, `time-jumped`), or peers go stale or relayed in `tailscale status`.
 
