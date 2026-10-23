@@ -557,7 +557,7 @@ A flap is the tailnet path to `broker` going away for minutes while tailscaled k
 | Window | What it was | Processor |
 |---|---|---|
 | 2026-10-10 02:26–04:12Z | Path churn between direct (peers at the shared NAT `16.145.19.221`) and DERP. No `LinkChange` and no clock jump | 19 WARNINGs, 14 `open-conn-track` timeouts, no command affected |
-| 2026-10-22 04:13:38–04:15:30Z | A host-side event on the VMs behind egress `32.185.164.108` (broker, processor, replicator, status, notifier): memory-balloon pressure, then each VM paused, staggered over about 40 min | 6 WARNINGs, 1 failed check-in, no command delayed, nothing paged |
+| 2026-10-22 04:13:38–04:15:30Z | A host-side event on five of the six VMs behind egress `32.185.164.108` (broker, processor, replicator, status, notifier): memory-balloon pressure, then each VM paused, staggered over about 40 min | 6 WARNINGs, 1 failed check-in, no command delayed, nothing paged |
 
 **The 2026-10-22 signature,** in order:
 
@@ -577,6 +577,7 @@ A flap is the tailnet path to `broker` going away for minutes while tailscaled k
 - co-status (moved onto that egress during the event) had balloon pressure at 04:14:04Z and a pause at about 04:17:07–24Z;
 - notifier, behind it too, had the same 19 min later: balloon pressure at 04:32:48Z, then a pause logged at 04:51:10Z;
 - on two small VMs without swap (status, notifier), the balloon pushed memory to earlyoom's floor, and earlyoom killed a user process (not a service);
+- co-index, behind the same egress, logged neither. It has room to spare, and `Out of puff` appears only when the guest *can't* give pages back, so a quiet balloon there isn't ruled out. It did pause on its own on 2026-10-18 around 04:06Z; co-processor didn't;
 - co-registrar (archiver), co-provisioner and co-watcher, each on its own egress, logged neither; they only lost `broker` for about 2 min.
 
 The events were staggered per VM, not one simultaneous pause. Every bus client lost `broker` at once, from about 04:13:18 to 04:15:33Z. That window matches the broker's balloon reclaim, not its own pause, which its clock places about 04:16:14–43Z (CannObserv/broker#118).
