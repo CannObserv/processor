@@ -82,3 +82,8 @@ packages = ["src/processor"]
 # cannobserv release tag by scripts/build_wheelhouse.sh. find-links locks by
 # filename, not hash, so either source satisfies the same uv.lock.
 find-links = ["./.wheelhouse"]
+# certifi is transitive (requests, httpx), and its bundle is the services' TLS trust,
+# not the system store. 2026.10.19 drops emSign ECC Root CA - G3, the root of the
+# eMudhra-compromised chains (https://exe.dev/security/emudhra-compromise, #66); the
+# floor keeps a re-lock from resolving an older one. tests/test_tls_trust.py checks it.
+constraint-dependencies = ["certifi>=2026.10.19"]
