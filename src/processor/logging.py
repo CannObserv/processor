@@ -23,7 +23,8 @@ from typing import TextIO
 _STANDARD = set(vars(logging.LogRecord("", 0, "", 0, "", (), None))) | {"message", "asctime"}
 
 
-# syslog priorities by threshold, as python-systemd's JournalHandler maps them.
+# syslog priorities by floor, as Python filters levels; the standard levels map as
+# python-systemd's JournalHandler maps them.
 _PRIORITIES = ((logging.CRITICAL, 2), (logging.ERROR, 3), (logging.WARNING, 4), (logging.INFO, 6))
 
 

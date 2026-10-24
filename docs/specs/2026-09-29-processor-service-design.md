@@ -346,7 +346,8 @@ skipped, and nothing raises into the loop. The broker probe and
 `XINFO GROUPS` cover lag and a missing group; structured JSON logs in the cohort
 schema (`timestamp` ISO 8601 UTC, `level`, `logger`, `message` — the fields
 Observo adopted in #395/#407) so the later plane can ingest them unchanged. When
-stderr is the journal (systemd's `JOURNAL_STREAM` names stderr's own device and
+an entry point's stderr is the journal, as under both units (`processor run`,
+`processor drift`; systemd's `JOURNAL_STREAM` names stderr's own device and
 inode), each line carries its level as an sd-daemon `<N>` prefix (CRITICAL 2,
 ERROR 3, WARNING 4, INFO 6, DEBUG 7), which journald strips into `PRIORITY`: the
 stored message is the same JSON, and `journalctl -p warning` finds WARNING and

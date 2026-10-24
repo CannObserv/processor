@@ -130,12 +130,26 @@ def test_on_the_journal_every_line_carries_its_priority(
         stream.flush()
         lines = (tmp_path / "stderr").read_text().splitlines()
     assert [line[:3] for line in lines] == ["<4>", "<3>", "<6>"]
+    assert [json.loads(line[3:])["level"] for line in lines] == ["WARNING", "ERROR", "INFO"]
     record = json.loads(lines[0][3:])
     assert (record["level"], record["message"], record["attempt"]) == (
         "WARNING",
         "backing off",
         2,
     )
+
+
+def test_a_record_is_one_line_with_one_prefix() -> None:
+    # journald reads the prefix per line: a newline anywhere would land the rest at
+    # the default priority. json.dumps escapes them, in the message and the traceback.
+    try:
+        raise ValueError("line one\nline two")
+    except ValueError:
+        exc = sys.exc_info()
+    record = logging.LogRecord("x", logging.ERROR, __file__, 1, "a\nb\u2028c", (), exc)
+    line = JsonFormatter(journal=True).format(record)
+    assert "\n" not in line and "\u2028" not in line
+    assert "line two" in json.loads(line.removeprefix("<3>"))["exc_info"]
 
 
 @pytest.mark.parametrize("journal_stream", [None, "", "garbage", "1:2:3", "0:0", "other"])
