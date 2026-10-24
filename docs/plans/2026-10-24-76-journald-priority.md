@@ -13,7 +13,7 @@ status: per #76's brief, its pre-flight and the review comment (2026-10-24)
 ## Approach (brief option 1)
 
 - `logging.py`: `_is_journal(stream)`: `JOURNAL_STREAM` (`<dev>:<ino>`) equals `os.fstat(stream.fileno())`; any failure (unset, malformed, no fileno) is `False`.
-- `JournalPrefixFormatter(JsonFormatter)`, or a `prefix` flag on the formatter: prepends `<N>` (≥CRITICAL 2, ≥ERROR 3, ≥WARNING 4, ≥INFO 6, else 7). journald strips it (`SyslogLevelPrefix=yes`), so `-o cat` stays pure JSON.
+- `JsonFormatter(journal=True)` (as built; a subclass was the alternative): prepends `<N>` (≥CRITICAL 2, ≥ERROR 3, ≥WARNING 4, ≥INFO 6, else 7). journald strips it (`SyslogLevelPrefix=yes`), so `-o cat` stays pure JSON.
 - `configure_logging` picks it once, from the handler's stream. A terminal, a pipe (`systemd-run --pipe`), a pytest capture never see a prefix.
 - No unit change. The child needs nothing (stderr is a pipe to the parent).
 - Docs: `DEPLOYMENT.md` § Logs (priority), § Tailnet flaps (`-p warning`, `jq` kept for fields), line 24 (watcher#325 confirmed); spec Amended entry + Section 3's logging sentence; `logging.py` docstring.
