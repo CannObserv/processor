@@ -248,7 +248,7 @@ A stop mid-reclaim finishes the command in hand and leaves the rest pending. A c
 
 ## The lock audit
 
-Nothing else reads `uv.lock` against OSV, and disclosures arrive without commits: #71's 12 advisories surfaced only because someone ran `uv audit` by hand. `.github/workflows/audit.yml` runs `scripts/audit_lock.sh` on every push to `main`, every PR, Mondays at 14:37 UTC, and on dispatch (#73, ported from broker#86).
+Nothing else reads `uv.lock` against OSV, and disclosures arrive without commits: #71's 12 advisories surfaced only because someone ran `uv audit` by hand. `.github/workflows/audit.yml` runs `scripts/audit_lock.sh` on every push to `main`, every PR, weekly (`audit.yml`'s cron), and on dispatch (#73, ported from broker#86).
 
 - **Report-only.** The script always exits 0. A finding (uv exit 1) is a `uv.lock advisories` warning, with the audit and where it goes in the job summary. Any other failure is a `uv audit did not run` warning, never a clean result. A red gate would turn `main` red on someone else's disclosure date.
 - **Outside the deploy gate.** The gate reads `ci.yml`'s push run alone (§ The CI gate); `tests/test_lock_audit.py` holds both workflows to that.
