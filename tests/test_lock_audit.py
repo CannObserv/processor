@@ -173,17 +173,23 @@ def test_a_finding_is_a_warning_and_lands_in_the_summary(tmp_path: Path) -> None
 
 
 def test_a_finding_says_where_it_goes(tmp_path: Path) -> None:
-    """Processor's routing (#71): an extraction-stack finding is a re-lock and a
-    ``LOCAL_GENERATION`` bump; any other is a re-lock plus a
-    ``constraint-dependencies`` floor. The summary links the section that says so,
-    and the annotation names it."""
+    """Processor's routing (#71): every finding is a re-lock plus a
+    ``constraint-dependencies`` floor, so a later re-lock cannot undo it; an
+    extraction-stack finding also bumps ``LOCAL_GENERATION`` (#71 did both for
+    pypdf). The summary links the section that says so, and the annotation names
+    it."""
     result, _, summary = _run(tmp_path, 1, FINDING)
     link = f"https://github.com/CannObserv/processor/blob/main/{ROUTING_ANCHOR}"
     assert link in summary
     for term in ("LOCAL_GENERATION", "constraint-dependencies", "test_lock_floors.py"):
         assert term in summary, term
+    routing = summary[summary.index("Where a finding goes") :]
+    every, stack = [line for line in routing.splitlines() if line.startswith("- ")]
+    assert "every finding" in every and "constraint-dependencies" in every
+    assert "LOCAL_GENERATION" in stack and "constraint-dependencies" not in stack
     (warning,) = [line for line in result.stdout.splitlines() if line.startswith("::warning")]
     assert "Extraction dependencies" in warning
+    assert "floor" in warning and "also bumps LOCAL_GENERATION" in warning
 
 
 def test_a_finding_off_actions_still_says_where_it_goes(tmp_path: Path) -> None:

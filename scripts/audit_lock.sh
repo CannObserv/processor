@@ -39,8 +39,8 @@ fi
 # Where a finding goes (#71): Processor's rule, not a generic upgrade.
 section="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-CannObserv/processor}/blob/main/docs/DEPLOYMENT.md#extraction-dependencies"
 routing="Where a finding goes ($section):
-- in the extraction stack (pypdf, lxml, bs4, html5lib, openpyxl, ...; \`EXTRACTION_STACK\` in tests/test_pin.py): \`uv lock --upgrade-package NAME\`, and bump \`LOCAL_GENERATION\` (with its notice to Watcher);
-- anything else: \`uv lock --upgrade-package NAME\`, plus a \`[tool.uv] constraint-dependencies\` floor checked in tests/test_lock_floors.py."
+- every finding: \`uv lock --upgrade-package NAME\`, plus a \`[tool.uv] constraint-dependencies\` floor checked in tests/test_lock_floors.py, so a later re-lock cannot undo it;
+- in the extraction stack too (pypdf, lxml, bs4, html5lib, openpyxl, ...; \`EXTRACTION_STACK\` in tests/test_pin.py): bump \`LOCAL_GENERATION\`, with its notice to Watcher."
 
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
 	token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
@@ -59,7 +59,7 @@ fi
 
 case $rc in
 0) ;;
-1) echo "::warning title=uv.lock advisories::uv audit found advisories in uv.lock; the job summary lists them. Re-lock per docs/DEPLOYMENT.md § Extraction dependencies: an extraction-stack package bumps LOCAL_GENERATION, any other gets a constraint-dependencies floor." ;;
+1) echo "::warning title=uv.lock advisories::uv audit found advisories in uv.lock; the job summary lists them. Re-lock with a constraint-dependencies floor; an extraction-stack package also bumps LOCAL_GENERATION (docs/DEPLOYMENT.md § Extraction dependencies)." ;;
 *) echo "::warning title=uv audit did not run::uv audit exited $rc; the lock was not audited. The job summary has its output." ;;
 esac
 exit 0

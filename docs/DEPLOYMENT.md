@@ -254,7 +254,7 @@ Nothing else reads `uv.lock` against OSV, and disclosures arrive without commits
 - **Outside the deploy gate.** The gate reads `ci.yml`'s push run alone (§ The CI gate); `tests/test_lock_audit.py` holds both workflows to that.
 - **No secret, no WIF.** `uv audit --frozen` reads the lock without the wheelhouse. OSV's text is echoed between `::stop-commands::` and a random token, so it can't issue workflow commands.
 - **By hand:** `bash scripts/audit_lock.sh` from any directory audits this checkout's lock.
-- **Where a finding goes:** in the extraction stack, § Extraction dependencies (re-lock, `LOCAL_GENERATION` bump, notice). Anything else: `uv lock --upgrade-package <name>` plus a `[tool.uv] constraint-dependencies` floor with its check in `tests/test_lock_floors.py`; no generation bump. Re-locks touch `uv.lock`, so deploy after the merge.
+- **Where a finding goes:** every finding is `uv lock --upgrade-package <name>` plus a `[tool.uv] constraint-dependencies` floor with its check in `tests/test_lock_floors.py`, so a later re-lock can't undo it. A package in the extraction stack also bumps `LOCAL_GENERATION`, with the notice: § Extraction dependencies (#71 did both for pypdf). Re-locks touch `uv.lock`, so deploy after the merge.
 
 ## The drift check
 
