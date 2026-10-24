@@ -65,22 +65,6 @@ def test_stack_info_is_kept() -> None:
     assert _format(record)["stack_info"].startswith("Stack (most recent call last)")
 
 
-def test_warnings_are_json_records(capsys: pytest.CaptureFixture[str]) -> None:
-    root = logging.getLogger()
-    handlers, level = root.handlers[:], root.level
-    try:
-        configure_logging()
-        warnings.warn("a library's warning", UserWarning, stacklevel=1)
-    finally:
-        logging.captureWarnings(False)
-        root.handlers[:] = handlers
-        root.setLevel(level)
-    (line,) = capsys.readouterr().err.splitlines()
-    record = json.loads(line)
-    assert (record["logger"], record["level"]) == ("py.warnings", "WARNING")
-    assert "a library's warning" in record["message"]
-
-
 @pytest.fixture
 def root_logger():
     """Restore the root logger and ``warnings`` capture after ``configure_logging``."""
@@ -90,6 +74,17 @@ def root_logger():
     logging.captureWarnings(False)
     root.handlers[:] = handlers
     root.setLevel(level)
+
+
+def test_warnings_are_json_records(
+    root_logger: logging.Logger, capsys: pytest.CaptureFixture[str]
+) -> None:
+    configure_logging()
+    warnings.warn("a library's warning", UserWarning, stacklevel=1)
+    (line,) = capsys.readouterr().err.splitlines()
+    record = json.loads(line)
+    assert (record["logger"], record["level"]) == ("py.warnings", "WARNING")
+    assert "a library's warning" in record["message"]
 
 
 def _dev_ino(stream) -> str:
