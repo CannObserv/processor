@@ -620,7 +620,7 @@ systemctl show processor -p NRestarts
 tailscale status
 ```
 
-`-p warning` does the level filter (#76) and `fromjson?` drops systemd's own warning lines; for a window before #76's deploy, every record is `PRIORITY=6`, so drop `-p warning` and `select(.level != "INFO")` instead (§ Operate → Logs).
+`-p warning` does the level filter (#76) and `fromjson?` drops systemd's own warning lines; for a window before #76's deploy, every record is `PRIORITY=6`, so drop `-p warning` and filter with `select(.level != "INFO")` instead (§ Operate → Logs).
 
 Log a flap on the epic as: the window (first WARNING to the first `ack: complete` after it), the counts above, and which kind it was.
 
