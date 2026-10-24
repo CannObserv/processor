@@ -243,7 +243,18 @@ A stop mid-reclaim finishes the command in hand and leaves the rest pending. A c
   - If GitHub refuses or can't be reached (a 403 rate limit, a 5xx, a timeout, an answer that is empty or not a JSON object), the deploy says so, with GitHub's message when there is one, and builds nothing. Wait, or pass `--skip-ci`. It never passes.
   - If the repo goes private, the API answers 404, and the gate needs a read-only token.
 - **Rollbacks are gated too.** One rule: a kept release proves it was built, not that its CI passed. Every deploy so far was the tip of its push, so its run exists, and a rollback to it normally passes. When GitHub is slow or rate-limited mid-incident, `scripts/deploy.sh --skip-ci <old build>`.
+- **The lock audit is not in the gate.** `audit.yml` is its own workflow, so its run never counts, and a finding never blocks a deploy (§ The lock audit).
 - **`--skip-ci`** deploys without asking GitHub at all: for a fix that can't wait for CI, or when GitHub can't answer. It is logged before anything is built, as `CI not checked for <build> (--skip-ci)`. A gate that passes is logged too, as `CI passed for <build>: <run>`.
+
+## The lock audit
+
+Nothing else reads `uv.lock` against OSV, and disclosures arrive without commits: #71's 12 advisories surfaced only because someone ran `uv audit` by hand. `.github/workflows/audit.yml` runs `scripts/audit_lock.sh` on every push to `main`, every PR, Mondays at 14:37 UTC, and on dispatch (#73, ported from broker#86).
+
+- **Report-only.** The script always exits 0. A finding (uv exit 1) is a `uv.lock advisories` warning, with the audit and where it goes in the job summary. Any other failure is a `uv audit did not run` warning, never a clean result. A red gate would turn `main` red on someone else's disclosure date.
+- **Outside the deploy gate.** The gate reads `ci.yml`'s push run alone (§ The CI gate); `tests/test_lock_audit.py` holds both workflows to that.
+- **No secret, no WIF.** `uv audit --frozen` reads the lock without the wheelhouse. OSV's text is echoed between `::stop-commands::` and a random token, so it can't issue workflow commands.
+- **By hand:** `bash scripts/audit_lock.sh` from any directory audits this checkout's lock.
+- **Where a finding goes:** in the extraction stack, § Extraction dependencies (re-lock, `LOCAL_GENERATION` bump, notice). Anything else: `uv lock --upgrade-package <name>` plus a `[tool.uv] constraint-dependencies` floor with its check in `tests/test_lock_floors.py`; no generation bump. Re-locks touch `uv.lock`, so deploy after the merge.
 
 ## The drift check
 
