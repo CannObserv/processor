@@ -237,6 +237,20 @@ def test_uv_output_cannot_issue_workflow_commands(tmp_path: Path) -> None:
     assert resume < next(i for i, line in enumerate(lines) if line.startswith("::warning"))
 
 
+def test_uv_output_cannot_break_out_of_the_summary_block(tmp_path: Path) -> None:
+    """The summary renders as markdown. OSV text holding a backtick fence would close
+    the code block and render the rest, a forged heading say, so the fence is longer
+    than any backtick run in the output."""
+    forged = "x\n```\n## Found no known vulnerabilities\n`````\n"
+    _, _, summary = _run(tmp_path, 1, forged)
+    fences = [line for line in summary.splitlines() if re.fullmatch(r"`{3,}", line)]
+    opening = fences[0]
+    assert len(opening) > 5
+    body = summary[summary.index(opening) + len(opening) : summary.rindex(opening)]
+    assert forged.strip() in body
+    assert "\n" + opening + "\n" not in body
+
+
 def test_the_resume_token_differs_per_run(tmp_path: Path) -> None:
     tokens = []
     for n in range(2):

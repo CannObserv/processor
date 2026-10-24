@@ -47,7 +47,10 @@ if [ -n "${GITHUB_ACTIONS:-}" ]; then
 	echo "::stop-commands::$token"
 	printf '%s\n' "$out"
 	echo "::$token::"
+	# Longer than any backtick run in OSV's text, which could otherwise close the
+	# block and render the rest of the summary as markdown.
 	fence='```'
+	while [[ $out == *"$fence"* ]]; do fence+='`'; done
 	{
 		printf '### uv audit --frozen (exit %s)\n\n%s\n%s\n%s\n' "$rc" "$fence" "$out" "$fence"
 		[ "$rc" -eq 1 ] && printf '\n%s\n' "$routing"
