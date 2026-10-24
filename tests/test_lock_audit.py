@@ -70,7 +70,7 @@ def _run(
     fake = bin_dir / "uv"
     fake.write_text(
         "#!/usr/bin/env bash\n"
-        f'echo "$PWD $*" >> "{argv_file}"\n'
+        f'echo "$(pwd -P) $*" >> "{argv_file}"\n'
         f"{reject}"
         f'cat "{tmp_path / "output"}"\n'
         f"exit {uv_exit}\n"
