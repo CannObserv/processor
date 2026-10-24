@@ -1,6 +1,7 @@
 """Structured JSON logs with the cohort's four-key floor."""
 
 import json
+import os
 import logging
 import re
 import sys
@@ -78,3 +79,93 @@ def test_warnings_are_json_records(capsys: pytest.CaptureFixture[str]) -> None:
     record = json.loads(line)
     assert (record["logger"], record["level"]) == ("py.warnings", "WARNING")
     assert "a library's warning" in record["message"]
+
+
+@pytest.fixture
+def root_logger():
+    """Restore the root logger and ``warnings`` capture after ``configure_logging``."""
+    root = logging.getLogger()
+    handlers, level = root.handlers[:], root.level
+    yield root
+    logging.captureWarnings(False)
+    root.handlers[:] = handlers
+    root.setLevel(level)
+
+
+def _dev_ino(stream) -> str:
+    st = os.fstat(stream.fileno())
+    return f"{st.st_dev}:{st.st_ino}"
+
+
+@pytest.mark.parametrize(
+    ("levelno", "prefix"),
+    [
+        (logging.CRITICAL, "<2>"),
+        (logging.ERROR, "<3>"),
+        (logging.WARNING + 5, "<4>"),
+        (logging.WARNING, "<4>"),
+        (logging.INFO, "<6>"),
+        (logging.DEBUG, "<7>"),
+        (logging.NOTSET, "<7>"),
+    ],
+)
+def test_each_level_maps_to_its_syslog_priority(levelno: int, prefix: str) -> None:
+    record = logging.LogRecord("x", levelno, __file__, 1, "m", (), None)
+    line = JsonFormatter(journal=True).format(record)
+    assert line.startswith(prefix)
+    assert json.loads(line.removeprefix(prefix))["message"] == "m"
+
+
+def test_on_the_journal_every_line_carries_its_priority(
+    root_logger: logging.Logger, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The unit's case: JOURNAL_STREAM names stderr's own device and inode.
+    with open(tmp_path / "stderr", "w+") as stream:
+        monkeypatch.setattr(sys, "stderr", stream)
+        monkeypatch.setenv("JOURNAL_STREAM", _dev_ino(stream))
+        configure_logging()
+        logging.getLogger("processor.consumer").warning("backing off", extra={"attempt": 2})
+        logging.getLogger("processor.consumer").error("gave up")
+        logging.getLogger("processor.consumer").info("ack")
+        stream.flush()
+        lines = (tmp_path / "stderr").read_text().splitlines()
+    assert [line[:3] for line in lines] == ["<4>", "<3>", "<6>"]
+    record = json.loads(lines[0][3:])
+    assert (record["level"], record["message"], record["attempt"]) == (
+        "WARNING",
+        "backing off",
+        2,
+    )
+
+
+@pytest.mark.parametrize("journal_stream", [None, "", "garbage", "1:2:3", "0:0", "other"])
+def test_off_the_journal_lines_are_pure_json(
+    root_logger: logging.Logger, tmp_path, monkeypatch: pytest.MonkeyPatch, journal_stream
+) -> None:
+    # A terminal, a `systemd-run --pipe`, a shell that inherited another unit's
+    # JOURNAL_STREAM: unset, malformed, or naming a stream that is not stderr.
+    with open(tmp_path / "stderr", "w+") as stream:
+        monkeypatch.setattr(sys, "stderr", stream)
+        if journal_stream is None:
+            monkeypatch.delenv("JOURNAL_STREAM", raising=False)
+        elif journal_stream == "other":
+            with open(tmp_path / "elsewhere", "w") as other:
+                monkeypatch.setenv("JOURNAL_STREAM", _dev_ino(other))
+        else:
+            monkeypatch.setenv("JOURNAL_STREAM", journal_stream)
+        configure_logging()
+        logging.getLogger("x").warning("w")
+        stream.flush()
+        (line,) = (tmp_path / "stderr").read_text().splitlines()
+    assert json.loads(line)["level"] == "WARNING"
+
+
+def test_a_stream_without_a_descriptor_is_not_the_journal(
+    root_logger: logging.Logger, capsys: pytest.CaptureFixture[str], monkeypatch
+) -> None:
+    # pytest's capsys: sys.stderr.fileno() raises. Never a prefix, never an error.
+    monkeypatch.setenv("JOURNAL_STREAM", "9:12345")
+    configure_logging()
+    logging.getLogger("x").warning("w")
+    (line,) = capsys.readouterr().err.splitlines()
+    assert json.loads(line)["level"] == "WARNING"
