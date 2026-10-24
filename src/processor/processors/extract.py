@@ -18,10 +18,11 @@ from co_core.pure.extract.extraction_defaults import extraction_config_from_spec
 from co_core.pure.extract.media_type import extraction_overrides_for_essence
 from co_core.pure.extract.spec_fingerprint import spec_fingerprint, spec_schema_version
 
-# Bump by hand only when Processor's own logic (config merging, dispatch) changes
-# output in a way co-core's version cannot see (spec §5). Matches Watcher's
-# LOCAL_EXTRACTION_GENERATION: the dispatch here is Watcher's, lifted into co-core.
-LOCAL_GENERATION = 1
+# Bump by hand when output can move in a way co-core's version cannot see (spec §5):
+# Processor's own logic (config merging, dispatch), or the locked extraction stack
+# moving outside a co-core bump (tests/test_pin.py's EXTRACTION_STACK). 1 matched
+# Watcher's LOCAL_EXTRACTION_GENERATION at the cutover; 2 is pypdf 6.19.0 -> 6.21.2 (#71).
+LOCAL_GENERATION = 2
 PROCESSOR_VERSION = processor_version(LOCAL_GENERATION)
 
 

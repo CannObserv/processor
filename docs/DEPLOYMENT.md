@@ -462,6 +462,17 @@ co-core is pinned `==`, and Processor owns the pin (spec D5, §5; amended 2026-1
 4. **Notice to Watcher** before deploy: the new `processor_version`, and the moved digests. A change to the contract needs coordination with Watcher first, not just notice. The contract is the `content.process` / `content.derived` models and `canonical_text` semantics. A change to essence resolution is notice, not coordination (spec §5, #57).
 5. Merge, then `scripts/deploy.sh`.
 
+## Extraction dependencies
+
+`processor_version` sees co-core and `LOCAL_GENERATION`, nothing else in the lock. The extraction stack (the transitive closure of co-core's `extract` extra: pypdf, lxml, bs4, html5lib, openpyxl, …) turns bytes into text too, and co-core floors it loosely, so a re-lock can move a fingerprint under an unchanged version. Watcher reads that as a content change and notifies. So moving the stack outside a co-core bump is a generation bump (spec §5, amended 2026-10-24, #71):
+
+1. `uv lock --upgrade-package <pkg>`, never `uv lock --upgrade`; the diff moves what you named. A security floor goes in `[tool.uv] constraint-dependencies`, with its check in `tests/test_lock_floors.py`.
+2. `tests/test_pin.py` fails, naming what moved. Update `EXTRACTION_STACK`, and bump `LOCAL_GENERATION` in `src/processor/processors/extract.py` and `GENERATION` in the test. At a co-core bump the version moves anyway: update the table, leave the generation.
+3. Measure what moved: the parity tests (goldens, real corpus) must pass unchanged (a golden that moves is a co-core-pin question, not this one), and run co-core's extractor for the moved package over a wider corpus on both versions (#71 used pypdf's and py-pdf's sample PDFs: 4 of 106 moved). Put the result in the PR.
+4. **Notice to Watcher** before deploy: the new `processor_version` and the evidence. Merge, then `scripts/deploy.sh`.
+
+Since #71: `0.38.0+2`, pypdf 6.21.2, opentelemetry-api 1.45.1 (not stack; a floor only).
+
 ## TLS trust
 
 The service's TLS trust is certifi's bundle in the release venv, not the system store: GCS (`google-auth` / `google-cloud-storage` over `requests`) and the drift check's GitHub calls verify against `certifi.where()`, and nothing sets `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE`. A CA distrust (exe.dev's system-store remediation doesn't reach the venv) is a certifi bump: raise `constraint-dependencies` in `pyproject.toml` and the floor in `tests/test_tls_trust.py`, `uv lock --upgrade-package certifi` (the diff moves certifi alone, never `uv lock --upgrade`), merge, then `scripts/deploy.sh`. The restart is the fix: a running process keeps the bundle it loaded. Check from the release venv: `/srv/processor/live/.venv/bin/python -I -c "import certifi; print(certifi.__version__)"`. certifi isn't co-core, so `processor_version` doesn't move and Watcher needs no notice. Since #66: ≥ 2026.10.19, without `emSign ECC Root CA - G3` (the eMudhra compromise, https://exe.dev/security/emudhra-compromise).

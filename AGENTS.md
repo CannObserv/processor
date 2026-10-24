@@ -24,7 +24,7 @@ TDD required. Red → Green → Refactor. No production code without a failing t
 
 Python 3.12, uv, hatchling src layout, pytest, ruff.
 
-**co-core is pinned exactly (`==0.38.0`); Processor owns the pin** (spec D5, §5; since watcher#350 nothing else extracts). `processor_version` = `"<co-core version>+<LOCAL_GENERATION>"`; a pin test makes every bump a deliberate, test-failing act. Never let a dependency bot or `uv lock --upgrade` move co-core. A bump gives Watcher notice (it re-baselines on `processor_version`). It is coordinated with Watcher only if it changes the contract: the `content.process` / `content.derived` models or `canonical_text` semantics. Procedure: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#bumping-co-core).
+**co-core is pinned exactly (`==0.38.0`); Processor owns the pin** (spec D5, §5; since watcher#350 nothing else extracts). `processor_version` = `"<co-core version>+<LOCAL_GENERATION>"`; a pin test makes every bump a deliberate, test-failing act. Never let a dependency bot or `uv lock --upgrade` move co-core. A bump gives Watcher notice (it re-baselines on `processor_version`). It is coordinated with Watcher only if it changes the contract: the `content.process` / `content.derived` models or `canonical_text` semantics. Procedure: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#bumping-co-core). The extraction stack (co-core's `extract` extra, closure: pypdf, lxml, …) is held too: moving it outside a co-core bump bumps `LOCAL_GENERATION` (#71, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#extraction-dependencies)).
 
 **Cannobserv wheelhouse.** `co-core`, `co-core-aio`, `co-core-sync` resolve from `./.wheelhouse` (git-ignored) via `[tool.uv] find-links`. Populate it before any `uv` command:
 
@@ -100,7 +100,7 @@ scripts/deploy.sh [<build>]              # ship: CI green, then build a release 
 ## Detail Docs
 
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, `/etc/processor/`, releases and `scripts/deploy.sh`, the drift check, liveness, containment, install and rollback, operate, co-core bumps, TLS trust, Tailscale DNS, tailnet flaps (signature, rule), Node.js
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, `/etc/processor/`, releases and `scripts/deploy.sh`, the drift check, liveness, containment, install and rollback, operate, co-core bumps, extraction dependencies, TLS trust, Tailscale DNS, tailnet flaps (signature, rule), Node.js
 - [docs/plans/](docs/plans/) — implementation plans
 - [docs/SKILLS.md](docs/SKILLS.md) — vendored agent skills: inventory, overrides (none), the refresh hook, worktrees
 - [docs/SOCRATICODE.md](docs/SOCRATICODE.md) — semantic search: tools, the shared store, link stubs, the pin, the memory decision

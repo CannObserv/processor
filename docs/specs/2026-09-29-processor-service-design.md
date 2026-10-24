@@ -97,6 +97,14 @@ on `co-processor`.
 - So #29's coordination on watcher#366 was more than the rule needed, and #37's
   notice on watcher#368 was what it needed. The entries above stand as written.
 
+**Amended 2026-10-24 (the extraction stack, processor#71):**
+- `processor_version` also moves when the locked extraction stack moves outside a
+  co-core bump: `LOCAL_GENERATION` 1 → **2** for pypdf 6.19.0 → 6.21.2 (11
+  advisories), so facts report `0.38.0+2` (Section 5). Watcher compares the
+  version as an opaque string, so an unmarked move reads as a content change.
+- A test holds the stack, the transitive closure of co-core's `extract` extra
+  in the lock, so moving it is deliberate (Section 7).
+
 ---
 
 ## Why a new service
@@ -454,8 +462,22 @@ reclaim re-running (not re-publishing) the extraction.
   **`LOCAL_GENERATION = 1`**, which matched Watcher's `LOCAL_EXTRACTION_GENERATION =
   1` at the cutover: the dispatch Processor runs is Watcher's, lifted into
   co-core. Since watcher#350 nothing on Watcher's side has to match. Bump it by
-  hand only when Processor's own logic (config merging, dispatch) changes output
-  in a way co-core's version cannot see.
+  hand when output can move in a way co-core's version cannot see: Processor's
+  own logic (config merging, dispatch) changes, or the **extraction stack**
+  moves outside a co-core bump (amended 2026-10-24, processor#71).
+  - The extraction stack is the transitive closure of co-core's `extract` extra
+    in `uv.lock`: beautifulsoup4, et-xmlfile, html5lib, lxml, openpyxl, pypdf,
+    python-jsonpath, six, soupsieve, typing-extensions, webencodings. co-core
+    floors them loosely (`pypdf>=5.0,<7`), so a re-lock can move output under
+    an unchanged `processor_version`, and Watcher's Option A reads a moved
+    fingerprint under an unchanged version as a content change, notified.
+    `tests/test_pin.py` holds the stack's versions in the lock and the venv.
+  - A move gives Watcher notice, as a co-core bump does, with the evidence of
+    what moved. At a co-core bump the stack may move with it; the version moves
+    anyway, so the generation stays.
+  - **`LOCAL_GENERATION = 2`** since processor#71: pypdf 6.19.0 → 6.21.2 for
+    its advisories. Over pypdf's and py-pdf's sample corpora, 4 of 106 PDFs
+    extracted differently (word spacing); the goldens and the real corpus held.
 - **co-core `==0.38.0`** since processor#37 (2026-10-20). Before it,
   `==0.37.0` since processor#21 (2026-10-17), and `==0.32.0` since processor#29
   (2026-10-12), the catch-up jump from
@@ -629,8 +651,8 @@ TDD, red first.
   - Parity with Watcher's local path should be proven before shadow, not
     discovered in it.
 - **Pin test.** The lock's co-core equals the expected exact version and
-  `processor_version(LOCAL_GENERATION) == "0.38.0+1"` — a bump is a deliberate,
-  test-failing act.
+  `processor_version(LOCAL_GENERATION) == "0.38.0+2"` — a bump is a deliberate,
+  test-failing act. So is moving the extraction stack (Section 5, processor#71).
 - **Shells — one test per Section 4 row.** Input/output stores: a local co-core
   store on a temp dir behind the same interface, plus fakes raising GCS 5xx /
   429 / `NotFound`. Bus: fakeredis (or co-core-aio's test double, if it ships

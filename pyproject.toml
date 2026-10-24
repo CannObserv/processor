@@ -86,4 +86,12 @@ find-links = ["./.wheelhouse"]
 # not the system store. 2026.10.19 drops emSign ECC Root CA - G3, the root of the
 # eMudhra-compromised chains (https://exe.dev/security/emudhra-compromise, #66); the
 # floor keeps a re-lock from resolving an older one. tests/test_tls_trust.py checks it.
-constraint-dependencies = ["certifi>=2026.10.19"]
+# pypdf (via co-core[extract]) 6.21.2 fixes 11 advisories on 6.19.0 (loops, runtimes,
+# memory, JPEG) on attacker-reachable PDFs; opentelemetry-api (via google-api-core)
+# 1.45.1 fixes unbounded tracestate parsing (#71). tests/test_lock_floors.py checks them.
+# pypdf is also extraction stack: moving it bumps LOCAL_GENERATION (tests/test_pin.py).
+constraint-dependencies = [
+    "certifi>=2026.10.19",
+    "pypdf>=6.21.2",
+    "opentelemetry-api>=1.45.1",
+]

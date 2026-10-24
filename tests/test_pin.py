@@ -9,6 +9,12 @@ Whether a bump is notice or coordination turns on the contract (§5). Essence
 resolution is outside it only because Processor never calls co-core's resolvers
 (``resolve_dispatch_essence``, ``extension_media_type``), and a test holds that
 premise (processor#57).
+
+``processor_version`` is blind to everything else in the lock, so a fact is a pure
+function of (bytes, spec, ``processor_version``) only while the extraction stack holds
+still between co-core bumps. ``EXTRACTION_STACK`` makes moving it deliberate too: a
+re-lock that moves it outside a co-core bump also bumps ``LOCAL_GENERATION`` (§5,
+amended 2026-10-24, processor#71).
 """
 
 import ast
@@ -26,6 +32,29 @@ ROOT = Path(__file__).resolve().parent.parent
 PINNED = ("co-core", "co-core-aio", "co-core-sync")
 SRC = ROOT / "src" / "processor"
 RESOLVERS = frozenset({"resolve_dispatch_essence", "extension_media_type"})
+GENERATION = 2  # 1 was Watcher's LOCAL_EXTRACTION_GENERATION at the cutover; 2: #71
+# The transitive closure of co-core's ``extract`` extra in uv.lock: what turns bytes
+# into text beside co-core itself. Moved together with GENERATION (#71: pypdf 6.21.2).
+EXTRACTION_STACK = {
+    "beautifulsoup4": "4.15.0",
+    "et-xmlfile": "2.0.0",
+    "html5lib": "1.1",
+    "lxml": "6.1.3",
+    "openpyxl": "3.1.5",
+    "pypdf": "6.21.2",
+    "python-jsonpath": "2.2.2",
+    "six": "1.17.0",
+    "soupsieve": "2.10",
+    "typing-extensions": "4.16.0",
+    "webencodings": "0.6.1",
+}
+STACK_MOVED = (
+    "The extraction stack moved: {moved}. processor_version can't see it, and Watcher "
+    "reads a moved fingerprint under an unchanged version as a content change. Outside "
+    "a co-core bump, bump LOCAL_GENERATION and GENERATION; either way update "
+    "EXTRACTION_STACK, and give Watcher notice (spec §5; DEPLOYMENT.md, Extraction "
+    "dependencies; processor#71)."
+)
 
 
 def _resolver_uses(source: str) -> list[str]:
@@ -45,9 +74,35 @@ def _resolver_uses(source: str) -> list[str]:
     return found
 
 
-def _lock_versions() -> dict[str, str]:
+def _lock_packages() -> dict[str, dict]:
     lock = tomllib.loads((ROOT / "uv.lock").read_text())
-    return {p["name"]: p["version"] for p in lock["package"]}
+    return {p["name"]: p for p in lock["package"]}
+
+
+def _lock_versions() -> dict[str, str]:
+    return {name: p["version"] for name, p in _lock_packages().items()}
+
+
+def _extraction_stack() -> dict[str, str]:
+    # Walk the lock from co-core's extract extra, so a new transitive dependency counts.
+    packages = _lock_packages()
+    todo = [d["name"] for d in packages["co-core"]["optional-dependencies"]["extract"]]
+    seen: set[str] = set()
+    while todo:
+        name = todo.pop()
+        if name not in seen:
+            seen.add(name)
+            todo.extend(d["name"] for d in packages[name].get("dependencies", []))
+    return {name: packages[name]["version"] for name in sorted(seen)}
+
+
+def _moved(actual: dict[str, str | None]) -> dict[str, tuple[str | None, str | None]]:
+    names = EXTRACTION_STACK.keys() | actual.keys()
+    return {
+        n: (EXTRACTION_STACK.get(n), actual.get(n))
+        for n in sorted(names)
+        if EXTRACTION_STACK.get(n) != actual.get(n)
+    }
 
 
 @pytest.mark.parametrize("name", PINNED)
@@ -76,8 +131,26 @@ def test_the_wheelhouse_builder_defaults_to_the_pin() -> None:
 
 
 def test_processor_version_is_co_core_plus_generation() -> None:
-    assert LOCAL_GENERATION == 1  # Watcher's LOCAL_EXTRACTION_GENERATION at the cutover
-    assert PROCESSOR_VERSION == f"{EXPECTED}+1"
+    assert LOCAL_GENERATION == GENERATION
+    assert PROCESSOR_VERSION == f"{EXPECTED}+{GENERATION}"
+
+
+def test_the_lock_holds_the_extraction_stack() -> None:
+    moved = _moved(dict(_extraction_stack()))
+    assert not moved, STACK_MOVED.format(moved=moved)
+
+
+def test_the_venv_holds_the_extraction_stack() -> None:
+    moved = _moved({name: version(name) for name in EXTRACTION_STACK})
+    assert not moved, STACK_MOVED.format(moved=moved)
+
+
+def test_the_stack_walk_sees_the_extract_extra_and_its_dependencies() -> None:
+    # Control: the walk reaches co-core's direct extras and a dependency of theirs
+    # (html5lib -> webencodings), and leaves co-core's base deps (dateparser) out.
+    stack = _extraction_stack()
+    assert {"pypdf", "lxml", "html5lib", "webencodings"} <= stack.keys()
+    assert "dateparser" not in stack
 
 
 @pytest.mark.parametrize(
