@@ -1,8 +1,8 @@
 """Structured JSON logs with the cohort's four-key floor."""
 
 import json
-import os
 import logging
+import os
 import re
 import sys
 import warnings
