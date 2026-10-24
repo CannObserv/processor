@@ -21,7 +21,7 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`, a
 | Tailnet `tag:processor` → `tag:status:9000` | tailnet policy | #35 gate 2, done 2026-10-07: `http://status:9000/health` answered `production` from `co-processor` at 14:03Z |
 | Status tenant `co-processor`, its production key, and the monitor `co-processor-drift` (`01M4BHMGGTXWQ16J3G5WWDQRYQ`) | `co-status` | CannObserv/status#24 (#35 gate 1), done 2026-10-07 16:02Z |
 | Status key at `/etc/processor/status-checkin.key` (root 600; `processor-drift.service`'s `LoadCredential=`) | this VM | #35 gate 3, [The drift check](#the-drift-check) |
-| Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level, for `co-gcs-blob-reader`, the identity Watcher already reads `gs://` blobs with | GCP | done 2026-10-02 (in the bucket's IAM policy); watcher#325 has not yet confirmed that identity |
+| Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level, for `co-gcs-blob-reader`, the identity Watcher already reads `gs://` blobs with | GCP | done 2026-10-02 (in the bucket's IAM policy); Watcher confirmed that identity on watcher#325 the same day ([its answers](https://github.com/CannObserv/watcher/issues/325#issuecomment-5958475061)) |
 
 ### Broker credential handoff (hash-only, broker#75 as of 2026-09-30)
 
@@ -458,7 +458,7 @@ On boot, the service preflights both buckets and exits non-zero if either is unr
 
 - **Drift:** `journalctl -u processor-drift` (§ The drift check).
 - **Liveness:** `journalctl -u processor -o cat | jq -cR 'fromjson? | select(.logger == "processor.liveness")'` (§ Liveness).
-- **Logs:** `journalctl -u processor`. `starting` names the `build`, `child_containment`, `landlock_abi` and `liveness`. Deploys: `journalctl -t processor-deploy`. Each outcome has `command_id`, `info_source_id`, `action` (`ack` / `strike` / `leave_pending` / `dead_letter`), `reason`, `detail`, and timings in `*_ms`. Each also has `input_digest` once it is valid, as bare hex like the command's. A complete fact adds `output_digest` (`sha256:<hex>`, as on the fact; the object is `blobs/<hex>.bin`; absent when `empty`), `output_size_bytes`, `empty` and `processor_version`, and so does a `leave_pending` whose publish failed after the store. A shadow command's output: `journalctl -u processor -o cat | jq -cR 'fromjson? | select(.command_id == "<id>") | {action, reason, input_digest, output_digest}'` (`-R … fromjson?` skips systemd's own lines, which `-u` includes and plain `jq` aborts on).
+- **Logs:** `journalctl -u processor`. A record's journald `PRIORITY` follows its `level` (CRITICAL 2, ERROR 3, WARNING 4, INFO 6, DEBUG 7; #76), so `journalctl -u processor -p warning` lists WARNING and above; add `-o cat` for the JSON alone. The service writes an sd-daemon `<N>` prefix only when its stderr is the journal (`JOURNAL_STREAM` names stderr's own device and inode), and journald strips it, so `MESSAGE` stays pure JSON. A terminal, `processor_cli` and any `systemd-run --pipe` never see one. Records from before #76's deploy (2026-10-24) are all `PRIORITY=6`: filter those by `.level`. Only records go through it: a bare traceback or `print` to stderr is still `PRIORITY=6`. `starting` names the `build`, `child_containment`, `landlock_abi` and `liveness`. Deploys: `journalctl -t processor-deploy`. Each outcome has `command_id`, `info_source_id`, `action` (`ack` / `strike` / `leave_pending` / `dead_letter`), `reason`, `detail`, and timings in `*_ms`. Each also has `input_digest` once it is valid, as bare hex like the command's. A complete fact adds `output_digest` (`sha256:<hex>`, as on the fact; the object is `blobs/<hex>.bin`; absent when `empty`), `output_size_bytes`, `empty` and `processor_version`, and so does a `leave_pending` whose publish failed after the store. A shadow command's output: `journalctl -u processor -o cat | jq -cR 'fromjson? | select(.command_id == "<id>") | {action, reason, input_digest, output_digest}'` (`-R … fromjson?` skips systemd's own lines, which `-u` includes and plain `jq` aborts on).
 - **Dead letters:** `processor_cli dlq list | show <id> | drop <id>` (§ `/etc/processor/`). There is no replay. An entry failed to decode, was not a command, or is a command that raised outside the handler on every attempt (`reason` starts `gave up on attempt`): that one is a bug to fix. Before dead-lettering such a command, Processor published a terminal `dead_lettered` whose `detail` starts `dead-lettered:` (best effort), so Watcher has closed it (#17; `extraction_error` before co-core 0.37.0, #21). The journal's `dead-lettering` record says which: `failure_fact` is `published`, `skipped` (a fact had already gone out) or `refused`. On a command given up at the cap, `handle_skipped` is `true` when the record retries a give-up that did not finish (the failure fact refused transiently, or the dead-letter refused), with no re-run of the command and the original traceback (#28). The same entry logging that every ~11 min while it stays pending means `content.process.dlq` refuses it: `journalctl -u processor -o cat | jq -cR 'fromjson? | select(.handle_skipped) | {timestamp, command_id, message_id, reason}'`.
 - **Lag / missing group:** the broker probe watches `processor.process` (broker#75).
 - **Strikes** are counted in memory. A restart resets them, so a poison command gets at most 3 more attempts.
@@ -613,12 +613,14 @@ exe.dev's docs don't describe maintenance, host migration, ballooning or pauses.
 - **A flap:** this VM's tailscaled logs `endpoints changed` and `LinkChange` (and, on 2026-10-22, `time-jumped`), or peers go stale or relayed in `tailscale status`.
 
 ```bash
-journalctl -u processor -o cat --since <start> | jq -cR 'fromjson? | select(.level != "INFO") | {timestamp, logger, message, error}'
+journalctl -u processor -p warning -o cat --since <start> | jq -cR 'fromjson? | {timestamp, level, logger, message, error}'
 journalctl -u tailscaled -o short-iso --since <start> | grep -E 'LinkChange|endpoints changed|rebind-reason|closing connection to derp|open-conn-track'
 journalctl -k -o short-iso --since <start> | grep -E 'Out of puff|balloon'
 systemctl show processor -p NRestarts
 tailscale status
 ```
+
+`-p warning` does the level filter (#76) and `fromjson?` drops systemd's own warning lines; for a window before 2026-10-24, every record is `PRIORITY=6`, so drop `-p warning` and `select(.level != "INFO")` instead (§ Operate → Logs).
 
 Log a flap on the epic as: the window (first WARNING to the first `ack: complete` after it), the counts above, and which kind it was.
 

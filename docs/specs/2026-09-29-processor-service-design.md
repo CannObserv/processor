@@ -105,6 +105,11 @@ on `co-processor`.
 - A test holds the stack, the transitive closure of co-core's `extract` extra
   in the lock, so moving it is deliberate (Section 7).
 
+**Amended 2026-10-24 (journald priority, processor#76):**
+- A record reaches journald at its level's priority: an sd-daemon `<N>` prefix,
+  only when stderr is the journal stream (Section 3). `processor_version` does
+  not move.
+
 ---
 
 ## Why a new service
@@ -340,7 +345,13 @@ waits for it at exit. Each check-in is awaited for at most
 skipped, and nothing raises into the loop. The broker probe and
 `XINFO GROUPS` cover lag and a missing group; structured JSON logs in the cohort
 schema (`timestamp` ISO 8601 UTC, `level`, `logger`, `message` — the fields
-Observo adopted in #395/#407) so the later plane can ingest them unchanged.
+Observo adopted in #395/#407) so the later plane can ingest them unchanged. When
+stderr is the journal (systemd's `JOURNAL_STREAM` names stderr's own device and
+inode), each line carries its level as an sd-daemon `<N>` prefix (CRITICAL 2,
+ERROR 3, WARNING 4, INFO 6, DEBUG 7), which journald strips into `PRIORITY`: the
+stored message is the same JSON, and `journalctl -p warning` finds WARNING and
+ERROR. Elsewhere (a terminal, `systemd-run --pipe`) there is no prefix
+(processor#76). Logging is not output: `processor_version` does not move.
 
 ## Section 4 — failure handling
 
