@@ -10,7 +10,8 @@ When stderr is the journal, each line also carries its level as an sd-daemon
 ``<N>`` prefix, so ``journalctl -p warning`` finds WARNING and ERROR (#76).
 journald strips it (``SyslogLevelPrefix=yes``, the default): ``-o cat`` and
 ``MESSAGE`` stay pure JSON. Anywhere else (a terminal, ``systemd-run --pipe``, a
-test's capture) there is no prefix.
+test's capture) there is no prefix. journald splits a line past its ``LineMax``
+(48K): only the first part carries the priority, the rest lands at info.
 """
 
 import json
