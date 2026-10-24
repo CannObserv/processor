@@ -351,7 +351,7 @@ an entry point's stderr is the journal, as under both units (`processor run`,
 inode), each line carries its level as an sd-daemon `<N>` prefix (CRITICAL 2,
 ERROR 3, WARNING 4, INFO 6, DEBUG 7), which journald strips into `PRIORITY`: the
 stored message is the same JSON, and `journalctl -p warning` finds WARNING and
-ERROR. Elsewhere (a terminal, `systemd-run --pipe`) there is no prefix
+above. Elsewhere (a terminal, `systemd-run --pipe`) there is no prefix
 (processor#76). Logging is not output: `processor_version` does not move.
 
 ## Section 4 — failure handling
