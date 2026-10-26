@@ -626,7 +626,7 @@ Log a flap on the epic as: the window (first WARNING to the first `ack: complete
 
 ## Patching
 
-Posture **`scheduled`** (#77), under gregoryfoster/skills `patching-hosts` ([skills/patching-hosts](../skills/patching-hosts/SKILL.md)), read from the knob [.skills/patching-hosts](../.skills/patching-hosts). The owner approves one window a month: **`Mon 23:00–05:00` UTC**, on a Monday the broker's own run doesn't use (CannObserv/broker#67). Both VMs hold the bus link, so running one host at a time keeps a flap attributable to that host. The gate allows any Monday, so keeping off the broker's is a convention, written on the issue with each next date.
+Posture **`scheduled`** (#77), under gregoryfoster/skills `patching-hosts` ([skills/patching-hosts](../skills/patching-hosts/SKILL.md)), read from the knob [.skills/patching-hosts](../.skills/patching-hosts). The owner approves a run **every week**, in **`Tue 05:00–10:00` UTC**: Monday night Pacific, 21:00–02:00 PST or 22:00–03:00 PDT (operator, 2026-10-26). That is more often than the skill's policy.md, which has `scheduled` hosts run once a month; there's no knob directive for the cadence, so this is a declared deviation. The window opens as the broker's closes (`Mon 23:00–05:00`, CannObserv/broker#67). Both VMs hold the bus link, so the hosts never patch at once and a flap stays attributable to one host. Each run is approved in this repo's session, like the first.
 
 The apt timers stay masked and `APT::Periodic::Enable` stays 0 (both from the image). Both lanes run in the window: security plus `-updates` plus the followed origins, `--lane maintenance`. **Never a bare `apt-get upgrade`:** it takes every origin. The skill's [run.md](../skills/patching-hosts/references/run.md) is the procedure; this section is what is particular to this host.
 
@@ -703,7 +703,7 @@ bash deploy/nodesource.sh check          # exit 0 in sync (a pending update is a
 
 ### Patching Node
 
-The host's posture is `scheduled` ([§ Patching](#patching)), so nothing updates Node on its own. NodeSource ships security fixes in its own repo, never `noble-security`, so its policy is **follow**: `nodejs` rides the monthly maintenance lane. Never a bare `apt-get upgrade`.
+The host's posture is `scheduled` ([§ Patching](#patching)), so nothing updates Node on its own. NodeSource ships security fixes in its own repo, never `noble-security`, so its policy is **follow**: `nodejs` rides the weekly maintenance lane. Never a bare `apt-get upgrade`.
 
 **Select it by host, not by origin.** NodeSource's Release file says `Origin: . nodistro`, aptly's default, which every aptly-published `nodistro` repo shares. So the knob names the site, `origin deb.nodesource.com follow` (a value holding a dot is read as a site: the skill's knob.md), and the lane's `APT_CONFIG` takes:
 

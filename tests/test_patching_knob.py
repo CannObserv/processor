@@ -3,7 +3,7 @@
 ``.skills/patching-hosts`` is what the vendored ``patching-hosts`` skill reads to
 learn what only this repo's owner knows: the window, the service the reboot chain
 stops, the origins its maintenance lane follows. **A malformed line makes the host
-report-only** until it is fixed, which reads as "nothing to do" at the next monthly
+report-only** until it is fixed, which reads as "nothing to do" at the next weekly
 run rather than as an error, so the skill's own reader is run here. CI initialises
 the submodule (tests/test_skills.py walks it too), so a missing reader fails.
 
@@ -61,10 +61,10 @@ def test_the_knob_reads_clean() -> None:
 
 
 def test_the_window_is_the_owners() -> None:
-    """Monday 23:00 to Tuesday 05:00, the broker's hours, on a Monday the broker's
-    run doesn't use (operator, 2026-10-26). Every step must fit inside it."""
+    """Weekly, Monday night Pacific, opening as the broker's Mon 23:00-05:00 closes
+    (operator, 2026-10-26). Every step must fit inside it."""
     window = _resolved()["window"]
-    assert [(w["weekday"], w["start"], w["end"]) for w in window] == [("Mon", "23:00", "05:00")]
+    assert [(w["weekday"], w["start"], w["end"]) for w in window] == [("Tue", "05:00", "10:00")]
 
 
 def test_no_quiet_range_is_declared() -> None:

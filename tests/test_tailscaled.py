@@ -234,7 +234,7 @@ def test_live_broker_resolves_to_its_tailnet_address() -> None:
 
 # --- the apt origin and its updates (#77) ---
 #
-# patching-hosts follows pkgs.tailscale.com in its monthly maintenance lane, as a
+# patching-hosts follows pkgs.tailscale.com in its weekly maintenance lane, as a
 # held step of its own (.skills/patching-hosts). At apt's default priority, 500,
 # which ties Ubuntu's, a package the site served under an Ubuntu name at a higher
 # version would replace Ubuntu's, so the skill's policy.md scopes a followed origin
