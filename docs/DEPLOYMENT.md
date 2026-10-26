@@ -645,7 +645,7 @@ The apt timers stay masked and `APT::Periodic::Enable` stays 0 (both from the im
 
 | Tracked | Installed | Why |
 |---|---|---|
-| [deploy/needrestart.conf.d/processor.conf](../deploy/needrestart.conf.d/processor.conf) | `/etc/needrestart/conf.d/` | `$nrconf{restart} = 'l'`: apt's hook lists restarts and performs none. With it unset, Ubuntu mode restarts `processor` and `tailscaled` by itself after a libssl update. `NEEDRESTART_MODE=l` is now a backup, not the guard |
+| [deploy/needrestart.conf.d/processor.conf](../deploy/needrestart.conf.d/processor.conf) | `/etc/needrestart/conf.d/` | `$nrconf{restart} = 'l'`: apt's hook lists restarts and performs none. With it unset, Ubuntu mode restarts `processor` by itself after a libssl update (its `python3.12` maps the library). `tailscaled` is static Go and maps none; only its own postinst restarts it, in the held `tailscale` step. `NEEDRESTART_MODE=l` is now a backup, not the guard |
 | [deploy/apt/tailscale.pref](../deploy/apt/tailscale.pref) | `/etc/apt/preferences.d/` | Scopes the followed origin to `tailscale` and its keyring (policy.md) |
 
 Install once, **before any apt run**, from the deploy checkout's root, after `git pull --ff-only` (until then it lags `origin/main` and has neither file):
