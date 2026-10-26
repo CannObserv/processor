@@ -1,0 +1,56 @@
+# patching-hosts host knob (#77). Grammar: the vendored skill's
+# references/knob.md. The skill reads this file and never writes it.
+# Times are UTC. A malformed line makes the host report-only until fixed.
+
+class production
+posture scheduled
+
+# --- when -----------------------------------------------------------------
+# The owner's monthly window: Monday 23:00 to Tuesday 05:00, the broker's
+# hours (CannObserv/broker#67), on a different Monday from the broker's run so
+# a bus flap stays attributable to one host. Every step's whole span must fit
+# inside it, or apply.sh refuses it.
+window Mon 23:00-05:00
+
+# No quiet line. processor-drift.timer is OnUnitActiveSec=1h, AccuracySec=1min:
+# its ticks drift, so no fixed range fits, and a tick is a read-only git fetch
+# and a Status check-in. Liveness checks in every 5 min from inside
+# `processor run`; a stop past its 900 s grace pages (docs/DEPLOYMENT.md).
+
+# --- the service ----------------------------------------------------------
+# Stopped in the reboot chain, and checked after boot for its first start and
+# NRestarts. KillMode=mixed + TimeoutStopSec=240 let the in-flight command
+# finish; one cut off stays pending and is reclaimed (store -> publish -> ack).
+service processor.service
+
+# An extraction mid-run: its child is a `python -I -m processor._child`.
+# Visible to a non-root pgrep (/proc has no hidepid). The chain re-checks it.
+inflight pgrep -c -u processor -f 'processor\._child' || true
+
+# --- checks (never root: they run as the invoking user, exedev, in adm) ---
+health systemctl is-active --quiet processor.service
+# Nothing at WARNING or above in 6 min: a backoff, a failed check-in, a stale
+# loop, or systemd's own warning lines for the unit. Valid only after #76's
+# deploy, 2026-10-25T15:50:36Z (journald PRIORITY follows the record's level).
+health test "$(journalctl -u processor -p warning --since -6min -q -o cat --no-pager | wc -l)" -eq 0
+
+# --- third-party apt origins ----------------------------------------------
+# NodeSource: agent tooling only, follow (#6; scoped by deploy/apt/nodesource.pref).
+# Named by its site: its o= field, ". nodistro", is aptly's generic one.
+origin deb.nodesource.com follow
+# Tailscale carries the only path to the broker, and its postinst restarts
+# tailscaled: its own held step, approved apart (as broker#67). Scoped by
+# deploy/apt/tailscale.pref.
+origin pkgs.tailscale.com follow
+hold tailscale tailscale
+
+# The scratch redis-server (localhost:6379, tests and smoke runs only) holds
+# nothing to recover, so it gets no datastore line. Its packages stay the
+# default `redis` held step: their postinst restarts it.
+
+# --- owners ---------------------------------------------------------------
+# The release is an extract with no git origin: its uv.lock is this repo's,
+# updated through scripts/deploy.sh (the lock audit: docs/DEPLOYMENT.md).
+owner /srv/processor/live self
+
+records CannObserv/processor
