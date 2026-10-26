@@ -4,8 +4,9 @@ apt's ``DPkg::Post-Invoke`` hook (``/etc/apt/apt.conf.d/99needrestart``) runs
 ``needrestart -m u`` after every dpkg run. Ubuntu's patch turns ``-m u`` into
 **automatic** restarts when ``$nrconf{restart}`` is unset, the stock state, so a
 ``libssl3t64`` update would restart ``processor`` (its ``python3.12`` maps libssl)
-outside any window. ``tailscaled`` is static Go: only its own postinst restarts it. ``NEEDRESTART_MODE=l`` (``deploy/nodesource.sh``) covers only the runs that
-remember it; this drop-in makes the answer not depend on it.
+outside any window. ``tailscaled`` is static Go: only its own postinst restarts it.
+``NEEDRESTART_MODE=l`` (``deploy/nodesource.sh``) covers only the runs that remember
+it; this drop-in makes the answer not depend on it.
 
 Tracked in ``deploy/``, installed as:
 
