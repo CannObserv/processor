@@ -648,7 +648,7 @@ The apt timers stay masked and `APT::Periodic::Enable` stays 0 (both from the im
 | [deploy/needrestart.conf.d/processor.conf](../deploy/needrestart.conf.d/processor.conf) | `/etc/needrestart/conf.d/` | `$nrconf{restart} = 'l'`: apt's hook lists restarts and performs none. With it unset, Ubuntu mode restarts `processor` and `tailscaled` by itself after a libssl update. `NEEDRESTART_MODE=l` is now a backup, not the guard |
 | [deploy/apt/tailscale.pref](../deploy/apt/tailscale.pref) | `/etc/apt/preferences.d/` | Scopes the followed origin to `tailscale` and its keyring (policy.md) |
 
-Install once, **before any apt run**, from the deploy checkout:
+Install once, **before any apt run**, from the deploy checkout's root, after `git pull --ff-only` (until then it lags `origin/main` and has neither file):
 
 ```bash
 sudo install -m 644 deploy/needrestart.conf.d/processor.conf /etc/needrestart/conf.d/processor.conf
@@ -660,7 +660,7 @@ uv run pytest tests/test_needrestart.py tests/test_tailscaled.py   # on the node
 
 **The probe escalates by itself.** `probe.sh` runs its root readings through `sudo -n` whenever that works, without asking. So every run, including `--dry-run-into` and `--post-boot`, is a sudo step and needs the owner's approval. For a non-root read, put a `sudo` that exits 1 first on `PATH`; the root readings then land in its `not_read`.
 
-**This host's run** (each sudo step approved in this repo's session; scripts under `skills/patching-hosts/scripts/`, `<run>` = `/var/backups/patching-hosts-<UTC>`):
+**This host's run** (each sudo step approved in this repo's session; `<run>` = `/var/backups/patching-hosts-<UTC>`). Run the scripts under `skills/patching-hosts/scripts/` from the deploy checkout's root, pulled: each defaults its knob to `.skills/patching-hosts` at `git rev-parse --show-toplevel`, or else the working directory, and with no knob found it falls back to `automatic`, report-only.
 
 1. `sudo apt-get update`. The maintenance dry run reads the host's lists, which nothing else refreshes (gregoryfoster/skills#467).
 2. `probe.sh --lane maintenance --dry-run-into <dir>`, in the background: 0 findings expected. Read the `redis-server` candidate; it must still be a `7.0.15` build, not Valkey, until #54.
