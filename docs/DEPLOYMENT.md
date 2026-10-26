@@ -663,21 +663,22 @@ uv run pytest tests/test_needrestart.py tests/test_tailscaled.py   # on the node
 **This host's run** (each sudo step approved in this repo's session; `<run>` = `/var/backups/patching-hosts-<UTC>`). Run the scripts under `skills/patching-hosts/scripts/` from the deploy checkout's root, pulled: each defaults its knob to `.skills/patching-hosts` at `git rev-parse --show-toplevel`, or else the working directory, and with no knob found it falls back to `automatic`, report-only.
 
 1. `sudo apt-get update`. The maintenance dry run reads the host's lists, which nothing else refreshes (gregoryfoster/skills#467).
-2. `probe.sh --lane maintenance --dry-run-into <dir>`, in the background: 0 findings expected. Read the `redis-server` candidate; it must still be a `7.0.15` build, not Valkey, until #54.
+2. `probe.sh --lane maintenance --dry-run-into <dir>`, in the background: 0 findings expected, beside a `lists:stale` risk that reads the security archive's own publish date, not when the lists were refreshed (2026-10-26). Read the `redis-server` candidate; it must still be a `7.0.15` build, not Valkey, until #54.
 3. The needrestart proof, as above.
-4. `recovery-point.sh --approve --retain-until <date>`. With no data store, it records only the before-versions, the rollback path.
-5. `apply.sh --approve --step bulk --lane maintenance --run <run> --dry-run <dir>`, in the background. It restarts nothing.
-6. Held steps, each approved, each `apply.sh --approve --step <name> --run <run>`:
+4. `apply.sh --approve --step bulk --lane maintenance --dry-run <dir>`, in the background, within 24 h of the dry run. It restarts nothing. With no data store there is no recovery point: `recovery-point.sh` refuses ("nothing to dump"), and the bulk records the before-versions, the rollback path, in the `<run>` it creates and prints.
+5. Held steps, each approved, each `apply.sh --approve --step <name> --run <run>`:
    - `redis`: the scratch server restarts;
    - `docker`: `containerd`. Docker and containerd are disabled and inactive here, so nothing is running to restart;
    - `tailscale`, if pending: a 2.3 s tailnet blip, sockets survive ([§ Tailnet flaps](#tailnet-flaps), "A tailscaled restart here").
-7. The reboot decision: `sudo needrestart -b -r l` and `sudo grep -c '(deleted)' /proc/1/maps`. The kernel never decides one on exe.dev. Expect a reboot when `systemd` or `libsystemd0` is in the set: after those families, needrestart listed dbus and logind on co-broker and co-status, and PID 1 mapped deleted files.
-8. The reboot: `reboot-chain.sh --run <run>` prints the chain; `--approve` launches it. It stops `processor` (up to `TimeoutStopSec=240`), then reboots in-guest. **Never `exe.dev restart`**: that is a hard reset (#83).
-9. After it: `probe.sh --post-boot --run <run>`, § Tailscale DNS → *Check after a reboot*, `NRestarts=0`, and drift and liveness `ok` in Status. Read `journalctl -u processor -p warning --since <window start>` raw (systemd's own lines, such as a failed stop) and through `-o cat | jq -cR 'fromjson? | …'`. A crash is `PRIORITY=6`, so check `NRestarts` too.
+6. The reboot decision: `sudo needrestart -b -r l` and `sudo grep -c '(deleted)' /proc/1/maps`. The kernel never decides one on exe.dev. Expect a reboot when `systemd` or `libsystemd0` is in the set: after those families, needrestart listed dbus and logind on co-broker and co-status, and PID 1 mapped deleted files.
+7. The reboot: `reboot-chain.sh --run <run>` prints the chain; `--approve` launches it. It stops `processor` (up to `TimeoutStopSec=240`), then reboots in-guest. **Never `exe.dev restart`**: that is a hard reset (#83).
+8. After it: `probe.sh --post-boot --run <run>`, § Tailscale DNS → *Check after a reboot*, `NRestarts=0`, and drift and liveness `ok` in Status. Read `journalctl -u processor -p warning --since <window start>` raw (systemd's own lines, such as a failed stop) and through `-o cat | jq -cR 'fromjson? | …'`. A crash is `PRIORITY=6`, so check `NRestarts` too.
 
 **With no reboot,** restart the service anyway after a libssl update: `/usr/bin/python3.12`'s `_ssl` links the system `libssl.so.3`, so the old library stays mapped until a restart. `sudo grep -c 'libssl.so.3 (deleted)' /proc/$(systemctl show -p MainPID --value processor)/maps` must read 0 afterwards.
 
 **Liveness's grace** is 900 s. The heartbeat ticks as soon as the service starts, so the silence is at most the time since the last tick (300 s), plus the stop (240 s), plus the boot. That stays inside the grace, so Status needs a warning only if a step stalls.
+
+**Deploys don't wait for a window** (operator, 2026-10-26, #77). The skill's policy.md says a deploy that restarts a declared `service` takes one (gregoryfoster/skills#366). Here `scripts/deploy.sh` runs after each merge, as before: it restarts `processor` alone, verifies the new build and switches back on failure ([§ Deploy a change](#deploy-a-change-scriptsdeploysh)). A merge that lands during a window is deployed after the post-boot checks, so a flap stays attributable.
 
 **The record** goes on the issue (`records CannObserv/processor`), per run.md §7, and ends with the next window's date. What each run leaves pending, by class, includes Ubuntu Pro / ESM: Pro isn't attached, and 25 esm-apps updates were visible on 2026-10-26.
 

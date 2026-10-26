@@ -21,6 +21,8 @@ window Mon 23:00-05:00
 # Stopped in the reboot chain, and checked after boot for its first start and
 # NRestarts. KillMode=mixed + TimeoutStopSec=240 let the in-flight command
 # finish; one cut off stays pending and is reclaimed (store -> publish -> ack).
+# A deploy restarts it outside any window, by the owner's choice (2026-10-26):
+# docs/DEPLOYMENT.md § Patching.
 service processor.service
 
 # An extraction mid-run: its child is a `python -I -m processor._child`.
