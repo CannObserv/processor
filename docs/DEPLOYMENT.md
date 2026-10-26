@@ -624,6 +624,63 @@ tailscale status
 
 Log a flap on the epic as: the window (first WARNING to the first `ack: complete` after it), the counts above, and which kind it was.
 
+## Patching
+
+Posture **`scheduled`** (#77), under gregoryfoster/skills `patching-hosts` ([skills/patching-hosts](../skills/patching-hosts/SKILL.md)), read from the knob [.skills/patching-hosts](../.skills/patching-hosts). The owner approves one window a month: **`Mon 23:00–05:00` UTC**, on a Monday the broker's own run doesn't use (CannObserv/broker#67). Both VMs hold the bus link, so running one host at a time keeps a flap attributable to that host. The gate allows any Monday, so keeping off the broker's is a convention, written on the issue with each next date.
+
+The apt timers stay masked and `APT::Periodic::Enable` stays 0 (both from the image). Both lanes run in the window: security plus `-updates` plus the followed origins, `--lane maintenance`. **Never a bare `apt-get upgrade`:** it takes every origin. The skill's [run.md](../skills/patching-hosts/references/run.md) is the procedure; this section is what is particular to this host.
+
+| Knob line | Why |
+|---|---|
+| `service processor.service` | The reboot chain stops it. `--post-boot` checks its first start and `NRestarts` |
+| `inflight pgrep … processor\._child` | An extraction in progress. The chain checks it again before it stops anything |
+| `health` ×2 | The unit is active, and nothing at `-p warning` in 6 min ([§ Operate → Logs](#operate); valid since #76) |
+| `origin deb.nodesource.com follow` | Node, agent tooling ([§ Patching Node](#patching-node)) |
+| `origin pkgs.tailscale.com follow`, `hold tailscale tailscale` | Its postinst restarts tailscaled, the only path to the broker, so it is a held step approved on its own |
+| `owner /srv/processor/live self` | The release has no git origin; its `uv.lock` is this repo's ([§ The lock audit](#the-lock-audit)) |
+| no `datastore` | The scratch `redis-server` holds test data only. It stays the skill's default `redis` held step, because its postinst restarts it |
+| no `quiet` | `processor-drift.timer` ticks drift (`OnUnitActiveSec=1h`), and liveness runs inside the service |
+
+**Host files** (compared after each deploy, installed by hand):
+
+| Tracked | Installed | Why |
+|---|---|---|
+| [deploy/needrestart.conf.d/processor.conf](../deploy/needrestart.conf.d/processor.conf) | `/etc/needrestart/conf.d/` | `$nrconf{restart} = 'l'`: apt's hook lists restarts and performs none. With it unset, Ubuntu mode restarts `processor` and `tailscaled` by itself after a libssl update. `NEEDRESTART_MODE=l` is now a backup, not the guard |
+| [deploy/apt/tailscale.pref](../deploy/apt/tailscale.pref) | `/etc/apt/preferences.d/` | Scopes the followed origin to `tailscale` and its keyring (policy.md) |
+
+Install once, **before any apt run**, from the deploy checkout:
+
+```bash
+sudo install -m 644 deploy/needrestart.conf.d/processor.conf /etc/needrestart/conf.d/processor.conf
+sudo needrestart -m u -b -r l    # "Disabling Ubuntu mode, explicit restart mode configured"; never without -r l
+sudo install -m 644 deploy/apt/tailscale.pref /etc/apt/preferences.d/tailscale.pref
+sudo tailscale set --auto-update=false   # the tailnet's switch is off (broker#67); this is the node's own
+uv run pytest tests/test_needrestart.py tests/test_tailscaled.py   # on the node, the installed and live tests run and pass
+```
+
+**The probe escalates by itself.** `probe.sh` runs its root readings through `sudo -n` whenever that works, without asking. So every run, including `--dry-run-into` and `--post-boot`, is a sudo step and needs the owner's approval. For a non-root read, put a `sudo` that exits 1 first on `PATH`; the root readings then land in its `not_read`.
+
+**This host's run** (each sudo step approved in this repo's session; scripts under `skills/patching-hosts/scripts/`, `<run>` = `/var/backups/patching-hosts-<UTC>`):
+
+1. `sudo apt-get update`. The maintenance dry run reads the host's lists, which nothing else refreshes (gregoryfoster/skills#467).
+2. `probe.sh --lane maintenance --dry-run-into <dir>`, in the background: 0 findings expected. Read the `redis-server` candidate; it must still be a `7.0.15` build, not Valkey, until #54.
+3. The needrestart proof, as above.
+4. `recovery-point.sh --approve --retain-until <date>`. With no data store, it records only the before-versions, the rollback path.
+5. `apply.sh --approve --step bulk --lane maintenance --run <run> --dry-run <dir>`, in the background. It restarts nothing.
+6. Held steps, each approved, each `apply.sh --approve --step <name> --run <run>`:
+   - `redis`: the scratch server restarts;
+   - `docker`: `containerd`. Docker and containerd are disabled and inactive here, so nothing is running to restart;
+   - `tailscale`, if pending: a 2.3 s tailnet blip, sockets survive ([§ Tailnet flaps](#tailnet-flaps), "A tailscaled restart here").
+7. The reboot decision: `sudo needrestart -b -r l` and `sudo grep -c '(deleted)' /proc/1/maps`. The kernel never decides one on exe.dev. Expect a reboot when `systemd` or `libsystemd0` is in the set: after those families, needrestart listed dbus and logind on co-broker and co-status, and PID 1 mapped deleted files.
+8. The reboot: `reboot-chain.sh --run <run>` prints the chain; `--approve` launches it. It stops `processor` (up to `TimeoutStopSec=240`), then reboots in-guest. **Never `exe.dev restart`**: that is a hard reset (#83).
+9. After it: `probe.sh --post-boot --run <run>`, § Tailscale DNS → *Check after a reboot*, `NRestarts=0`, and drift and liveness `ok` in Status. Read `journalctl -u processor -p warning --since <window start>` raw (systemd's own lines, such as a failed stop) and through `-o cat | jq -cR 'fromjson? | …'`. A crash is `PRIORITY=6`, so check `NRestarts` too.
+
+**With no reboot,** restart the service anyway after a libssl update: `/usr/bin/python3.12`'s `_ssl` links the system `libssl.so.3`, so the old library stays mapped until a restart. `sudo grep -c 'libssl.so.3 (deleted)' /proc/$(systemctl show -p MainPID --value processor)/maps` must read 0 afterwards.
+
+**Liveness's grace** is 900 s. The heartbeat ticks as soon as the service starts, so the silence is at most the time since the last tick (300 s), plus the stop (240 s), plus the boot. That stays inside the grace, so Status needs a warning only if a step stalls.
+
+**The record** goes on the issue (`records CannObserv/processor`), per run.md §7, and ends with the next window's date. What each run leaves pending, by class, includes Ubuntu Pro / ESM: Pro isn't attached, and 25 esm-apps updates were visible on 2026-10-26.
+
 ## Node.js (agent tooling only)
 
 Node 24 LTS from NodeSource's apt repo, for `using-mayfly-chat` and SocratiCode (`npx`). The `processor` unit never runs it. The cohort survey and the reasons for NodeSource and for 24 are in #6.
@@ -643,11 +700,11 @@ bash deploy/nodesource.sh check          # exit 0 in sync (a pending update is a
 
 **SocratiCode** (#5) runs as `exedev`, pinned to `socraticode@1.16.0` with a capped pre-install under `~/.socraticode/pin`, against co-index's shared store; it never touches the release, and the service can't read `exedev`'s home (`ProtectHome=yes`). They share 7.7 GiB with no swap, and `processor.service` carries no `MemoryLow=`: inert on this host, and the unit's `OOMScoreAdjust=-500` is the protection that counts. Pin, link stubs, memory reasoning: [docs/SOCRATICODE.md](SOCRATICODE.md#repo-specific-notes).
 
-### Patching
+### Patching Node
 
-The cohort's posture is `scheduled` (gregoryfoster/skills `patching-hosts`): one owner-approved monthly window, apt timers masked, so nothing updates Node on its own. Processor declares it nowhere yet: there is no `.skills/patching-hosts` knob (see below for why), so the skill would read this host as its no-knob default, `automatic`, report-only. NodeSource ships security fixes in its own repo, never `noble-security`, so its policy is **follow**: `nodejs` rides the monthly maintenance lane. Never a bare `apt-get upgrade`.
+The host's posture is `scheduled` ([§ Patching](#patching)), so nothing updates Node on its own. NodeSource ships security fixes in its own repo, never `noble-security`, so its policy is **follow**: `nodejs` rides the monthly maintenance lane. Never a bare `apt-get upgrade`.
 
-**Select it by host, not by origin.** NodeSource's Release file says `Origin: . nodistro`, aptly's default, which every aptly-published `nodistro` repo shares. The lane's `APT_CONFIG`:
+**Select it by host, not by origin.** NodeSource's Release file says `Origin: . nodistro`, aptly's default, which every aptly-published `nodistro` repo shares. So the knob names the site, `origin deb.nodesource.com follow` (a value holding a dot is read as a site: the skill's knob.md), and the lane's `APT_CONFIG` takes:
 
 ```
 Unattended-Upgrade::Origins-Pattern {
@@ -656,7 +713,7 @@ Unattended-Upgrade::Origins-Pattern {
 };
 ```
 
-Proven 2026-09-30, with `nodejs` stepped back to 24.20.0: `unattended-upgrade --dry-run` selected it under `site=deb.nodesource.com` and not under the stock security-lane config. `origin=. nodistro` also selects it, but can't tell NodeSource from any other aptly repo. The `.skills/patching-hosts` knob's `origin <origin> follow` line can't hold a value with a space, so this repo commits no knob line for NodeSource yet.
+Proven 2026-09-30, with `nodejs` stepped back to 24.20.0: `unattended-upgrade --dry-run` selected it under `site=deb.nodesource.com` and not under the stock security-lane config. `origin=. nodistro` also selects it, but can't tell NodeSource from any other aptly repo. The skill's policy.md cites `nodesource.pref` as its example of scoping a followed origin (gregoryfoster/skills#344).
 
 **An out-of-cycle fix** (a Node security release): `sudo bash deploy/nodesource.sh install`. It refreshes the package lists first, which nothing else here does (`apt-daily.timer` is masked and `APT::Periodic::Enable` is 0), so a bare `apt-get install nodejs` answers "already the newest version" while the release sits unfetched. It then takes the newest `nodejs` candidate, at adj 0 with needrestart listing only, and ends with `check`. `check` alone reads the lists as of the last update.
 
