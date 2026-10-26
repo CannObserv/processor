@@ -158,6 +158,8 @@ HOST_CONFIGS = {
     "tailscaled.service.d/90-processor-oom.conf",
     "apt/nodesource.sources",
     "apt/nodesource.pref",
+    "apt/tailscale.pref",
+    "needrestart.conf.d/processor.conf",
 }
 SCRIPTS = {"nodesource.sh"}
 

@@ -63,6 +63,8 @@ HOST_CONFIGS=(
   "tailscaled.service.d/90-processor-oom.conf=systemd/system/tailscaled.service.d/90-processor-oom.conf"
   "apt/nodesource.sources=apt/sources.list.d/nodesource.sources"
   "apt/nodesource.pref=apt/preferences.d/nodesource.pref"
+  "apt/tailscale.pref=apt/preferences.d/tailscale.pref"
+  "needrestart.conf.d/processor.conf=needrestart/conf.d/processor.conf"
 )
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 

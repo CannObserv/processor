@@ -230,3 +230,84 @@ def test_live_broker_resolves_to_its_tailnet_address() -> None:
     _require_this_node()
     addresses = {info[4][0] for info in socket.getaddrinfo("broker", 6379, socket.AF_INET)}
     assert addresses and all(ipaddress.ip_address(a) in TAILNET for a in addresses), addresses
+
+
+# --- the apt origin and its updates (#77) ---
+#
+# patching-hosts follows pkgs.tailscale.com in its monthly maintenance lane, as a
+# held step of its own (.skills/patching-hosts). At apt's default priority, 500,
+# which ties Ubuntu's, a package the site served under an Ubuntu name at a higher
+# version would replace Ubuntu's, so the skill's policy.md scopes a followed origin
+# by pins: ``Package: *`` below 500 for the site, and a package pin above 500 for
+# each package it was added for. Ported from CannObserv/broker#67. Installed as:
+#
+# - ``apt/tailscale.pref`` -> ``/etc/apt/preferences.d/``
+
+PINS = ROOT / "deploy" / "apt" / "tailscale.pref"
+PINS_INSTALLED = Path("/etc/apt/preferences.d/tailscale.pref")
+TAILSCALE_SITE = "pkgs.tailscale.com"
+ADDED_FOR = {"tailscale", "tailscale-archive-keyring"}
+
+
+def _pin_stanzas() -> list[dict[str, str]]:
+    """apt_preferences(5): blank-line separated stanzas of ``Field: value``."""
+    stanzas, current = [], {}
+    for line in PINS.read_text().splitlines():
+        if line.startswith("#"):
+            continue
+        if not line.strip():
+            if current:
+                stanzas.append(current)
+            current = {}
+            continue
+        field, _, value = line.partition(":")
+        current[field.strip()] = value.strip()
+    if current:
+        stanzas.append(current)
+    return stanzas
+
+
+def test_every_pin_names_the_tailscale_site() -> None:
+    stanzas = _pin_stanzas()
+    assert stanzas
+    for stanza in stanzas:
+        assert set(stanza) == {"Package", "Pin", "Pin-Priority"}, stanza
+        assert stanza["Pin"] == f"origin {TAILSCALE_SITE}", stanza
+
+
+def test_the_site_sits_below_ubuntu_for_everything_else() -> None:
+    catch_all = [s for s in _pin_stanzas() if s["Package"] == "*"]
+    assert len(catch_all) == 1
+    assert int(catch_all[0]["Pin-Priority"]) < 500
+
+
+def test_each_package_it_was_added_for_is_above_500() -> None:
+    named = {
+        package: int(s["Pin-Priority"])
+        for s in _pin_stanzas()
+        if s["Package"] != "*"
+        for package in s["Package"].split()
+    }
+    assert set(named) == ADDED_FOR
+    assert all(500 < priority < 1000 for priority in named.values()), named
+
+
+def test_installed_pins_match_tracked() -> None:
+    _require_this_node()
+    try:
+        installed = PINS_INSTALLED.read_text()
+    except FileNotFoundError:
+        pytest.fail(f"{PINS_INSTALLED} is not installed on this node (docs/DEPLOYMENT.md)")
+    assert installed == PINS.read_text()
+
+
+def test_live_tailscale_never_updates_itself() -> None:
+    """An auto-update drops the broker path outside any window. The tailnet-wide
+    switch is off (broker#67, 2026-10-14); this reads the node's own setting."""
+    _require_this_node()
+    prefs = subprocess.run(
+        ["tailscale", "debug", "prefs"], capture_output=True, text=True, check=True
+    ).stdout
+    assert json.loads(prefs)["AutoUpdate"]["Apply"] is False, (
+        "AutoUpdate.Apply is true: `sudo tailscale set --auto-update=false` (#77)"
+    )
