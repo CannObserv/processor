@@ -13,7 +13,7 @@ posture scheduled
 window Mon 23:00-05:00
 
 # No quiet line. processor-drift.timer is OnUnitActiveSec=1h, AccuracySec=1min:
-# its ticks drift, so no fixed range fits, and a tick is a read-only git fetch
+# its ticks drift, so no fixed range fits, and a tick is a GitHub API read
 # and a Status check-in. Liveness checks in every 5 min from inside
 # `processor run`; a stop past its 900 s grace pages (docs/DEPLOYMENT.md).
 
