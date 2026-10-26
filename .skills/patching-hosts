@@ -11,6 +11,10 @@ posture scheduled
 # a bus flap stays attributable to one host. Every step's whole span must fit
 # inside it, or apply.sh refuses it.
 window Mon 23:00-05:00
+# TEMPORARY, #77's first run only (operator, 2026-10-26): the owner moved it
+# to Monday afternoon. Knob windows repeat weekly, so this line comes out in
+# the PR after the run, and test_the_window_is_the_owners with it.
+window Mon 16:00-23:00
 
 # No quiet line. processor-drift.timer is OnUnitActiveSec=1h, AccuracySec=1min:
 # its ticks drift, so no fixed range fits, and a tick is a GitHub API read

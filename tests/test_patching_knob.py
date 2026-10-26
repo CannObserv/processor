@@ -64,7 +64,12 @@ def test_the_window_is_the_owners() -> None:
     """Monday 23:00 to Tuesday 05:00, the broker's hours, on a Monday the broker's
     run doesn't use (operator, 2026-10-26). Every step must fit inside it."""
     window = _resolved()["window"]
-    assert [(w["weekday"], w["start"], w["end"]) for w in window] == [("Mon", "23:00", "05:00")]
+    # The second is TEMPORARY: #77's first run, moved to Monday afternoon by the
+    # owner. It comes out in the PR after that run.
+    assert [(w["weekday"], w["start"], w["end"]) for w in window] == [
+        ("Mon", "23:00", "05:00"),
+        ("Mon", "16:00", "23:00"),
+    ]
 
 
 def test_no_quiet_range_is_declared() -> None:
