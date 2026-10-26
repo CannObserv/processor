@@ -121,3 +121,12 @@ def test_the_runbook_sections_exist() -> None:
     deployment = (ROOT / "docs" / "DEPLOYMENT.md").read_text()
     for heading in ("## Patching", "### Patching Node"):
         assert re.search(rf"^{heading}$", deployment, re.M), heading
+
+
+def test_the_gate_reads_the_extraction_and_the_unit() -> None:
+    """The reboot chain's gate waits on ``inflight``, and each held step polls
+    ``health`` until it passes twice: dropping either reads clean but blinds them."""
+    assert [" ".join(words) for words in _named("inflight")] == [
+        "pgrep -c -u processor -f 'processor\\._child' || true"
+    ]
+    assert ["systemctl", "is-active", "--quiet", "processor.service"] in _named("health")
