@@ -12,8 +12,8 @@ status: per #75's brief (option 4, 2026-10-26) and its review comment, K1–K8 (
 
 ## Approach
 
-- `DEPLOYMENT.md` § The lock audit: two readers. `audit.yml` is the push/PR/`main` signal between windows, report-only; the window's after-probe is the weekly human read of the **live** lock. Limits: a mid-week disclosure waits up to 7 days; a skipped window, or one without the after-probe, is no read. A finding there takes "Where a finding goes", outside the run (K8). The reopen path: option 2.
-- § Patching: a numbered step 9, the after-probe, `probe.sh --refresh-into <dir>`, every run, reboot or not (K1). The record paragraph names the language line and the owning repo's mechanism, `audit.yml` (K6).
+- `DEPLOYMENT.md` § The lock audit: two readers. `audit.yml` is the push/PR/`main` signal between windows, report-only; the window's after-probe is the weekly human read of the **live** lock. Limits: a mid-week disclosure waits up to 7 days; a skipped window leaves no reading, and a run without the after-probe leaves the class in `not_read`; a unit moved off the lock reads clean, which the guard catches (CR 2). A finding there takes "Where a finding goes", outside the run (K8). The reopen path: option 2.
+- § Patching: a numbered step 9, the after-probe, `probe.sh --refresh-into <dir>`, last in every run, after the reboot or the no-reboot restart (K1, CR 3). The record paragraph names the language line and the owning repo's mechanism, `audit.yml` (K6).
 - `tests/test_lock_audit.py` docstring: the claim corrected (K7). No contract change.
 - No `audit.yml`, `src/` or `deploy/` change.
 
