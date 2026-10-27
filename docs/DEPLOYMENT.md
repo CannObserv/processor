@@ -709,7 +709,7 @@ Provisioner's disk GC and headroom sensor (provisioner#61), **VERSION 2**, insta
 | Key | `/etc/cannobserv/disk-gc/checkin.key` (root, 0600): a copy of the tenant's `/etc/processor/status-checkin.key`. **Rotating the tenant key means updating both** |
 | State | `/var/lib/cannobserv-disk-gc/`: the GC's `state.json`, and the sensor's hold in `sensor.json` |
 | Timers | `cannobserv-disk-gc.timer`: daily at 05:15 UTC, plus up to 30 min, with no catch-up at boot. `cannobserv-disk-headroom.timer`: every 10 min |
-| Monitor | `co-processor-disk-headroom`, tenant `co-processor`: 600 / 1800 / renotify 3600. Its faults are `low-headroom`, `gc-failed`, `gc-stale` (72 h), `unreadable` and `test` |
+| Monitor | `co-processor-disk-headroom` (`01M5ZQBHEX06T5D50Q96QYKCR6`, CannObserv/status#69), tenant `co-processor`: 600 / 1800 / renotify 3600. Its faults are `low-headroom`, `gc-failed`, `gc-stale` (72 h), `unreadable` and `test` |
 
 **This host's choices** (each one is a comment in the config):
 - **Homes:** `homes` is `/home/exedev` (`processor` has no home).
