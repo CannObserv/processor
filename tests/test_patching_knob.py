@@ -152,8 +152,8 @@ def _patching_steps() -> str:
 
 def test_the_runbook_takes_the_language_read() -> None:
     """The probe audits the lock only under ``--refresh-into`` (readings.md); the
-    dry run and ``--post-boot`` never do. A run that skips it leaves the week's read
-    in ``not_read``, so the runbook names it as a step (#75)."""
+    dry run and ``--post-boot`` never do. Without it, the run's other probes list the
+    class in ``not_read``, and no probe reads the lock, so the runbook names it (#75)."""
     steps = _patching_steps()
     assert re.search(r"^\d+\. .*`probe\.sh --refresh-into <dir>`", steps, re.M), steps
 
