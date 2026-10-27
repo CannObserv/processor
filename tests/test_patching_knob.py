@@ -143,7 +143,9 @@ def test_the_language_read_finds_the_live_lock() -> None:
 def _patching_steps() -> str:
     """§ Patching's numbered run, from "This host's run" to the next paragraph."""
     deployment = (ROOT / "docs" / "DEPLOYMENT.md").read_text()
+    assert "\n## Patching\n" in deployment, "DEPLOYMENT.md has no ## Patching"
     section = deployment.split("\n## Patching\n", 1)[1].split("\n## ", 1)[0]
+    assert "**This host's run**" in section, "§ Patching has no **This host's run**"
     run = section.split("**This host's run**", 1)[1]
     return run.split("\n\n**", 1)[0]
 
