@@ -7,7 +7,7 @@ report-only** until it is fixed, which reads as "nothing to do" at the next week
 run rather than as an error, so the skill's own reader is run here. CI initialises
 the submodule (tests/test_skills.py walks it too), so a missing reader fails.
 
-The rest are pure parses of the file. Ported from CannObserv/broker#67.
+The rest are pure parses of it and of the files it must agree with. Ported from CannObserv/broker#67.
 """
 
 import json
