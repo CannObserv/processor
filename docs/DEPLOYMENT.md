@@ -253,18 +253,20 @@ Disclosures arrive without commits: #71's 12 advisories surfaced only because so
 - **`audit.yml`, the signal.** `.github/workflows/audit.yml` runs `scripts/audit_lock.sh` on every push to `main`, every PR, weekly (`audit.yml`'s cron), and on dispatch (#73, ported from broker#86). A push or PR run is seen by whoever made the change. A scheduled run that finds something is still green, so it notifies nobody (#75).
 - **The weekly window, the human read** (#75, operator 2026-10-26). Each run's after-probe (§ Patching, step 9) runs `uv audit --frozen` on `/srv/processor/live/uv.lock`, the **live** lock, as its owner `exedev`, on a copy, never in the tree. It asks OSV live, so a disclosure `audit.yml`'s Monday 14:37Z run saw is read again in the window, which opens 14 h later. The count goes in the run's record, and the owner reads it. `tests/test_patching_knob.py` keeps the units' `WorkingDirectory=`, the knob's `owner` line and `scripts/deploy.sh`'s live link equal, so a refactor can't move the probe off the lock unnoticed.
 
-What the window doesn't cover:
-- A disclosure mid-week waits for the next window, at most 7 days. Between windows, `audit.yml` alone sees it.
-- A skipped window, or a run without the after-probe, means no read that week. The probe lists the class under `not_read`; it never reports it clean.
-- The run never re-locks. A finding there goes the way below, outside the window.
-
-**Reopen path:** if a window is skipped twice running, or an advisory that matters reaches production between windows, take #75's option 2: the scheduled run opens or updates an issue, with `issues: write` on that job only.
+The script and its workflow:
 
 - **Report-only.** The script always exits 0. A finding (uv exit 1) is a `uv.lock advisories` warning, with the audit and where it goes in the job summary. Any other failure is a `uv audit did not run` warning, never a clean result. A red gate would turn `main` red on someone else's disclosure date.
 - **Outside the deploy gate.** The gate reads `ci.yml`'s push run alone (§ The CI gate); `tests/test_lock_audit.py` holds both workflows to that.
 - **No secret, no WIF.** `uv audit --frozen` reads the lock without the wheelhouse. OSV's text is echoed between `::stop-commands::` and a random token, so it can't issue workflow commands.
 - **By hand:** `bash scripts/audit_lock.sh` from any directory audits this checkout's lock.
 - **Where a finding goes:** every finding is `uv lock --upgrade-package <name>` plus a `[tool.uv] constraint-dependencies` floor with its check in `tests/test_lock_floors.py`, so a later re-lock can't undo it. A package in the extraction stack also bumps `LOCAL_GENERATION`, with the notice: § Extraction dependencies (#71 did both for pypdf). Re-locks touch `uv.lock`, so deploy after the merge.
+
+What the window doesn't cover:
+- A disclosure mid-week waits for the next window, at most 7 days. Between windows, `audit.yml` alone sees it.
+- A skipped window, or a run without the after-probe, means no read that week. The probe lists the class under `not_read`; it never reports it clean.
+- The run never re-locks. A finding there goes to "Where a finding goes", above, outside the window.
+
+**Reopen path:** if a window is skipped twice running, or an advisory that matters reaches production between windows, take #75's option 2: the scheduled run opens or updates an issue, with `issues: write` on that job only.
 
 ## The drift check
 
