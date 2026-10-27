@@ -731,14 +731,9 @@ uv run pytest tests/test_disk_gc.py   # on the node: the installed copy matches,
 - **After a reboot,** if the GC runs before VS Code reconnects, it finds no build running and keeps none. The next session re-downloads its build (about 640M). That's accepted (#82).
 - **A run the reboot cuts off** finishes the next day. A missed day pages only as `gc-stale`, after 72 h.
 
-**Read it** with sudo (verifying.md):
-- `sudo journalctl -u cannobserv-disk-headroom -p err --since -1d`;
-- `sudo journalctl -u cannobserv-disk-gc -p warning --since -1d`;
-- `systemctl list-timers 'cannobserv-disk-*'`.
+**Read it** without sudo: `exedev` is in `adm`, so `journalctl -u cannobserv-disk-headroom -p err --since -1d` reads the alerts. verifying.md's `sudo` is for users outside `adm`, for whom the same command prints `-- No entries --`. Its rule holds here too: only `checked in ok (ok): HTTP 202` proves a check-in.
 
-A sensor run counts only with `checked in ok (ok): HTTP 202`. Its `ok:` line is logged before the check-in, whether or not the check-in works.
-
-**A new GC release** is a commit to the skill's `scripts/_pin.sh`. It reaches this repo through the daily skills-vendor bump. When the pin's `DISK_GC_VERSION` is above `/usr/local/lib/cannobserv/disk-gc/VERSION`, run the skill's pull and install again, with the install approved. **Removing it:** `remove-disk-gc.sh` keeps the config, the key and the state. Ask Status to disable the monitor in the same change, or it pages *has stopped reporting*.
+**Updates and removal** are the skill's ([SKILL.md](../skills/maintaining-host-disk/SKILL.md)). A new release arrives as a pin bump in the daily skills-vendor refresh.
 
 ## Node.js (agent tooling only)
 
