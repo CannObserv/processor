@@ -263,7 +263,8 @@ The script and its workflow:
 
 What the window doesn't cover:
 - A disclosure mid-week waits for the next window, at most 7 days. Between windows, `audit.yml` alone sees it.
-- A skipped window, or a run without the after-probe, means no read that week. The probe lists the class under `not_read`; it never reports it clean.
+- A skipped window means no read that week, and no reading says so. A run without step 9 leaves the class in its other probes' `not_read`.
+- A unit moved off the lock would read clean: the probe finds trees only through `WorkingDirectory=`, and one with no lockfile still reads complete. That is the test's case.
 - The run never re-locks. A finding there goes to "Where a finding goes", above, outside the window.
 
 **Reopen path:** if a window is skipped twice running, or an advisory that matters reaches production between windows, take #75's option 2: the scheduled run opens or updates an issue, with `issues: write` on that job only.
