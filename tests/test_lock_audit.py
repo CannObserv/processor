@@ -2,9 +2,10 @@
 
 ``scripts/audit_lock.sh`` runs ``uv audit --frozen`` against ``uv.lock``, and
 ``.github/workflows/audit.yml`` runs it on every push to ``main``, every PR, once a
-week and on dispatch. Nothing else reads the lock against OSV: #71's 12 advisories
-surfaced only because someone ran ``uv audit`` by hand, and disclosures arrive
-without commits.
+week and on dispatch. #71's 12 advisories surfaced only because someone ran ``uv
+audit`` by hand, and disclosures arrive without commits. A green scheduled run
+notifies nobody, so the human read is the weekly patch window's, of the live lock
+(#75; ``tests/test_patching_knob.py``). This workflow is the signal between windows.
 
 **Report-only is the contract.** A gate that failed on a finding would turn
 ``main`` red on someone else's disclosure date. So every exit is 0: a finding is a
