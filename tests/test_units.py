@@ -160,6 +160,7 @@ HOST_CONFIGS = {
     "apt/nodesource.pref",
     "apt/tailscale.pref",
     "needrestart.conf.d/processor.conf",
+    "disk-gc/disk-gc.conf",
 }
 SCRIPTS = {"nodesource.sh"}
 

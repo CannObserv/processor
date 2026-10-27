@@ -47,6 +47,9 @@ testpaths = ["tests"]
 addopts = "--import-mode=importlib"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# Only a failed run's basetemp outlives the run (#82; maintaining-host-disk's repo-knobs.md).
+tmp_path_retention_count = 1
+tmp_path_retention_policy = "failed"
 markers = [
     "integration: needs the scratch redis-server on localhost:6379",
 ]

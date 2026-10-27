@@ -698,6 +698,48 @@ uv run pytest tests/test_needrestart.py tests/test_tailscaled.py   # on the node
 - **Ubuntu Pro / ESM:** Pro isn't attached, and 25 esm-apps updates were visible on 2026-10-26.
 - **Language:** `/srv/processor/live/uv.lock`, its OSV advisory count, owner `self`. Run.md §7 asks for the owning repo's update mechanism; here that is `audit.yml`, report-only, with no Dependabot or Renovate ([§ The lock audit](#the-lock-audit)). A count above 0 goes to that section's "Where a finding goes" and is linked from the record. A tree listed as not audited, or the class in `not_read`, is recorded as no read, never as 0.
 
+## Disk GC
+
+Provisioner's disk GC and headroom sensor (provisioner#61), **VERSION 2**, installed and turned on through gregoryfoster/skills `maintaining-host-disk` ([skills/maintaining-host-disk](../skills/maintaining-host-disk/SKILL.md), #82). The skill's [turning-on.md](../skills/maintaining-host-disk/references/turning-on.md) is the procedure; this section is what's particular to this host. The GC's tiers and rules are Provisioner's. A change to them is raised there, through the operator, and never patched into the installed copy: the installer refuses a copy that doesn't match its MANIFEST.
+
+| What | Where |
+|---|---|
+| The GC, its units, the journald cap | `/usr/local/lib/cannobserv/disk-gc/` (`VERSION`, `MANIFEST`); `/usr/local/lib/systemd/system/cannobserv-disk-{gc,headroom}.{service,timer}`; `/usr/local/lib/systemd/journald.conf.d/zz-cannobserv-journal.conf` (`SystemMaxUse=512M`; the journal was 87M on 2026-10-27) |
+| Config | [deploy/disk-gc/disk-gc.conf](../deploy/disk-gc/disk-gc.conf) → `/etc/cannobserv/disk-gc/disk-gc.conf` (root, 0644). Installed by hand; `scripts/deploy.sh` compares the two |
+| Key | `/etc/cannobserv/disk-gc/checkin.key` (root, 0600): a copy of the tenant's `/etc/processor/status-checkin.key`. **Rotating the tenant key means updating both** |
+| State | `/var/lib/cannobserv-disk-gc/`: the GC's `state.json`, and the sensor's hold in `sensor.json` |
+| Timers | `cannobserv-disk-gc.timer`: daily at 05:15 UTC, plus up to 30 min, with no catch-up at boot. `cannobserv-disk-headroom.timer`: every 10 min |
+| Monitor | `co-processor-disk-headroom`, tenant `co-processor`: 600 / 1800 / renotify 3600. Its faults are `low-headroom`, `gc-failed`, `gc-stale` (72 h), `unreadable` and `test` |
+
+**This host's choices** (each one is a comment in the config):
+- **Homes:** `homes` is `/home/exedev` (`processor` has no home).
+- **Tiers:** the template's, plus `worktrees` for this repo's `.worktrees/`. `docker` stays off, because the daemon is inactive. `npx_spec_files` keeps the SocratiCode pin in the deploy checkout's `.claude/settings.json`.
+- **uv cache:** pruned only (`uv_clean_above_mb = 0`). Releases are built with `UV_LINK_MODE=copy`.
+- **Lines:** alert at 85% Use% (as `df` reports it), clear at 80%. On 2026-10-27, `/` was 76% used with 1.8G under the line, before the first prune (estimated at about 3.5G of idle VS Code builds and caches; the report-only run measures it, #82).
+- **pytest:** `pyproject.toml` keeps one basetemp, and only a failed run's (`tmp_path_retention_*`). A run's basetemp is about 62M.
+
+**Install or change the config** from the deploy checkout's root, after `git pull --ff-only`. Each install is a sudo step, approved:
+
+```bash
+sudo install -D -m 0644 -o root -g root deploy/disk-gc/disk-gc.conf /etc/cannobserv/disk-gc/disk-gc.conf
+uv run pytest tests/test_disk_gc.py   # on the node: the installed copy matches, and the installed GC accepts it
+```
+
+**With § Patching:**
+- **patching-hosts reads `[sensor] mount` and `alert_at_percent` as a floor** (gregoryfoster/skills#390). It refuses a step whose download and install would take `/` to 85%, and stops on a config the GC would refuse.
+- **The GC's daily run (05:15–05:45) falls inside the Tuesday window.** It never touches apt's trees, and it yields: `Nice=10`, idle I/O.
+- **After a reboot,** if the GC runs before VS Code reconnects, it finds no build running and keeps none. The next session re-downloads its build (about 640M). That's accepted (#82).
+- **A run the reboot cuts off** finishes the next day. A missed day pages only as `gc-stale`, after 72 h.
+
+**Read it** with sudo (verifying.md):
+- `sudo journalctl -u cannobserv-disk-headroom -p err --since -1d`;
+- `sudo journalctl -u cannobserv-disk-gc -p warning --since -1d`;
+- `systemctl list-timers 'cannobserv-disk-*'`.
+
+A sensor run counts only with `checked in ok (ok): HTTP 202`. Its `ok:` line is logged before the check-in, whether or not the check-in works.
+
+**A new GC release** is a commit to the skill's `scripts/_pin.sh`. It reaches this repo through the daily skills-vendor bump. When the pin's `DISK_GC_VERSION` is above `/usr/local/lib/cannobserv/disk-gc/VERSION`, run the skill's pull and install again, with the install approved. **Removing it:** `remove-disk-gc.sh` keeps the config, the key and the state. Ask Status to disable the monitor in the same change, or it pages *has stopped reporting*.
+
 ## Node.js (agent tooling only)
 
 Node 24 LTS from NodeSource's apt repo, for `using-mayfly-chat` and SocratiCode (`npx`). The `processor` unit never runs it. The cohort survey and the reasons for NodeSource and for 24 are in #6.

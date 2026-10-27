@@ -49,6 +49,7 @@ find-links locks by filename, not hash, so either source satisfies the same `uv.
 | Lock audit | [.github/workflows/audit.yml](.github/workflows/audit.yml): `uv audit --frozen`, report-only, outside the deploy gate (#73). The weekly patch window reads the live lock (#75): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#the-lock-audit) |
 | Drift check | `processor-drift.timer`, hourly: does live lag `origin/main` in code that runs (`processor.drift.RUNTIME_*`)? Checks in to Status's `co-processor-drift` (`http://status:9000`, status#24); `alert` past 8 h. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#the-drift-check) (#35) |
 | Patching | `scheduled` (knob `.skills/patching-hosts`): one approved run a week, `Tue 05:00–10:00` UTC (Monday night Pacific), as the broker's window closes. Never a bare `apt-get upgrade`. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#patching) (#77) |
+| Disk GC | Provisioner's GC and headroom sensor (`maintaining-host-disk`, VERSION 2): a daily prune of tooling under `/home/exedev`, and a check-in to Status's `co-processor-disk-headroom` every 10 min (85% / 80%). Config [deploy/disk-gc/disk-gc.conf](deploy/disk-gc/disk-gc.conf); patch runs read its line as a floor. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#disk-gc) (#82) |
 | Liveness | `processor run` checks in `ok` to Status's `co-processor-live` every 5 min, only while the consume loop progressed within 605 s; silence past the 900 s grace pages. Daemon thread, 10 s bound: Status never touches consumption. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#liveness) (#39) |
 | Service | systemd unit `processor` — [deploy/processor.service](deploy/processor.service), runbook [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md); live since 2026-10-02. Runs as user `processor` (no sudo, not in `docker`, no home) from `/srv/processor/live` → `releases/<build>`, a read-only release `scripts/deploy.sh` builds from a commit on `origin/main` (#2; the cohort standard, broker#22 / status#9). **Never from a checkout** |
 
@@ -102,7 +103,7 @@ scripts/deploy.sh [<build>]              # ship: CI green, then build a release 
 ## Detail Docs
 
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, `/etc/processor/`, releases and `scripts/deploy.sh`, the lock audit, the drift check, liveness, containment, install and rollback, operate, co-core bumps, extraction dependencies, TLS trust, Tailscale DNS, tailnet flaps (signature, rule), patching (posture, window, the run), Node.js
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, `/etc/processor/`, releases and `scripts/deploy.sh`, the lock audit, the drift check, liveness, containment, install and rollback, operate, co-core bumps, extraction dependencies, TLS trust, Tailscale DNS, tailnet flaps (signature, rule), patching (posture, window, the run), the disk GC, Node.js
 - [docs/plans/](docs/plans/) — implementation plans
 - [docs/SKILLS.md](docs/SKILLS.md) — vendored agent skills: inventory, overrides (none), the refresh hook, worktrees
 - [docs/SOCRATICODE.md](docs/SOCRATICODE.md) — semantic search: tools, the shared store, link stubs, the pin, the memory decision

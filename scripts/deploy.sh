@@ -65,6 +65,7 @@ HOST_CONFIGS=(
   "apt/nodesource.pref=apt/preferences.d/nodesource.pref"
   "apt/tailscale.pref=apt/preferences.d/tailscale.pref"
   "needrestart.conf.d/processor.conf=needrestart/conf.d/processor.conf"
+  "disk-gc/disk-gc.conf=cannobserv/disk-gc/disk-gc.conf"
 )
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
