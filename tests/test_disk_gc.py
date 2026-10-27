@@ -108,9 +108,13 @@ def test_conf_lines_are_85_and_80_on_root() -> None:
 
 
 def test_conf_checks_in_to_status() -> None:
+    """Empty, the sensor checks in nothing, and the enabled monitor pages *has stopped
+    reporting*. So this holds the PR until Status issues the id (as #42 did)."""
     sensor = _conf()["sensor"]
     assert sensor["status_url"].strip() == "http://status:9000"
-    assert sensor["monitor_id"].strip().isalnum() or sensor["monitor_id"].strip() == ""
+    monitor_id = sensor["monitor_id"].strip()
+    assert monitor_id, "no [sensor] monitor_id: Status hasn't issued co-processor-disk-headroom's"
+    assert monitor_id.isascii() and monitor_id.isalnum(), monitor_id
 
 
 # --- the repo-side knob ---
