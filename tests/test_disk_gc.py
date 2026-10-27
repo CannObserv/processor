@@ -148,7 +148,14 @@ def test_tracked_conf_passes_the_installed_gc() -> None:
     loader = importlib.machinery.SourceFileLoader("cannobserv_disk_gc", str(GC))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     gc = importlib.util.module_from_spec(spec)
-    loader.exec_module(gc)
+    # No __pycache__ beside the GC: a file its MANIFEST doesn't list. One written into
+    # a staging tree made the installer refuse it (#82, 2026-10-27).
+    write_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        loader.exec_module(gc)
+    finally:
+        sys.dont_write_bytecode = write_bytecode
     cfg = gc.load_config(str(CONF))
     assert cfg.homes == ("/home/exedev",)
     assert (cfg.alert_at_percent, cfg.clear_at) == (85, 80)
@@ -185,3 +192,16 @@ def test_node_checks_fail_on_the_node_when_absent(bare_node, monkeypatch, test) 
     outcome = _outcome_of(test)
     assert isinstance(outcome, pytest.fail.Exception)
     assert "is not installed" in str(outcome)
+
+
+def test_loading_the_gc_writes_no_bytecode_beside_it(tmp_path, monkeypatch) -> None:
+    """The installed tree is MANIFEST's, file for file."""
+    gc = tmp_path / "disk-gc"
+    gc.write_text(
+        "class _C:\n    homes = ('/home/exedev',)\n    alert_at_percent = 85\n    clear_at = 80\n"
+        "def load_config(path):\n    return _C()\n"
+    )
+    monkeypatch.setattr(sys.modules[__name__], "GC", gc)
+    _pretend(monkeypatch, on_node=True)
+    test_tracked_conf_passes_the_installed_gc()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["disk-gc"]
