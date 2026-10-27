@@ -116,6 +116,46 @@ def test_the_release_tree_is_this_repos() -> None:
     assert _named("owner") == [["/srv/processor/live", "self"]]
 
 
+def test_the_language_read_finds_the_live_lock() -> None:
+    """The weekly window is the human read of the live ``uv.lock`` (#75). The probe
+    finds a tree only through a unit's ``WorkingDirectory=``: one that holds no
+    lockfile drops the tree, and the class still reads complete. So every unit runs
+    from the link ``scripts/deploy.sh`` switches, and the ``owner`` line labels that
+    tree ``self``, which points the record at this repo's lock audit."""
+    deploy_sh = (ROOT / "scripts" / "deploy.sh").read_text()
+    root = re.search(r'^ROOT="\$\{PROCESSOR_DEPLOY_ROOT:-(/[^}]+)\}"$', deploy_sh, re.M)
+    assert root, "deploy.sh's ROOT default not found"
+    assert re.search(r'^link="\$ROOT/live"$', deploy_sh, re.M), "deploy.sh's live link moved"
+    live = f"{root[1]}/live"
+
+    units = sorted((ROOT / "deploy").glob("*.service"))
+    dirs = {
+        unit.name: line.removeprefix("WorkingDirectory=")
+        for unit in units
+        for line in unit.read_text().splitlines()
+        if line.startswith("WorkingDirectory=")
+    }
+    assert set(dirs) == {"processor.service", "processor-drift.service"}
+    assert set(dirs.values()) == {live}, dirs
+    assert [path for path, _ in _named("owner")] == [live]
+
+
+def _patching_steps() -> str:
+    """§ Patching's numbered run, from "This host's run" to the next paragraph."""
+    deployment = (ROOT / "docs" / "DEPLOYMENT.md").read_text()
+    section = deployment.split("\n## Patching\n", 1)[1].split("\n## ", 1)[0]
+    run = section.split("**This host's run**", 1)[1]
+    return run.split("\n\n**", 1)[0]
+
+
+def test_the_runbook_takes_the_language_read() -> None:
+    """The probe audits the lock only under ``--refresh-into`` (readings.md); the
+    dry run and ``--post-boot`` never do. A run that skips it leaves the week's read
+    in ``not_read``, so the runbook names it as a step (#75)."""
+    steps = _patching_steps()
+    assert re.search(r"^\d+\. .*`probe\.sh --refresh-into <dir>`", steps, re.M), steps
+
+
 def test_the_runbook_sections_exist() -> None:
     """The knob, AGENTS.md and docs/SKILLS.md link DEPLOYMENT.md's sections by anchor."""
     deployment = (ROOT / "docs" / "DEPLOYMENT.md").read_text()

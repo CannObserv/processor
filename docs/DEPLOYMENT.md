@@ -248,7 +248,17 @@ A stop mid-reclaim finishes the command in hand and leaves the rest pending. A c
 
 ## The lock audit
 
-Nothing else reads `uv.lock` against OSV, and disclosures arrive without commits: #71's 12 advisories surfaced only because someone ran `uv audit` by hand. `.github/workflows/audit.yml` runs `scripts/audit_lock.sh` on every push to `main`, every PR, weekly (`audit.yml`'s cron), and on dispatch (#73, ported from broker#86).
+Disclosures arrive without commits: #71's 12 advisories surfaced only because someone ran `uv audit` by hand. Two things read the lock against OSV now:
+
+- **`audit.yml`, the signal.** `.github/workflows/audit.yml` runs `scripts/audit_lock.sh` on every push to `main`, every PR, weekly (`audit.yml`'s cron), and on dispatch (#73, ported from broker#86). A push or PR run is seen by whoever made the change. A scheduled run that finds something is still green, so it notifies nobody (#75).
+- **The weekly window, the human read** (#75, operator 2026-10-26). Each run's after-probe (§ Patching, step 9) runs `uv audit --frozen` on `/srv/processor/live/uv.lock`, the **live** lock, as its owner `exedev`, on a copy, never in the tree. It asks OSV live, so a disclosure `audit.yml`'s Monday 14:37Z run saw is read again in the window, which opens 14 h later. The count goes in the run's record, and the owner reads it. `tests/test_patching_knob.py` keeps the units' `WorkingDirectory=`, the knob's `owner` line and `scripts/deploy.sh`'s live link equal, so a refactor can't move the probe off the lock unnoticed.
+
+What the window doesn't cover:
+- A disclosure mid-week waits for the next window, at most 7 days. Between windows, `audit.yml` alone sees it.
+- A skipped window, or a run without the after-probe, means no read that week. The probe lists the class under `not_read`; it never reports it clean.
+- The run never re-locks. A finding there goes the way below, outside the window.
+
+**Reopen path:** if a window is skipped twice running, or an advisory that matters reaches production between windows, take #75's option 2: the scheduled run opens or updates an issue, with `issues: write` on that job only.
 
 - **Report-only.** The script always exits 0. A finding (uv exit 1) is a `uv.lock advisories` warning, with the audit and where it goes in the job summary. Any other failure is a `uv audit did not run` warning, never a clean result. A red gate would turn `main` red on someone else's disclosure date.
 - **Outside the deploy gate.** The gate reads `ci.yml`'s push run alone (§ The CI gate); `tests/test_lock_audit.py` holds both workflows to that.
@@ -673,6 +683,7 @@ uv run pytest tests/test_needrestart.py tests/test_tailscaled.py   # on the node
 6. The reboot decision: `sudo needrestart -b -r l` and `sudo grep -c '(deleted)' /proc/1/maps`. The kernel never decides one on exe.dev. Expect a reboot when `systemd` or `libsystemd0` is in the set: after those families, needrestart listed dbus and logind on co-broker and co-status, and PID 1 mapped deleted files.
 7. The reboot: `reboot-chain.sh --run <run>` prints the chain; `--approve` launches it. It stops `processor` (up to `TimeoutStopSec=240`), then reboots in-guest. **Never `exe.dev restart`**: that is a hard reset (#83).
 8. After it: `probe.sh --post-boot --run <run>`, § Tailscale DNS → *Check after a reboot*, `NRestarts=0`, and drift and liveness `ok` in Status. Read `journalctl -u processor -p warning --since <window start>` raw (systemd's own lines, such as a failed stop) and through `-o cat | jq -cR 'fromjson? | …'`. A crash is `PRIORITY=6`, so check `NRestarts` too.
+9. The after-probe, every run, reboot or not: `probe.sh --refresh-into <dir>`. It is what's left pending, by class, for the record, and the only step that audits the live `uv.lock` (`pending.language`). The dry run and `--post-boot` never ask OSV ([§ The lock audit](#the-lock-audit)).
 
 **With no reboot,** restart the service anyway after a libssl update: `/usr/bin/python3.12`'s `_ssl` links the system `libssl.so.3`, so the old library stays mapped until a restart. `sudo grep -c 'libssl.so.3 (deleted)' /proc/$(systemctl show -p MainPID --value processor)/maps` must read 0 afterwards.
 
@@ -680,7 +691,9 @@ uv run pytest tests/test_needrestart.py tests/test_tailscaled.py   # on the node
 
 **Deploys don't wait for a window** (operator, 2026-10-26, #77). The skill's policy.md says a deploy that restarts a declared `service` takes one (gregoryfoster/skills#366). Here `scripts/deploy.sh` runs after each merge, as before: it restarts `processor` alone, verifies the new build and switches back on failure ([§ Deploy a change](#deploy-a-change-scriptsdeploysh)). A merge that lands during a window is deployed after the post-boot checks, so a flap stays attributable.
 
-**The record** goes on the issue (`records CannObserv/processor`), per run.md §7, and ends with the next window's date. What each run leaves pending, by class, includes Ubuntu Pro / ESM: Pro isn't attached, and 25 esm-apps updates were visible on 2026-10-26.
+**The record** goes on the issue (`records CannObserv/processor`), per run.md §7, and ends with the next window's date. What each run leaves pending, by class, comes from step 9 and includes:
+- **Ubuntu Pro / ESM:** Pro isn't attached, and 25 esm-apps updates were visible on 2026-10-26.
+- **Language:** `/srv/processor/live/uv.lock`, its OSV advisory count, owner `self`. Run.md §7 asks for the owning repo's update mechanism; here that is `audit.yml`, report-only, with no Dependabot or Renovate ([§ The lock audit](#the-lock-audit)). A count above 0 goes to that section's "Where a finding goes" and is linked from the record. A tree listed as not audited, or the class in `not_read`, is recorded as no read, never as 0.
 
 ## Node.js (agent tooling only)
 
