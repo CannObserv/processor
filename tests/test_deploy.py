@@ -82,6 +82,7 @@ printf '{"result": "pass", "build": "%s", "child_containment": "required"}\n' "$
     "logger": r"""#!/usr/bin/env bash
 echo "$*" >>"$STATE/logger.log"
 echo "logger $*" >>"$STATE/calls.log"
+[[ "${STUB_LOGGER_FAIL:-}" != 1 ]]
 """,
     # GitHub's Actions API (#34), as in CannObserv/status's tests (status#11): it
     # answers from $STATE/ci, runs-<n>.json poll by poll (the last repeating) and
@@ -591,6 +592,7 @@ class TestEveryUnit:
         for name in DRIFT_UNITS:
             assert w.installed(name).exists(), "never removed by a deploy"
             assert f"{name} is installed but not in" in result.stderr
+            assert f"{name} is installed but not in" in w.log("logger"), "#93"
         assert "sudo systemctl disable --now processor-drift.timer" in result.stderr
 
     def test_a_first_deploy_that_fails_removes_every_unit_it_added(self, w: Env) -> None:
@@ -609,6 +611,63 @@ def test_host_configs_are_compared_never_installed(w: Env) -> None:
     assert result.returncode == 0
     assert "deploy/tailscaled.service.d/90-processor-oom.conf is not installed" in result.stderr
     assert not (w.etc / "systemd/system/tailscaled.service.d").exists()
+
+
+def test_a_host_config_left_behind_is_journaled(w: Env) -> None:
+    # #93, from #82: what a deploy left on the host outlives its terminal.
+    (w.checkout / "deploy" / "apt").mkdir()
+    (w.checkout / "deploy" / "apt" / "tailscale.pref").write_text("Pin: new\n")
+    (w.checkout / "deploy" / "apt" / "nodesource.pref").write_text("Pin: same\n")
+    installed = w.etc / "apt" / "preferences.d"
+    installed.mkdir(parents=True)
+    (installed / "tailscale.pref").write_text("Pin: old\n")
+    w.commit("apt pins")
+    assert w.deploy().returncode == 0
+    journal = w.log("logger")
+    assert "host config deploy/apt/tailscale.pref differs from" in journal
+    assert "host config deploy/apt/nodesource.pref is not installed at" in journal
+
+
+def verdict(build: str, pid: int) -> str:
+    """The line a verified deploy journals (#93): both proofs, by the PID that gave the first."""
+    return (
+        f"live is on {build}: pid {pid} logged starting (child_containment required),"
+        " then consuming; the smoke run passed"
+    )
+
+
+class TestTheVerdictIsJournaled:
+    """#93, broker#122 item 1: ``journalctl -t processor-deploy`` alone tells "switched
+    and verified" from "switched, and killed before the verify"."""
+
+    def test_a_verified_deploy_journals_its_verdict_after_the_switch(self, w: Env) -> None:
+        build = w.git("rev-parse", "--short=12", "HEAD")
+        result = w.deploy()
+        assert result.returncode == 0, result.stderr
+        assert f"deploy: {verdict(build, 1)}" in result.stderr
+        journal = w.log("logger").splitlines()
+        assert journal.index(f"-t processor-deploy {verdict(build, 1)}") > index_of(
+            journal, f"live -> {build}"
+        )
+
+    def test_the_verdict_names_the_new_processs_pid(self, w: Env) -> None:
+        assert w.deploy().returncode == 0
+        build = w.commit("second")
+        assert w.deploy().returncode == 0
+        assert verdict(build, 2) in w.log("logger")  # the stub's second MainPID
+
+    def test_a_failed_verify_journals_no_verdict(self, w: Env) -> None:
+        assert w.deploy().returncode == 0
+        before = w.log("logger").count("live is on")
+        new = w.commit("second")
+        assert w.deploy(STUB_DEAD=new).returncode == 1
+        assert w.log("logger").count("live is on") == before
+
+    def test_a_journal_that_refuses_never_fails_a_verified_deploy(self, w: Env) -> None:
+        build = w.git("rev-parse", "--short=12", "HEAD")
+        result = w.deploy(STUB_LOGGER_FAIL="1")
+        assert result.returncode == 0, result.stderr
+        assert verdict(build, 1) in result.stderr
 
 
 def test_old_releases_are_pruned_but_never_live(w: Env) -> None:
