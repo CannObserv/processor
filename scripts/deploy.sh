@@ -126,6 +126,29 @@ flock -n 9 || die "another deploy is running (it holds $ROOT/.deploy.lock)"
 backup="$(mktemp -d "${TMPDIR:-/tmp}/processor-deploy.XXXXXX")"
 trap 'rm -rf "$backup" || :' EXIT
 
+# Ended by a signal (Ctrl-C, or an agent's tool call timing out: CI can take
+# CI_WAIT_SECONDS, then a restart and the verify VERIFY_SECONDS, twice on a
+# switch back), say where it stopped and what live names, in the journal too
+# (#93, as broker d52d292). A signal to the process group ends the step in
+# progress; this runs when it has. SIGKILL leaves only `live -> <build>`.
+stage="before the switch"
+interrupted() {
+  trap - INT TERM HUP
+  local now
+  case "$stage" in
+    "before the switch") die "interrupted before the switch; nothing switched" ;;
+    "after the verify") # the verdict is journaled already
+      note "interrupted after the verify; live is on ${build:-?}, verified"
+      exit 0
+      ;;
+  esac
+  now="$(readlink "$ROOT/live" 2>/dev/null)" || now="nothing"
+  logger -t processor-deploy "interrupted on ${build:-?} $stage: live -> $now, unverified" || true
+  dead "interrupted on ${build:-?} $stage: live -> $now, unverified. Deploy again, or deploy" \
+    "the build it should run: scripts/deploy.sh <build> (journalctl -t processor-deploy -n 20)"
+}
+trap interrupted INT TERM HUP
+
 # --- which commit ----------------------------------------------------------
 
 git -C "$SRC" fetch --quiet --prune origin
@@ -548,7 +571,9 @@ link="$ROOT/live"
 previous_link="$(readlink "$link" 2>/dev/null || true)"
 previous="$(release_of)"
 
+stage="while switching"
 swap "$link" "releases/$build"
+stage="after the switch, installing units and verifying"
 logger -t processor-deploy "live -> $build (was ${previous_link:-nothing})" || true
 units_ok=1
 install_units || units_ok=0
@@ -556,8 +581,10 @@ install_units || units_ok=0
 if ((units_ok)) && restart_and_verify "$build"; then
   say "live is on $build: pid $verified_pid logged starting (child_containment required)," \
     "then consuming; the smoke run passed"
+  stage="after the verify"
   enable_new_timers
 else
+  stage="while switching back"
   if [[ -z "$previous" ]]; then
     # A first deploy: nothing to switch back to. The unit it replaced goes back,
     # and the service restarts on it: left alone, the process that failed the
@@ -580,6 +607,7 @@ else
     swap "$link" "$previous_link"
   fi
   restore_units
+  stage="after switching back, verifying the old build"
   if restart_and_verify "$old"; then
     logger -t processor-deploy "live rolled back to $old after $build failed ($back)" || true
     die "live failed on $build; $back, which is answering"
