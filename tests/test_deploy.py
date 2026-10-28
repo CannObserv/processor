@@ -8,7 +8,8 @@ and stubs for ``uv``, ``sudo``, ``systemctl``, ``journalctl``, ``systemd-run``,
 The stubs model the service: ``systemctl restart`` starts whatever build ``live``
 names, ``journalctl`` prints that process's ``starting`` and ``consuming`` records,
 and ``systemd-run`` answers the smoke run, unless the build is listed as dead.
-``curl`` plays GitHub's Actions API (#34), never the real one.
+``curl`` plays GitHub's Actions API (#34), never the real one. ``STUB_SIGNAL`` is
+sent to the deploy by ``getent`` or the nth ``systemctl restart`` (#93).
 """
 
 import fcntl
@@ -56,6 +57,8 @@ case "$1" in
   restart)
     rev="$(cat "$PROCESSOR_DEPLOY_ROOT/live/REVISION" 2>/dev/null || echo dev)"
     echo "$rev" >>"$STATE/started"
+    n="$(wc -l <"$STATE/started")"
+    [[ "$n" == "${STUB_SIGNAL_AT_RESTART:-}" ]] && kill -"$STUB_SIGNAL" "$PPID"
     ;;
   show) wc -l <"$STATE/started" 2>/dev/null || echo 0 ;;
 esac
@@ -77,6 +80,7 @@ build="$(tail -n 1 "$STATE/started" 2>/dev/null)"
 printf '{"result": "pass", "build": "%s", "child_containment": "required"}\n' "$build"
 """,
     "getent": r"""#!/usr/bin/env bash
+[[ -n "${STUB_SIGNAL_AT_GETENT:-}" ]] && kill -"$STUB_SIGNAL" "$PPID"
 [[ "$1 $2" == "passwd processor" && "${STUB_NO_USER:-}" != 1 ]]
 """,
     "logger": r"""#!/usr/bin/env bash
@@ -1010,3 +1014,73 @@ class TestTheCIGate:
             assert name in names
             (job,) = [j for k, j in workflow["jobs"].items() if j.get("name", k) == name]
             assert "if" not in job, f"{name} may be skipped on a push"
+
+
+SIGNALS = pytest.mark.parametrize("signal", ["TERM", "INT", "HUP"])
+
+
+class TestAnInterruptedDeploy:
+    """#93, as broker ``d52d292``: a deploy ended by a signal (Ctrl-C, an agent's tool
+    call timing out) says where it stopped and what live names, in the journal too.
+
+    Without it a kill after the switch leaves ``live -> <build>`` alone, the very
+    case the verdict line exists to tell apart.
+    """
+
+    @SIGNALS
+    def test_after_the_switch_it_journals_live_unverified_and_exits_4(
+        self, w: Env, signal: str
+    ) -> None:
+        build = w.git("rev-parse", "--short=12", "HEAD")
+        result = w.deploy(STUB_SIGNAL=signal, STUB_SIGNAL_AT_RESTART="1")
+        assert result.returncode == 4, result.stderr
+        line = (
+            f"interrupted on {build} after the switch, installing units and verifying:"
+            f" live -> releases/{build}, unverified"
+        )
+        assert line in result.stderr
+        journal = w.log("logger")
+        assert line in journal
+        assert "live is on" not in journal
+        assert "enable" not in w.log("systemctl"), "a new timer waits for a verify"
+
+    def test_before_the_switch_nothing_switched_and_nothing_is_journaled(self, w: Env) -> None:
+        result = w.deploy(STUB_SIGNAL="TERM", STUB_SIGNAL_AT_GETENT="1")
+        assert result.returncode == 1, result.stderr
+        assert "interrupted before the switch; nothing switched" in result.stderr
+        assert not (w.root / "live").is_symlink()
+        assert "interrupted" not in w.log("logger")
+
+    def test_while_proving_the_old_build_it_names_that_stage(self, w: Env) -> None:
+        old = w.git("rev-parse", "--short=12", "HEAD")
+        assert w.deploy().returncode == 0  # restart 1
+        new = w.commit("second")
+        # Restart 2 runs the new build, which fails; restart 3 the old.
+        result = w.deploy(STUB_DEAD=new, STUB_SIGNAL="TERM", STUB_SIGNAL_AT_RESTART="3")
+        assert result.returncode == 4, result.stderr
+        assert (
+            f"interrupted on {new} after switching back, verifying the old build:"
+            f" live -> releases/{old}, unverified"
+        ) in w.log("logger")
+
+    def test_after_the_verify_it_says_verified_and_exits_0(self, w: Env) -> None:
+        # cmp runs from the script's own shell; the one for a host config comes after
+        # the verdict, so a signal there finds the deploy verified.
+        cmp = w.bin / "cmp"
+        cmp.write_text(
+            "#!/usr/bin/env bash\n"
+            '[[ "$3" == "$PROCESSOR_DEPLOY_ETC"/apt/* ]] && kill -TERM "$PPID"\n'
+            'exec /usr/bin/cmp "$@"\n'
+        )
+        cmp.chmod(0o755)
+        (w.checkout / "deploy" / "apt").mkdir()
+        (w.checkout / "deploy" / "apt" / "tailscale.pref").write_text("Pin: new\n")
+        installed = w.etc / "apt" / "preferences.d"
+        installed.mkdir(parents=True)
+        (installed / "tailscale.pref").write_text("Pin: old\n")
+        build = w.commit("apt pin")
+        result = w.deploy()
+        assert result.returncode == 0, result.stderr
+        assert f"interrupted after the verify; live is on {build}, verified" in result.stderr
+        assert verdict(build, 1) in w.log("logger")
+        assert "interrupted" not in w.log("logger"), "the verdict already says it"
