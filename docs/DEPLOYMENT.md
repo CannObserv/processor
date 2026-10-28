@@ -186,8 +186,10 @@ cd ~/processor && git pull --ff-only     # for the skills hook; the deploy fetch
 scripts/deploy.sh                        # origin/main, once its CI passed
 scripts/deploy.sh <build>                # any commit on origin/main with green CI: a rollback
 scripts/deploy.sh --skip-ci [<build>]    # without asking CI: an emergency, logged
-journalctl -t processor-deploy -n 20     # "CI passed for <build>: <run>", "live -> <build> (was releases/<old>)"
+journalctl -t processor-deploy -n 20     # "CI passed for …", "live -> <build> (was …)", then "live is on <build>: pid <N> …"
 ```
+
+**The journal holds the verdict** (`-t processor-deploy`, #93). A verified deploy ends with `live is on <build>: pid <N> logged starting (child_containment required), then consuming; the smoke run passed`: both proofs of step 4, `<N>` the new `MainPID`. A `live -> <build>` with no `live is on <build>` after it was never verified: a rollback (`live rolled back to …` / `… NOT answering`), an interrupt (below), or a SIGKILL, which leaves nothing. Before #93's deploy only the switch was journaled.
 
 A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml` or `uv.lock` needs no deploy. That list is `RUNTIME_DIRS` and `RUNTIME_FILES` in `src/processor/drift.py`, and the drift check alerts on it (§ The drift check).
 
@@ -210,7 +212,14 @@ A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pypr
 
 **On success,** a timer this deploy installed for the first time is enabled (`systemctl enable --now`), so a deploy that was switched back never ran it. A timer installed before is never enabled again, so an operator's `disable` sticks. A timer that won't enable or re-arm is a note, never a switch back: it watches the deploy, it never decides one. Still by hand: `sudo systemctl reenable <unit>` after its `[Install]` section changes, and retiring a unit (`disable --now`, remove the file, `daemon-reload`), since a unit gone from `deploy/` stays installed.
 
-Then the host configs under `deploy/` (tailscaled's drop-in, NodeSource's apt files) are compared with their installed copies. A difference is a note, never an install. The deploy keeps the 5 most recently deployed releases plus `live`.
+Then the host configs under `deploy/` (`HOST_CONFIGS`: tailscaled's drop-in, the apt files, needrestart's, the disk GC's) are compared with their installed copies. A difference is a note, never an install, and is journaled, as is an installed unit the release lacks. The deploy keeps the 5 most recently deployed releases plus `live`.
+
+**Interrupted** (INT, TERM or HUP: Ctrl-C, or an agent's tool call timing out), the deploy says where it stopped once the step in progress ends:
+- before the switch: `interrupted before the switch; nothing switched`, exit 1, nothing journaled;
+- after it, the switch back included: `interrupted on <build> <stage>: live -> <link>, unverified`, journaled, exit 4. Deploy again, or deploy the build it should run;
+- after the verify: `interrupted after the verify; live is on <build>, verified`, exit 0 (the verdict is journaled already). A timer this deploy installed new may not be enabled yet: `systemctl list-timers processor-*`.
+
+A signal to the script alone, not its process group, waits for the step in hand: up to `TimeoutStopSec=240` in a restart.
 
 | Variable | Default | What |
 |---|---|---|

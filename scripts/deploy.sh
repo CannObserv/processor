@@ -35,7 +35,8 @@
 #
 # Runs as exedev; sudo for systemctl, systemd-run and the unit files only. Exits
 # 0 when verified, 4 when processor is left on a build that did not answer (no
-# rollback possible, or the old build failed too), 1 otherwise.
+# rollback possible, the old build failed too, or a signal after the switch), 1
+# otherwise. The verdict is journaled (journalctl -t processor-deploy, #93).
 set -euo pipefail
 
 ROOT="${PROCESSOR_DEPLOY_ROOT:-/srv/processor}"

@@ -24,7 +24,7 @@ status: per #93's body, the coordinator's brief and the implementer's correction
 |---|---|
 | before the switch | exit 1, `interrupted before the switch; nothing switched`; nothing journaled (nothing changed) |
 | while switching · after the switch, installing units and verifying · while switching back · after switching back, verifying the old build | journal `interrupted on <build> <stage>: live -> <link now>, unverified`; exit 4 |
-| while pruning | `interrupted while pruning; live is on <build>, verified`; exit 0 |
+| after the verify (from the verdict line on: the new timers, the drift notes, the prune; broker's "while pruning" starts later) | `interrupted after the verify; live is on <build>, verified`; exit 0 |
 
 The EXIT trap still removes the backup: the replaced units are in the old release's `deploy/`, so deploying that build again reinstalls them.
 
@@ -36,7 +36,7 @@ The EXIT trap still removes the backup: the replaced units are in the old releas
 - A failed verify journals no `live is on`.
 - A host config not installed, or differing, is journaled.
 - `logger` failing leaves a verified deploy exit 0.
-- Trap: a signal (TERM, INT, HUP) during the restart after the switch journals `interrupted on <build> after the switch, …: live -> releases/<build>, unverified`, exit 4, and no `live is on`. A signal before the switch exits 1 with no `interrupted` journal line. A signal during the switch back's restart names that stage.
+- Trap: a signal (TERM, INT, HUP) during the restart after the switch journals `interrupted on <build> after the switch, …: live -> releases/<build>, unverified`, exit 4, and no `live is on`. A signal before the switch exits 1 with no `interrupted` journal line. A signal during the switch back's restart names that stage. A signal after the verify (a host config's `cmp`) exits 0, verified.
 
 The signal comes from the `systemctl`/`getent` stubs (`kill -<sig> $PPID`): both run from the script's own shell, not a subshell.
 
