@@ -49,7 +49,8 @@ class FakeClient:
 
     def list_blobs(self, bucket: str, prefix: str) -> list[FakeBlob]:
         assert bucket == sync_wheelhouse.BUCKET
-        return [FakeBlob(self.bucket, n) for n in sorted(self.bucket.objects) if n.startswith(prefix)]
+        names = sorted(n for n in self.bucket.objects if n.startswith(prefix))
+        return [FakeBlob(self.bucket, n) for n in names]
 
 
 @pytest.fixture

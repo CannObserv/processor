@@ -41,6 +41,10 @@ dev = [
     "ruff>=0.16.8,<0.17",
     "pyyaml>=6,<7",
 ]
+# scripts/sync_wheelhouse.py's own deps, locked (#79, as broker#113): `uv run
+# --frozen --no-config --only-group wheelhouse` installs them without the
+# project, whose co-core is what the sync fetches. The project's own spec.
+wheelhouse = ["google-cloud-storage>=3,<4"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -873,6 +873,9 @@ dev = [
     { name = "pyyaml" },
     { name = "ruff" },
 ]
+wheelhouse = [
+    { name = "google-cloud-storage" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -898,6 +901,7 @@ dev = [
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "ruff", specifier = ">=0.16.8,<0.17" },
 ]
+wheelhouse = [{ name = "google-cloud-storage", specifier = ">=3,<4" }]
 
 [[package]]
 name = "proto-plus"
