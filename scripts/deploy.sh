@@ -138,8 +138,10 @@ interrupted() {
   local now
   case "$stage" in
     "before the switch") die "interrupted before the switch; nothing switched" ;;
-    "after the verify") # the verdict is journaled already
-      note "interrupted after the verify; live is on ${build:-?}, verified"
+    "after the verify")
+      # Journaled first: a hung-up terminal fails the note under set -e (CR 1).
+      logger -t processor-deploy "interrupted after the verify; live is on ${build:-?}, verified" || true
+      note "interrupted after the verify; live is on ${build:-?}, verified" || :
       exit 0
       ;;
   esac
@@ -580,9 +582,10 @@ units_ok=1
 install_units || units_ok=0
 
 if ((units_ok)) && restart_and_verify "$build"; then
+  # Before the verdict: a signal that takes its logger must not journal "unverified" (CR 1).
+  stage="after the verify"
   say "live is on $build: pid $verified_pid logged starting (child_containment required)," \
     "then consuming; the smoke run passed"
-  stage="after the verify"
   enable_new_timers
 else
   stage="while switching back"

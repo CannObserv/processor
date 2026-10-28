@@ -1081,6 +1081,10 @@ class TestAnInterruptedDeploy:
         build = w.commit("apt pin")
         result = w.deploy()
         assert result.returncode == 0, result.stderr
-        assert f"interrupted after the verify; live is on {build}, verified" in result.stderr
-        assert verdict(build, 1) in w.log("logger")
-        assert "interrupted" not in w.log("logger"), "the verdict already says it"
+        line = f"interrupted after the verify; live is on {build}, verified"
+        assert line in result.stderr
+        # CR 1: journaled too, and never "unverified": a kill that took the verdict's
+        # own logger still leaves the journal saying verified.
+        journal = w.log("logger")
+        assert verdict(build, 1) in journal and line in journal
+        assert "unverified" not in journal
