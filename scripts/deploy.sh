@@ -141,10 +141,13 @@ interrupted() {
     "after the verify"*)
       msg="interrupted $stage; live is on ${build:-?}, verified"
       # A new timer left disabled stays so: no later deploy counts it as new (CR 2).
+      # Most deploys add none, and then there is no enable to name (CR 5).
       if [[ "$stage" == *"enabling new timers" ]]; then
         timers="$(grep '\.timer$' "$backup/units.added" 2>/dev/null | tr '\n' ' ')" || timers=""
-        msg+=". A timer it installed may not be enabled, and no deploy will enable it:"
-        msg+=" sudo systemctl enable --now ${timers% }"
+        if [[ -n "$timers" ]]; then
+          msg+=". A timer it installed may not be enabled, and no deploy will enable it:"
+          msg+=" sudo systemctl enable --now ${timers% }"
+        fi
       fi
       # Journaled first: a hung-up terminal fails the note under set -e (CR 1).
       logger -t processor-deploy "$msg" || true
