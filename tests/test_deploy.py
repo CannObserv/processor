@@ -14,6 +14,7 @@ restart`` (#93).
 """
 
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -35,6 +36,42 @@ DRIFT_UNITS = {
     name: (REPO / "deploy" / name).read_text()
     for name in ("processor-drift.service", "processor-drift.timer")
 }
+
+# The world's wheelhouse (#87): the one file its uv.lock names, held to the sha256
+# its pyproject.toml pins, and a wheel no lock names.
+WHEEL = "co_core-0.19.7-py3-none-any.whl"
+WHEEL_BYTES = b"wheel"
+UNLOCKED = "co_core-0.1.0-py3-none-any.whl"
+UV_LOCK = f"""version = 1
+
+[[package]]
+name = "co-core"
+version = "0.19.7"
+source = {{ registry = ".wheelhouse" }}
+wheels = [
+    {{ path = "{WHEEL}" }},
+]
+
+[[package]]
+name = "pydantic"
+version = "2.12.0"
+source = {{ registry = "https://pypi.org/simple" }}
+sdist = {{ url = "https://files.example/pydantic-2.12.0.tar.gz", hash = "sha256:00" }}
+"""
+
+
+def sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def pyproject(digests: dict[str, str]) -> str:
+    rows = "".join(f'"{name}" = "{value}"\n' for name, value in digests.items())
+    return (
+        f'[project]\nname = "processor"\n\n[tool.processor.wheelhouse-sha256]\n{rows}\n[tool.uv]\n'
+    )
+
+
+PYPROJECT = pyproject({WHEEL: sha256(WHEEL_BYTES)})
 
 STUBS = {
     "uv": r"""#!/usr/bin/env bash
@@ -182,7 +219,10 @@ class Env:
         (self.checkout / "scripts" / "smoke_scratch_bus.py").write_text("# stub\n")
         wheelhouse = self.checkout / ".wheelhouse"
         wheelhouse.mkdir()
-        (wheelhouse / "co_core-0.19.7-py3-none-any.whl").write_text("wheel")
+        (wheelhouse / WHEEL).write_bytes(WHEEL_BYTES)
+        (wheelhouse / UNLOCKED).write_bytes(b"other")
+        (self.checkout / "uv.lock").write_text(UV_LOCK)
+        (self.checkout / "pyproject.toml").write_text(PYPROJECT)
         (self.checkout / ".gitignore").write_text(".wheelhouse/\n")
         self.commit("first")
         self.env = os.environ | {
@@ -277,7 +317,7 @@ def test_a_first_deploy_builds_switches_installs_and_verifies(w: Env) -> None:
     assert w.live() == f"releases/{build}"
     release = w.root / "releases" / build
     assert (release / "REVISION").read_text() == f"{build}\n"
-    assert (release / ".wheelhouse" / "co_core-0.19.7-py3-none-any.whl").exists()
+    assert (release / ".wheelhouse" / WHEEL).exists()
     assert w.installed_unit.read_text() == UNIT
     assert "restart processor" in w.log("systemctl")
     assert f"live -> {build} (was nothing)" in w.log("logger")
@@ -404,6 +444,73 @@ def test_a_failed_extract_or_copy_says_so(w: Env, break_it: str, message: str) -
     assert result.returncode == 1
     assert f"deploy: {message}" in result.stderr and "nothing switched" in result.stderr
     assert not (w.root / "live").exists()
+
+
+class TestTheWheelhouse:
+    """#87: a wheelhouse file uv.lock names is held to the release's pinned sha256
+    before uv sync. uv.lock records no digest for one, so `uv sync --locked` would
+    install any file of that name."""
+
+    def test_a_same_size_wheel_with_other_bytes_is_refused(self, w: Env) -> None:
+        """The swap a size-only sync kept: refused, journaled, nothing switched."""
+        planted = b"WHEEL"
+        assert len(planted) == len(WHEEL_BYTES)
+        (w.checkout / ".wheelhouse" / WHEEL).write_bytes(planted)
+        result = w.deploy()
+        assert result.returncode == 1
+        assert WHEEL in result.stderr and "nothing switched" in result.stderr
+        assert sha256(planted) in result.stderr and sha256(WHEEL_BYTES) in result.stderr
+        assert "Remove it" in result.stderr
+        assert not (w.root / "live").exists()
+        assert "uv sync" not in w.log("uv") and not w.log("uv"), "refused before uv sync"
+        journaled = [ln for ln in w.log("logger").splitlines() if WHEEL in ln]
+        assert [ln for ln in journaled if sha256(planted) in ln and "refused" in ln], journaled
+
+    def test_a_check_that_passes_is_journaled_with_what_it_checked(self, w: Env) -> None:
+        """Without it, a deploy that checked reads like one from a deploy.sh that
+        never did (broker#125 CR 6). Before the switch, so before `live ->`."""
+        build = w.git("rev-parse", "--short=12", "HEAD")
+        assert w.deploy().returncode == 0
+        logged = w.log("logger").splitlines()
+        line = f"-t processor-deploy wheelhouse for {build}: {WHEEL} match their pinned sha256"
+        assert line in logged, logged
+        assert logged.index(line) < logged.index(
+            f"-t processor-deploy live -> {build} (was nothing)"
+        )
+
+    def test_only_the_locked_files_reach_the_release(self, w: Env) -> None:
+        """Each copy is checked, so nothing unchecked rides along."""
+        assert w.deploy().returncode == 0
+        release = w.root / "releases" / w.git("rev-parse", "--short=12", "HEAD")
+        assert sorted(p.name for p in (release / ".wheelhouse").iterdir()) == [WHEEL]
+
+    def test_a_locked_file_with_no_digest_is_refused(self, w: Env) -> None:
+        (w.checkout / "pyproject.toml").write_text(pyproject({}))
+        w.commit("no pin")
+        result = w.deploy()
+        assert result.returncode == 1
+        assert WHEEL in result.stderr and "wheelhouse-sha256" in result.stderr
+        assert "nothing switched" in result.stderr
+        assert not (w.root / "live").exists()
+
+    def test_a_locked_file_missing_from_the_wheelhouse_is_refused(self, w: Env) -> None:
+        (w.checkout / ".wheelhouse" / WHEEL).unlink()
+        result = w.deploy()
+        assert result.returncode == 1
+        assert WHEEL in result.stderr and "nothing switched" in result.stderr
+        assert not (w.root / "live").exists()
+
+    def test_the_digests_are_the_releases_own_not_the_checkouts(self, w: Env) -> None:
+        """A pin moves in the commit deployed: its pyproject.toml is what the release
+        is held to, whatever the checkout's working tree says."""
+        moved = b"wh33l"
+        (w.checkout / "pyproject.toml").write_text(pyproject({WHEEL: sha256(moved)}))
+        w.commit("moved pin")
+        (w.checkout / "pyproject.toml").write_text(PYPROJECT)  # the tree, not the commit
+        (w.checkout / ".wheelhouse" / WHEEL).write_bytes(moved)
+        assert w.deploy().returncode == 0
+        release = w.root / "releases" / w.git("rev-parse", "--short=12", "HEAD")
+        assert (release / ".wheelhouse" / WHEEL).read_bytes() == moved
 
 
 def test_a_failed_build_switches_nothing(w: Env) -> None:
