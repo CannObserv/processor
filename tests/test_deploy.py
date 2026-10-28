@@ -9,7 +9,8 @@ The stubs model the service: ``systemctl restart`` starts whatever build ``live`
 names, ``journalctl`` prints that process's ``starting`` and ``consuming`` records,
 and ``systemd-run`` answers the smoke run, unless the build is listed as dead.
 ``curl`` plays GitHub's Actions API (#34), never the real one. ``STUB_SIGNAL`` is
-sent to the deploy by ``getent`` or the nth ``systemctl restart`` (#93).
+sent to the deploy by ``getent``, ``systemctl enable`` or the nth ``systemctl
+restart`` (#93).
 """
 
 import fcntl
@@ -61,6 +62,7 @@ case "$1" in
     [[ "$n" == "${STUB_SIGNAL_AT_RESTART:-}" ]] && kill -"$STUB_SIGNAL" "$PPID"
     ;;
   show) wc -l <"$STATE/started" 2>/dev/null || echo 0 ;;
+  enable) [[ -n "${STUB_SIGNAL_AT_ENABLE:-}" ]] && kill -"$STUB_SIGNAL" "$PPID" ;;
 esac
 exit 0
 """,
@@ -1062,6 +1064,19 @@ class TestAnInterruptedDeploy:
             f"interrupted on {new} after switching back, verifying the old build:"
             f" live -> releases/{old}, unverified"
         ) in w.log("logger")
+
+    def test_while_enabling_a_new_timer_it_names_the_enable_left_to_do(self, w: Env) -> None:
+        """CR 2: a timer installed new and never enabled is enabled by no later deploy."""
+        build = w.git("rev-parse", "--short=12", "HEAD")
+        result = w.deploy(STUB_SIGNAL="TERM", STUB_SIGNAL_AT_ENABLE="1")
+        assert result.returncode == 0, result.stderr
+        line = (
+            f"interrupted after the verify, enabling new timers; live is on {build}, verified."
+            " A timer it installed may not be enabled, and no deploy will enable it:"
+            " sudo systemctl enable --now processor-drift.timer"
+        )
+        assert line in result.stderr
+        assert line in w.log("logger")
 
     def test_after_the_verify_it_says_verified_and_exits_0(self, w: Env) -> None:
         # cmp runs from the script's own shell; the one for a host config comes after

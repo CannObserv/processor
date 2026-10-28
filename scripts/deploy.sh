@@ -135,13 +135,20 @@ trap 'rm -rf "$backup" || :' EXIT
 stage="before the switch"
 interrupted() {
   trap - INT TERM HUP
-  local now
+  local now msg timers
   case "$stage" in
     "before the switch") die "interrupted before the switch; nothing switched" ;;
-    "after the verify")
+    "after the verify"*)
+      msg="interrupted $stage; live is on ${build:-?}, verified"
+      # A new timer left disabled stays so: no later deploy counts it as new (CR 2).
+      if [[ "$stage" == *"enabling new timers" ]]; then
+        timers="$(grep '\.timer$' "$backup/units.added" 2>/dev/null | tr '\n' ' ')" || timers=""
+        msg+=". A timer it installed may not be enabled, and no deploy will enable it:"
+        msg+=" sudo systemctl enable --now ${timers% }"
+      fi
       # Journaled first: a hung-up terminal fails the note under set -e (CR 1).
-      logger -t processor-deploy "interrupted after the verify; live is on ${build:-?}, verified" || true
-      note "interrupted after the verify; live is on ${build:-?}, verified" || :
+      logger -t processor-deploy "$msg" || true
+      note "$msg" || :
       exit 0
       ;;
   esac
@@ -586,7 +593,9 @@ if ((units_ok)) && restart_and_verify "$build"; then
   stage="after the verify"
   say "live is on $build: pid $verified_pid logged starting (child_containment required)," \
     "then consuming; the smoke run passed"
+  stage="after the verify, enabling new timers"
   enable_new_timers
+  stage="after the verify"
 else
   stage="while switching back"
   if [[ -z "$previous" ]]; then

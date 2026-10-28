@@ -217,7 +217,7 @@ Then the host configs under `deploy/` (`HOST_CONFIGS`: tailscaled's drop-in, the
 **Interrupted** (INT, TERM or HUP: Ctrl-C, or an agent's tool call timing out), the deploy says where it stopped once the step in progress ends:
 - before the switch: `interrupted before the switch; nothing switched`, exit 1, nothing journaled;
 - after it, the switch back included: `interrupted on <build> <stage>: live -> <link>, unverified`, journaled, exit 4. Deploy again, or deploy the build it should run;
-- after the verify: `interrupted after the verify; live is on <build>, verified`, exit 0 (the verdict is journaled already). A timer this deploy installed new may not be enabled yet: `systemctl list-timers processor-*`.
+- after the verify: `interrupted after the verify; live is on <build>, verified`, journaled, exit 0. While it enabled a timer it installed new, the line ends `sudo systemctl enable --now <timer>`: run it, since no later deploy counts that timer as new.
 
 A signal to the script alone, not its process group, waits for the step in hand: up to `TimeoutStopSec=240` in a restart.
 
