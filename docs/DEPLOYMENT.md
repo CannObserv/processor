@@ -155,8 +155,9 @@ processor_cli() {   # e.g. processor_cli dlq list; processor_cli ensure-group
 
 ```
 /srv/processor/                      exedev's, 755
-  releases/<build>/   git archive of one commit on origin/main, its .wheelhouse, its own
-                      .venv; REVISION written last; a-w, go+rX
+  releases/<build>/   git archive of one commit on origin/main, the wheelhouse files its
+                      uv.lock names (each held to its pinned sha256), its own .venv;
+                      REVISION written last; a-w, go+rX
   live -> releases/<build>           processor.service, processor-drift.service
 ```
 
@@ -186,7 +187,7 @@ cd ~/processor && git pull --ff-only     # for the skills hook; the deploy fetch
 scripts/deploy.sh                        # origin/main, once its CI passed
 scripts/deploy.sh <build>                # any commit on origin/main with green CI: a rollback
 scripts/deploy.sh --skip-ci [<build>]    # without asking CI: an emergency, logged
-journalctl -t processor-deploy -n 20     # "CI passed for …", "live -> <build> (was …)", then "live is on <build>: pid <N> …"
+journalctl -t processor-deploy -n 20     # "CI passed for …", "wheelhouse for <build>: … match their pinned sha256", "live -> <build> (was …)", then "live is on <build>: pid <N> …"
 ```
 
 **The journal holds the verdict** (`-t processor-deploy`, #93). A verified deploy ends with `live is on <build>: pid <N> logged starting (child_containment required), then consuming; the smoke run passed`: both proofs of step 4, `<N>` the new `MainPID`. A `live -> <build>` with no `live is on <build>` after it was never verified: a rollback (`live rolled back to …` / `… NOT answering`), an interrupt (below), or a SIGKILL, which leaves nothing. Before #93's deploy only the switch was journaled.
@@ -196,6 +197,13 @@ A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pypr
 **In order:**
 0. **Ask CI** whether the commit passed (§ The CI gate). A refusal builds nothing.
 1. **Build** `releases/<build>`, or reuse a complete one whose venv still imports `processor`, co-core and lxml. A release that `live` runs is never rebuilt in place. The service user must exist, or nothing switches.
+   - **The wheelhouse check** (#87, as broker#125):
+     - only the files the release's `uv.lock` names are copied from `~/processor/.wheelhouse`;
+     - each copy is held to the sha256 in the release's own `pyproject.toml` `[tool.processor.wheelhouse-sha256]`, before `uv sync`. uv records no digest for a find-links file, so `uv sync --locked` would install any file of that name.
+   - A pass is journaled: `wheelhouse for <build>: <files> match their pinned sha256`.
+   - A refusal is journaled too (`refused <build>: …; nothing switched`, exit 1). It fires on a file that misses its pin, one with no pin, or one the wheelhouse lacks.
+   - A mismatch says to remove the file, populate the wheelhouse again (AGENTS.md; a local build: § Bumping co-core) and deploy again. This deploy doesn't run the sync: it checks what the checkout holds.
+   - A reused release isn't checked again. Builds from before #87's deploy were never checked.
 2. **Switch** `live` (an atomic rename). Then install every `deploy/*.service` and `deploy/*.timer` from the release that differs from its installed copy (#35, as status#18), with one `daemon-reload`. A changed timer is `try-restart`ed so it re-arms. Each replaced copy is kept aside for step 5.
 3. **Restart.** `reset-failed` comes first, in case a crash loop hit the start limit. The restart lets the in-flight command finish (`KillMode=mixed`: SIGTERM reaches the consumer, not its extraction child), for up to `TimeoutStopSec=240`.
 4. **Verify,** within `PROCESSOR_DEPLOY_VERIFY_SECONDS` (300):
@@ -447,6 +455,7 @@ Then run § Containment's checks, and wait for the next shadow command: `ack: co
 ## Rollback
 
 - **A failed deploy** switches back by itself (exit 1). `scripts/deploy.sh <old build>` rolls back on purpose; the old release still exists among the 5 kept, so nothing is rebuilt. It is gated on the old build's CI like any deploy; if GitHub can't answer, add `--skip-ci` (§ The CI gate).
+- **Past #87**, to a build no longer kept: the rebuild is refused, since the old `pyproject.toml` pins no wheelhouse digest. Falling back to unchecked would undo the check. Roll back to a kept release instead.
 - **Past #35** (to `428af0e2a016` or older): the old release has no `processor-drift.*` units and no `processor drift`. A deploy never removes a unit, and it names each one the release lacks, so the timer keeps firing. Each run then exits 2 with a usage line and checks in nothing, and `co-processor-drift` goes `missing`. So when rolling back past #35, run `sudo systemctl disable --now processor-drift.timer`, and ask Status's operator to pause the monitor (`"enabled": false`). Rolling forward again doesn't re-enable a timer that is still installed: `sudo systemctl enable --now processor-drift.timer`.
 - **Past #39** (to a build before the liveness check-in): the old unit loads no Status key and the old build never checks in, so `co-processor-live` goes `missing` 20 min later. Ask Status's operator to pause it before rolling back.
 - **The install** (Stage B), back to `exedev` running `~/processor`:
@@ -490,6 +499,10 @@ On boot, the service preflights both buckets and exits non-zero if either is unr
 co-core is pinned `==`, and Processor owns the pin (spec D5, §5; amended 2026-10-10, #47). Until watcher#350 it was in lockstep with Watcher. A bump changes `processor_version` on every fact, and Watcher re-baselines on that:
 
 1. Rebuild the wheelhouse at the new tag, then update the pin in `pyproject.toml`, `EXPECTED` in `tests/test_pin.py` and the default tag in `scripts/build_wheelhouse.sh` (the pin test holds all three), and `uv lock`.
+   - **The wheelhouse digests move in the same diff** (#87). `[tool.processor.wheelhouse-sha256]` in `pyproject.toml` gets one row per file the new lock names: `sha256sum .wheelhouse/<file>`. Drop the old rows. `tests/test_pin.py` holds the names to `EXPECTED`, and `tests/test_sync_wheelhouse.py` holds them to the lock. Until then, every sync and deploy refuses.
+   - **Two sources, compared, never one picked.** With no co-pypi-reader key here, the rows come from `scripts/build_wheelhouse.sh`. CI's from-empty sync is the bucket's side: it refuses a download that misses a row, so a green PR is the comparison.
+   - **A local build matches the bucket's only on the same build backend.** cannobserv's `requires = ["hatchling"]` is unpinned. hatchling normalizes timestamps, but writes its version into `.dist-info/WHEEL` (`Generator:`). 0.38.0 built with 1.33.0 differs from the 1.32.4 build (measured 2026-10-28). `build_wheelhouse.sh` constrains hatchling to `HATCHLING` (the pin test holds it). Re-check it at each bump: `unzip -p <wheel> '*.dist-info/WHEEL'` names the generator.
+   - **CI red on a digest means the two sources disagree.** Stop and find out why (the `Generator:` line first), before pinning either. Each digest stops a later swap, not one made at pin time: that waits on cannobserv#591's `SHA256SUMS`.
 2. A release that adds an essence or an extraction rule gets its cases in `tests/fixtures/parity/cases.json` first, so their goldens come from co-core. Then regenerate the goldens from co-core directly: `uv run python scripts/gen_parity_goldens.py tests/fixtures/parity`. It prints every digest that moved, and every case that started or stopped being refused. Paste that list into the bump note: each line is a deliberate re-baseline. Never regenerate to make a parity test pass outside a bump. A catch-up across releases reads each CHANGELOG's Downstream lines for the extract, bus and blob-store surfaces, and diffs those packages' code between the tags (#29 did 0.19.7 → 0.32.0).
 3. The real corpus (`tests/fixtures/parity/real/`) is never regenerated. It passes unchanged, or the bump note says which recorded fingerprints moved.
 4. **Notice to Watcher** before deploy: the new `processor_version`, and the moved digests. A change to the contract needs coordination with Watcher first, not just notice. The contract is the `content.process` / `content.derived` models and `canonical_text` semantics. A change to essence resolution is notice, not coordination (spec §5, #57).

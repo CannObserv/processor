@@ -33,7 +33,7 @@ uv run --frozen --no-config --only-group wheelhouse python scripts/sync_wheelhou
 set -a; . ./.env; set +a; scripts/build_wheelhouse.sh                                     # or: build from the cannobserv tag
 ```
 
-find-links locks by filename, not hash, so either source satisfies the same `uv.lock`. After the first `uv sync` in a fresh checkout, `uv sync --reinstall-package processor` if `import processor` fails.
+find-links locks by filename, not hash, so each locked file's sha256 is pinned in `pyproject.toml` (`[tool.processor.wheelhouse-sha256]`, #87): the sync and `scripts/deploy.sh` refuse a mismatch, and a co-core bump moves the digests ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#bumping-co-core)). After the first `uv sync` in a fresh checkout, `uv sync --reinstall-package processor` if `import processor` fails.
 
 ## Infrastructure
 

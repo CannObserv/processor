@@ -56,7 +56,8 @@ wheelhouse = ["google-cloud-storage>=3,<4"]
 # in transit, not one made at pin time (cannobserv#591). One "file" = "hex" line
 # each, the form deploy.sh's awk reads: tests/test_sync_wheelhouse.py holds it, and
 # the table to the lock. 0.38.0's: built on co-processor from the v0.38.0 tag with
-# hatchling 1.32.4 (2026-10-20), and rebuilt byte for byte on 2026-10-28.
+# hatchling 1.32.4 (2026-10-20), rebuilt byte for byte by build_wheelhouse.sh on
+# 2026-10-28, and equal to gs://co-gcs-pypi's (CI's from-empty sync, #87).
 [tool.processor.wheelhouse-sha256]
 "co_core-0.38.0-py3-none-any.whl" = "44a62404f645de685c6260e087311d3e2cf0cf6074e9a9cfc2d6cf35b3c566f9"
 "co_core_aio-0.38.0-py3-none-any.whl" = "aac71c6f5e8d34e5a9aff856ce0f1c40898b41561ad399df908896ece718aef1"
