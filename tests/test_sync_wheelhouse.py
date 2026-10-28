@@ -219,6 +219,8 @@ class TestALockedFile:
         assert rc == 1
         assert WHEEL in err and "not a sha256" in err
         assert not co.bucket.downloads
+        assert "cannot hold the wheelhouse to its pins" in err  # CR 8: not as a GCS error
+        assert "could not sync gs://" not in err
 
     def test_a_lock_that_spells_the_wheelhouse_as_pyproject_does_is_still_read(
         self, co, capsys
