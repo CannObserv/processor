@@ -199,8 +199,11 @@ def test_every_spelling_of_the_sync_runs_from_the_lock() -> None:
 def test_the_wheelhouse_group_is_locked_and_needs_no_wheelhouse() -> None:
     """The group installs before .wheelhouse exists: nothing in it may come from there."""
     root = WORKFLOW.parent.parent.parent
-    group = tomllib.loads((root / "pyproject.toml").read_text())["dependency-groups"]["wheelhouse"]
-    assert group == ["google-cloud-storage>=3,<4"], "the project's own spec, one package"
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text())
+    deps = pyproject["project"]["dependencies"]
+    (own,) = [d for d in deps if d.startswith("google-cloud-storage")]
+    # The project's own spec, so the group locks the version the service runs (CR 1).
+    assert pyproject["dependency-groups"]["wheelhouse"] == [own]
     lock = tomllib.loads((root / "uv.lock").read_text())
     (project,) = [p for p in lock["package"] if p["name"] == "processor"]
     assert [d["name"] for d in project["dev-dependencies"]["wheelhouse"]] == [
