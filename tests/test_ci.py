@@ -212,11 +212,14 @@ def test_the_wheelhouse_group_is_locked_and_needs_no_wheelhouse() -> None:
     from_wheelhouse = {
         p["name"] for p in lock["package"] if "wheelhouse" in p["source"].get("registry", "")
     }
-    by_name = {p["name"]: p for p in lock["package"]}
+    # A list per name: a forked lock can hold two versions of one (CR 5).
+    by_name: dict[str, list[dict]] = {}
+    for package in lock["package"]:
+        by_name.setdefault(package["name"], []).append(package)
     closure, todo = set(), ["google-cloud-storage"]
     while todo:
         name = todo.pop()
         if name not in closure:
             closure.add(name)
-            todo += [d["name"] for d in by_name[name].get("dependencies", [])]
+            todo += [d["name"] for p in by_name[name] for d in p.get("dependencies", [])]
     assert from_wheelhouse and not closure & from_wheelhouse
