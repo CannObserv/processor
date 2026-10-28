@@ -28,6 +28,9 @@ import pytest
 from processor.processors.extract import LOCAL_GENERATION, PROCESSOR_VERSION
 
 EXPECTED = "0.38.0"
+# The build backend EXPECTED's bucket wheels were built on (#87): a local build matches
+# their pinned digests only on the same one.
+HATCHLING = "1.32.4"
 ROOT = Path(__file__).resolve().parent.parent
 PINNED = ("co-core", "co-core-aio", "co-core-sync")
 SRC = ROOT / "src" / "processor"
@@ -139,6 +142,17 @@ def test_the_wheelhouse_builder_defaults_to_the_pin() -> None:
     script = (ROOT / "scripts" / "build_wheelhouse.sh").read_text()
     (default,) = re.findall(r'^tag="\$\{1:-(v[^}]+)\}"$', script, re.MULTILINE)
     assert default == f"v{EXPECTED}"
+
+
+def test_the_wheelhouse_builder_holds_the_build_backend() -> None:
+    # #87: hatchling normalizes timestamps but writes its own version into each wheel,
+    # and cannobserv's build-system requires it unpinned. 0.38.0 built on hatchling
+    # 1.33.0 misses the pinned digests; on 1.32.4 it matches the bucket byte for byte
+    # (measured 2026-10-28). A bump re-checks HATCHLING (DEPLOYMENT.md, Bumping co-core).
+    script = (ROOT / "scripts" / "build_wheelhouse.sh").read_text()
+    assert re.findall(r'^HATCHLING="([^"]+)"$', script, re.MULTILINE) == [HATCHLING]
+    (build,) = [ln for ln in script.splitlines() if "uv build" in ln]
+    assert "--build-constraint" in build
 
 
 def test_processor_version_is_co_core_plus_generation() -> None:
