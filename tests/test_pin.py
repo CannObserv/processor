@@ -1,9 +1,9 @@
 """The co-core pin is exact, and Processor owns it (spec D5, amended 2026-10-10; §5).
 
 A bump changes ``processor_version`` on every fact, and Watcher re-baselines on it, so
-it must be a deliberate act: edit ``EXPECTED`` here, in the same commit as the pin
-and ``scripts/build_wheelhouse.sh``'s default tag, with the goldens regenerated
-co-core-direct and every moved digest in the bump note.
+it must be a deliberate act: edit ``EXPECTED`` here, in the same commit as the pin,
+``scripts/build_wheelhouse.sh``'s default tag and the wheelhouse digests (#87), with
+the goldens regenerated co-core-direct and every moved digest in the bump note.
 
 Whether a bump is notice or coordination turns on the contract (§5). Essence
 resolution is outside it only because Processor never calls co-core's resolvers
@@ -120,6 +120,17 @@ def test_lock_resolves_the_pin(name: str) -> None:
 @pytest.mark.parametrize("name", PINNED)
 def test_installed_matches_the_pin(name: str) -> None:
     assert version(name) == EXPECTED
+
+
+def test_the_wheelhouse_digests_move_with_the_pin() -> None:
+    # #87: a bump that moves the pin and not [tool.processor.wheelhouse-sha256] would
+    # fail every sync and deploy; one that keeps an old row pins a file no lock names.
+    # tests/test_sync_wheelhouse.py holds the table to uv.lock; this, to EXPECTED.
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    table = pyproject["tool"]["processor"]["wheelhouse-sha256"]
+    assert sorted(table) == sorted(
+        f"{name.replace('-', '_')}-{EXPECTED}-py3-none-any.whl" for name in PINNED
+    )
 
 
 def test_the_wheelhouse_builder_defaults_to_the_pin() -> None:

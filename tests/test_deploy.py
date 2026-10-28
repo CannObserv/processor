@@ -431,7 +431,7 @@ def test_refuses_without_the_service_user(w: Env) -> None:
 
 @pytest.mark.parametrize(
     ("break_it", "message"),
-    [("archive", "git archive failed for"), ("wheelhouse", "copying the wheelhouse failed for")],
+    [("archive", "git archive failed for"), ("wheelhouse", f"copying {WHEEL} into")],
 )
 def test_a_failed_extract_or_copy_says_so(w: Env, break_it: str, message: str) -> None:
     # CR 13: under set -e alone, the deploy would exit with no message.
@@ -439,7 +439,7 @@ def test_a_failed_extract_or_copy_says_so(w: Env, break_it: str, message: str) -
         (w.bin / "tar").write_text("#!/usr/bin/env bash\ncat >/dev/null; exit 2\n")
         (w.bin / "tar").chmod(0o755)
     else:
-        (w.checkout / ".wheelhouse" / "co_core-0.19.7-py3-none-any.whl").chmod(0)
+        (w.checkout / ".wheelhouse" / WHEEL).chmod(0)
     result = w.deploy()
     assert result.returncode == 1
     assert f"deploy: {message}" in result.stderr and "nothing switched" in result.stderr
@@ -498,6 +498,17 @@ class TestTheWheelhouse:
         result = w.deploy()
         assert result.returncode == 1
         assert WHEEL in result.stderr and "nothing switched" in result.stderr
+        assert not (w.root / "live").exists()
+
+    def test_a_lock_naming_no_wheelhouse_file_is_refused(self, w: Env) -> None:
+        """An awk that no longer reads the lock would check nothing: say so."""
+        (w.checkout / "uv.lock").write_text(
+            UV_LOCK.replace('registry = ".wheelhouse"', 'registry = "x"')
+        )
+        w.commit("unreadable lock")
+        result = w.deploy()
+        assert result.returncode == 1
+        assert "names no wheelhouse file" in result.stderr
         assert not (w.root / "live").exists()
 
     def test_the_digests_are_the_releases_own_not_the_checkouts(self, w: Env) -> None:

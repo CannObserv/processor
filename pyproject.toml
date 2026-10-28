@@ -11,6 +11,7 @@ dependencies = [
     "co-core[extract]==0.38.0",
     "co-core-aio[bus]==0.38.0",
     "co-core-sync[gcs]==0.38.0",
+    # The locked files' digests move with it: [tool.processor.wheelhouse-sha256].
     "pydantic>=2.12,<3",
     "pydantic-settings>=2.6,<3",
     # Imported directly: the consumer classifies redis-py's ResponseError /
@@ -45,6 +46,21 @@ dev = [
 # --frozen --no-config --only-group wheelhouse` installs them without the
 # project, whose co-core is what the sync fetches. The project's own spec.
 wheelhouse = ["google-cloud-storage>=3,<4"]
+
+# The sha256 of each wheelhouse file uv.lock names (#87, as broker#125). uv records
+# none for a find-links path, and a hand-added one is gone at the next `uv lock`.
+# scripts/sync_wheelhouse.py fetches a file that misses its digest again and refuses
+# a download that misses it too; scripts/deploy.sh refuses a release whose copy
+# misses it, before `uv sync`. A pin change moves these in the same diff
+# (docs/DEPLOYMENT.md § Bumping co-core). Each digest stops a later swap, local or
+# in transit, not one made at pin time (cannobserv#591). One "file" = "hex" line
+# each, the form deploy.sh's awk reads: tests/test_sync_wheelhouse.py holds it, and
+# the table to the lock. 0.38.0's: built on co-processor from the v0.38.0 tag with
+# hatchling 1.32.4 (2026-10-20), and rebuilt byte for byte on 2026-10-28.
+[tool.processor.wheelhouse-sha256]
+"co_core-0.38.0-py3-none-any.whl" = "44a62404f645de685c6260e087311d3e2cf0cf6074e9a9cfc2d6cf35b3c566f9"
+"co_core_aio-0.38.0-py3-none-any.whl" = "aac71c6f5e8d34e5a9aff856ce0f1c40898b41561ad399df908896ece718aef1"
+"co_core_sync-0.38.0-py3-none-any.whl" = "f69d84215d6df4d92b261eed5b11d69a9d4c95a1ce659d362b825d094f5072f4"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -87,7 +103,7 @@ packages = ["src/processor"]
 # co-core, co-core-aio and co-core-sync resolve from ./.wheelhouse (git-ignored):
 # mirrored from gs://co-gcs-pypi by scripts/sync_wheelhouse.py, or built from the
 # cannobserv release tag by scripts/build_wheelhouse.sh. find-links locks by
-# filename, not hash, so either source satisfies the same uv.lock.
+# filename, not hash: the content check is [tool.processor.wheelhouse-sha256] (#87).
 find-links = ["./.wheelhouse"]
 # certifi is transitive (requests, httpx), and its bundle is the services' TLS trust,
 # not the system store. 2026.10.19 drops emSign ECC Root CA - G3, the root of the
