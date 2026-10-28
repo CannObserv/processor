@@ -24,9 +24,9 @@ status: per #93's body, the coordinator's brief and the implementer's correction
 |---|---|
 | before the switch | exit 1, `interrupted before the switch; nothing switched`; nothing journaled (nothing changed) |
 | while switching · after the switch, installing units and verifying · while switching back · after switching back, verifying the old build | journal `interrupted on <build> <stage>: live -> <link now>, unverified`; exit 4 |
-| after the verify (from the verdict line on: the new timers, the drift notes, the prune; broker's "while pruning" starts later) | `interrupted after the verify; live is on <build>, verified`; exit 0 |
+| after the verify (set before the verdict line, CR 1; then the new timers, the drift notes, the prune; broker's "while pruning" starts later) | journal `interrupted after the verify; live is on <build>, verified`, logger first; exit 0. While enabling a new timer it names `sudo systemctl enable --now <timer>` (CR 2) |
 
-The EXIT trap still removes the backup: the replaced units are in the old release's `deploy/`, so deploying that build again reinstalls them.
+The EXIT trap still removes the backup. The units it replaced are in the old release's `deploy/`, so deploying that build again reinstalls them. The units it added stay installed: the next deploy names them (journaled) and never removes them (CR 4).
 
 **Docs:** DEPLOYMENT.md § Deploy a change names the journaled lines, the interrupt line, and exit codes.
 
