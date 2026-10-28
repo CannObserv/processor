@@ -1065,6 +1065,15 @@ class TestAnInterruptedDeploy:
             f" live -> releases/{old}, unverified"
         ) in w.log("logger")
 
+    def test_while_switching_back_a_first_deploy_it_names_that_stage(self, w: Env) -> None:
+        # CR 3: restart 1 runs the failed build; restart 2 the unit it replaced.
+        build = w.git("rev-parse", "--short=12", "HEAD")
+        result = w.deploy(STUB_DEAD=build, STUB_SIGNAL="TERM", STUB_SIGNAL_AT_RESTART="2")
+        assert result.returncode == 4, result.stderr
+        assert (
+            f"interrupted on {build} while switching back: live -> releases/{build}, unverified"
+        ) in w.log("logger")
+
     def test_while_enabling_a_new_timer_it_names_the_enable_left_to_do(self, w: Env) -> None:
         """CR 2: a timer installed new and never enabled is enabled by no later deploy."""
         build = w.git("rev-parse", "--short=12", "HEAD")
