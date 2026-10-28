@@ -70,6 +70,12 @@ HOST_CONFIGS=(
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 note() { echo "deploy: $*" >&2; }
+# Said and journaled: what a verify proved outlives the deploy's terminal (#93,
+# broker#122). A journal that refuses never fails a deploy.
+say() {
+  note "$*"
+  logger -t processor-deploy "$*" || true
+}
 die() {
   note "$*"
   exit 1
@@ -447,7 +453,9 @@ enable_new_timers() {
 
 # The new process's own start records: `starting` naming <build> under required
 # containment, then `consuming`. By MainPID, this boot, since the restart: an
-# older process that had the same PID never counts (CR 5).
+# older process that had the same PID never counts (CR 5). The PID that answered
+# is left in verified_pid, for the verdict line.
+verified_pid=""
 started_on() { # <build> <restart time, epoch seconds>
   local want="$1" since="$2" pid records deadline=$((SECONDS + VERIFY_SECONDS))
   while ((SECONDS < deadline)); do
@@ -458,6 +466,7 @@ started_on() { # <build> <restart time, epoch seconds>
       [[ "$(jq -rR 'fromjson? | select(.message == "starting")
           | "\(.build) \(.child_containment)"' <<<"$records" | tail -n 1)" == "$want required" ]] &&
       jq -eR 'fromjson? | select(.message == "consuming")' <<<"$records" >/dev/null; then
+      verified_pid="$pid"
       return 0
     fi
     sleep 1
@@ -515,7 +524,7 @@ note_units_not_in_release() {
     [[ -f "$path" ]] || continue
     name="$(basename "$path")"
     [[ -f "$release/deploy/$name" ]] && continue
-    note "$name is installed but not in $build's deploy/; it keeps running. If it should not:" \
+    say "$name is installed but not in $build's deploy/; it keeps running. If it should not:" \
       "sudo systemctl disable --now $name (docs/DEPLOYMENT.md § Rollback)"
   done
   return 0
@@ -527,9 +536,9 @@ compare_host_configs() {
     rel="${entry%%=*}" dest="$ETC/${entry#*=}"
     [[ -f "$release/deploy/$rel" ]] || continue
     if [[ ! -e "$dest" ]]; then
-      note "host config deploy/$rel is not installed at $dest (docs/DEPLOYMENT.md)"
+      say "host config deploy/$rel is not installed at $dest (docs/DEPLOYMENT.md)"
     elif ! cmp -s "$release/deploy/$rel" "$dest"; then
-      note "host config deploy/$rel differs from $dest; install it by hand (docs/DEPLOYMENT.md)"
+      say "host config deploy/$rel differs from $dest; install it by hand (docs/DEPLOYMENT.md)"
     fi
   done
   return 0
@@ -545,7 +554,8 @@ units_ok=1
 install_units || units_ok=0
 
 if ((units_ok)) && restart_and_verify "$build"; then
-  note "live is on $build"
+  say "live is on $build: pid $verified_pid logged starting (child_containment required)," \
+    "then consuming; the smoke run passed"
   enable_new_timers
 else
   if [[ -z "$previous" ]]; then
