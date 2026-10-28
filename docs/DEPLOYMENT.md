@@ -201,7 +201,7 @@ A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pypr
      - only the files the release's `uv.lock` names are copied from `~/processor/.wheelhouse`;
      - each copy is held to the sha256 in the release's own `pyproject.toml` `[tool.processor.wheelhouse-sha256]`, before `uv sync`. uv records no digest for a find-links file, so `uv sync --locked` would install any file of that name.
    - A pass is journaled: `wheelhouse for <build>: <files> match their pinned sha256`.
-   - A refusal is journaled too (`refused <build>: …; nothing switched`, exit 1). It fires on a file that misses its pin, one with no pin, or one the wheelhouse lacks.
+   - A refusal is journaled too (`refused <build>: …; nothing switched`, exit 1). It fires on a file that misses its pin, one with no pin, one the wheelhouse lacks, or a lock that names no wheelhouse file at all.
    - A mismatch says to remove the file, populate the wheelhouse again (AGENTS.md; a local build: § Bumping co-core) and deploy again. This deploy doesn't run the sync: it checks what the checkout holds.
    - A reused release isn't checked again. Builds from before #87's deploy were never checked.
 2. **Switch** `live` (an atomic rename). Then install every `deploy/*.service` and `deploy/*.timer` from the release that differs from its installed copy (#35, as status#18), with one `daemon-reload`. A changed timer is `try-restart`ed so it re-arms. Each replaced copy is kept aside for step 5.

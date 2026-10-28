@@ -517,6 +517,8 @@ class TestTheWheelhouse:
         assert result.returncode == 1
         assert "names no wheelhouse file" in result.stderr
         assert not (w.root / "live").exists()
+        journaled = w.log("logger")
+        assert "refused" in journaled and "names no wheelhouse file" in journaled, "CR 7"
 
     def test_the_digests_are_the_releases_own_not_the_checkouts(self, w: Env) -> None:
         """A pin moves in the commit deployed: its pyproject.toml is what the release

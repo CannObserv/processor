@@ -347,7 +347,11 @@ wheelhouse() {
     say "refused $build: uv.lock names ${missing[*]}, which $SRC/.wheelhouse lacks; nothing switched"
     exit 1
   fi
-  ((${#checked[@]})) || die "$build's uv.lock names no wheelhouse file, so co-core cannot resolve; nothing switched"
+  # An awk that no longer reads the lock would check nothing: a refusal like the rest (CR 7).
+  if ((${#checked[@]} == 0)); then
+    say "refused $build: its uv.lock names no wheelhouse file, so co-core cannot resolve; nothing switched"
+    exit 1
+  fi
   # Journaled when it passes too: otherwise a deploy that checked reads like one
   # from a deploy.sh that never did.
   say "wheelhouse for $build: ${checked[*]} match their pinned sha256"
