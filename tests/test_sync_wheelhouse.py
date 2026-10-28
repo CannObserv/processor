@@ -206,6 +206,9 @@ class TestALockedFile:
         assert AIO in err and TABLE in err
         assert "sha256sum .wheelhouse/" in err, "how to make the pin"
         assert not co.bucket.downloads
+        # CR 2: a local pin error never reached GCS, so it doesn't read as one.
+        assert "cannot hold the wheelhouse to its pins" in err
+        assert "could not sync gs://" not in err
 
     @pytest.mark.parametrize("value", ["", "abc123", "A" * 64])
     def test_a_pin_that_is_not_a_sha256_fails_the_sync(self, co, capsys, value) -> None:

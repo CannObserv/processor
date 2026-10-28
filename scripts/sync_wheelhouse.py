@@ -97,10 +97,15 @@ def sha256(path: str | Path) -> str:
 
 def sync(bucket: str = BUCKET, prefix: str = PREFIX) -> int:
     """Mirror ``gs://{bucket}/{prefix}`` into ``DEST``; return an exit code."""
+    # Before GCS: a pin error is the checkout's, and must not read as an outage (CR 2).
+    try:
+        pinned = pins()
+    except (OSError, ValueError) as exc:  # tomllib.TOMLDecodeError is a ValueError
+        print(f"error: cannot hold the wheelhouse to its pins: {exc}", file=sys.stderr)
+        return 1
     DEST.mkdir(parents=True, exist_ok=True)
     downloaded = skipped = 0
     try:
-        pinned = pins()
         unlisted = set(pinned)
         client = storage.Client()
         for blob in client.list_blobs(bucket, prefix=prefix):
