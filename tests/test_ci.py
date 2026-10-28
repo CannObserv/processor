@@ -1,6 +1,8 @@
 """The CI workflow's load-bearing choices (#12), pinned so they cannot drift quietly."""
 
 import re
+import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -152,40 +154,66 @@ def test_image_comes_from_the_mirror(site: str, image: str) -> None:
     )
 
 
-def test_the_wheelhouse_sync_ignores_project_config(ci: dict) -> None:
-    # `uv run --no-project` still reads [tool.uv] find-links, and ./.wheelhouse does
-    # not exist yet in a fresh checkout: the sync has to skip config discovery.
-    for name in ("lint", "test"):
-        (sync,) = [ln for ln in _runs(ci["jobs"][name]).splitlines() if "sync_wheelhouse" in ln]
-        assert "--no-config" in sync, name
+# The one spelling of the sync (#79, as broker#113). `--only-group` installs uv.lock's
+# wheelhouse group without the project, whose co-core is what the sync fetches.
+# `--no-config` stands in for broker's tracked .wheelhouse/.gitkeep: without it uv
+# reads [tool.uv] find-links, and a fresh checkout has no ./.wheelhouse yet.
+LOCKED_SYNC = "--frozen --no-config --only-group wheelhouse"
 
 
 def _sync_commands(text: str) -> list[str]:
-    """Documented `uv run … sync_wheelhouse.py` commands, `\\`-continued lines joined."""
+    """The flags of each `uv run … python scripts/sync_wheelhouse.py`, `\\`-continued
+    lines joined."""
     logical = re.sub(r"\s*\\+\n\s*", " ", text)
-    return [
-        ln.strip() for ln in logical.splitlines() if "uv run" in ln and "sync_wheelhouse.py" in ln
-    ]
+    return re.findall(r"uv run (.*?) python scripts/sync_wheelhouse\.py", logical)
 
 
 def test_sync_commands_join_continued_lines() -> None:
     doc = "    uv run --no-project --with 'x' \\\\\n        python scripts/sync_wheelhouse.py\n"
-    assert _sync_commands(doc) == [
-        "uv run --no-project --with 'x' python scripts/sync_wheelhouse.py"
-    ]
+    assert _sync_commands(doc) == ["--no-project --with 'x'"]
 
 
-def test_every_documented_wheelhouse_sync_ignores_project_config() -> None:
+def test_every_spelling_of_the_sync_runs_from_the_lock() -> None:
+    """#79: `--no-project --with` resolved the sync's env afresh from PyPI on every
+    run, under the reader credential, outside uv.lock and the audit. Every tracked
+    file outside tests/ that spells the sync spells the locked form."""
     root = WORKFLOW.parent.parent.parent
-    sources = [
-        root / "AGENTS.md",
-        root / "scripts" / "sync_wheelhouse.py",
-        *root.glob("docs/**/*.md"),
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=root, capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    spellings: dict[str, set[str]] = {}
+    for name in tracked:
+        path = root / name
+        if name.startswith("tests/") or path.is_symlink() or not path.is_file():
+            continue
+        try:
+            text = path.read_text()
+        except UnicodeDecodeError:
+            continue
+        for flags in _sync_commands(text):
+            spellings.setdefault(name, set()).add(flags)
+    assert set(spellings) >= {".github/workflows/ci.yml", "scripts/sync_wheelhouse.py", "AGENTS.md"}
+    assert {n: s for n, s in spellings.items() if s != {LOCKED_SYNC}} == {}
+
+
+def test_the_wheelhouse_group_is_locked_and_needs_no_wheelhouse() -> None:
+    """The group installs before .wheelhouse exists: nothing in it may come from there."""
+    root = WORKFLOW.parent.parent.parent
+    group = tomllib.loads((root / "pyproject.toml").read_text())["dependency-groups"]["wheelhouse"]
+    assert group == ["google-cloud-storage>=3,<4"], "the project's own spec, one package"
+    lock = tomllib.loads((root / "uv.lock").read_text())
+    (project,) = [p for p in lock["package"] if p["name"] == "processor"]
+    assert [d["name"] for d in project["dev-dependencies"]["wheelhouse"]] == [
+        "google-cloud-storage"
     ]
-    found = {
-        f"{path.relative_to(root)}: {cmd}"
-        for path in sources
-        for cmd in _sync_commands(path.read_text())
+    from_wheelhouse = {
+        p["name"] for p in lock["package"] if "wheelhouse" in p["source"].get("registry", "")
     }
-    assert any(c.startswith("scripts/sync_wheelhouse.py: ") for c in found), "docstring not scanned"
-    assert [c for c in found if "--no-config" not in c] == []
+    by_name = {p["name"]: p for p in lock["package"]}
+    closure, todo = set(), ["google-cloud-storage"]
+    while todo:
+        name = todo.pop()
+        if name not in closure:
+            closure.add(name)
+            todo += [d["name"] for d in by_name[name].get("dependencies", [])]
+    assert from_wheelhouse and not closure & from_wheelhouse
