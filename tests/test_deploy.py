@@ -484,14 +484,21 @@ class TestTheWheelhouse:
         release = w.root / "releases" / w.git("rev-parse", "--short=12", "HEAD")
         assert sorted(p.name for p in (release / ".wheelhouse").iterdir()) == [WHEEL]
 
-    def test_a_locked_file_with_no_digest_is_refused(self, w: Env) -> None:
-        (w.checkout / "pyproject.toml").write_text(pyproject({}))
+    @pytest.mark.parametrize("value", [None, "", "abc123", "A" * 64])
+    def test_a_locked_file_with_no_sha256_pinned_is_refused(self, w: Env, value) -> None:
+        """Absent, blank, short or uppercase: the regex is the deploy's only guard
+        against a row that reads as no check (CR 3)."""
+        (w.checkout / "pyproject.toml").write_text(
+            pyproject({} if value is None else {WHEEL: value})
+        )
         w.commit("no pin")
         result = w.deploy()
         assert result.returncode == 1
         assert WHEEL in result.stderr and "wheelhouse-sha256" in result.stderr
         assert "nothing switched" in result.stderr
         assert not (w.root / "live").exists()
+        assert not w.log("uv"), "refused before uv sync"
+        assert [ln for ln in w.log("logger").splitlines() if "refused" in ln and WHEEL in ln]
 
     def test_a_locked_file_missing_from_the_wheelhouse_is_refused(self, w: Env) -> None:
         (w.checkout / ".wheelhouse" / WHEEL).unlink()
