@@ -28,6 +28,8 @@ ACTIONS = {
 }
 # YAML drops comments, so the pin's `# vX.Y.Z` is read from the text.
 PIN = re.compile(r"^[ \t]+(?:- )?uses: ([^@\s]+)@\S+ # v(\d+)\.\d+\.\d+$", re.MULTILINE)
+# A `uses:` key, not the word in a comment.
+USES_KEY = re.compile(r"^[ \t]+(?:- )?uses:", re.MULTILINE)
 
 
 @pytest.fixture(scope="module")
@@ -78,10 +80,16 @@ def test_actions_are_at_or_above_their_floor(workflow: str) -> None:
     """The form itself (`@<sha> # vX.Y.Z` on every `uses:`) is test_dependabot.py's."""
     text = (WORKFLOW.parent / workflow).read_text()
     pins = PIN.findall(text)
-    assert len(pins) == text.count("uses:"), "a `uses:` without its tag comment"
+    assert len(pins) == len(USES_KEY.findall(text)), "a `uses:` without its tag comment"
     for action, major in pins:
         assert action in ACTIONS, f"{action}: an action with no floor here"
         assert int(major) >= ACTIONS[action], f"{action} v{major} < v{ACTIONS[action]}"
+
+
+def test_the_uses_count_skips_comments() -> None:
+    text = "      # uses: is mentioned here\n      - uses: a/b@c # v1.0.0\n        uses: d/e@f\n"
+    assert len(USES_KEY.findall(text)) == 2
+    assert PIN.findall(text) == [("a/b", "1")]
 
 
 @pytest.mark.parametrize("name", ["lint", "test"])
