@@ -321,7 +321,7 @@ git push origin main                            # GitHub marks the PR merged
 
 - The commit CI tested is the commit that lands, and its subject (`chore: bump …`) already follows AGENTS.md.
 - Land one PR at a time. After each push, the next may need `@dependabot rebase`.
-- A major bump that changes the pin's floor moves `ACTIONS` in `tests/test_ci.py` too, in a commit on the same branch.
+- A major passes `tests/test_ci.py`'s floor (`ACTIONS`) as it is. Raising the floor is a PR of its own: never push to Dependabot's branch, since Dependabot stops rebasing a PR someone else has pushed to.
 - **No deploy:** an action bump touches `.github/` alone, which is outside `RUNTIME_*` ([§ The drift check](#the-drift-check)).
 
 ## The lock audit
