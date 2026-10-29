@@ -1,0 +1,26 @@
+# Moves the action pins nothing else moves (#80, ported from CannObserv/broker#90):
+# ci.yml and audit.yml pin every `uses:` to a commit SHA with a `# vX.Y.Z`
+# comment, and setup-uv publishes no floating major to follow. Each PR is gated
+# by ci.yml (audit.yml reports). A Dependabot run reads its own credential
+# context, so on a red one read the WIF step first. How one lands, fast-forwarded
+# onto main in the deploy checkout: docs/DEPLOYMENT.md § CI pins and Dependabot.
+#
+# github-actions only, never uv or pip: Processor owns the exact co-core pin and
+# holds the extraction stack (AGENTS.md, #71), and co-core resolves from the
+# private wheelhouse, which Dependabot's updater cannot sync. Security updates
+# would move uv.lock regardless of this file; they are off in Settings → Code
+# security (operator, 2026-10-29).
+# Guarded by tests/test_dependabot.py: a mistyped config stops producing PRs
+# without erroring anywhere a person looks.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/" # scans .github/workflows/
+    schedule:
+      interval: "weekly"
+    # The default is 5, and past it Dependabot opens nothing and says so
+    # nowhere. One PR per action; the test derives the bound.
+    open-pull-requests-limit: 10
+    # The PR's commit lands on main as-is: "chore: bump actions/checkout ...".
+    commit-message:
+      prefix: "chore"

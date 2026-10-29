@@ -17,13 +17,18 @@ WIF_SA = "co-pypi-reader@co-gcs.iam.gserviceaccount.com"
 # Docker Hub's official image via Google's mirror (#43): see test_image_comes_from_the_mirror.
 BROKER_REDIS = "mirror.gcr.io/library/redis:7.0.15"
 MIRROR = "mirror.gcr.io/"
-# Node 24 majors: setup-uv@v5 and auth@v2 target Node 20, which GitHub deprecated
-# (run 36962791709 warned it was forcing them onto Node 24).
+# Each action's floor major: what #80 pinned (broker's majors, operator 2026-10-29).
+# A floor, not an exact major, so a Dependabot major PR passes and a downgrade fails.
+# Below them: setup-uv@v5 and auth@v2 target Node 20, which GitHub deprecated (run
+# 36962791709 warned it was forcing them onto Node 24), and setup-uv < 9 still prunes
+# by default, which test_ci_prunes_the_cache_it_saves no longer relies on.
 ACTIONS = {
-    "actions/checkout": "v5",
-    "astral-sh/setup-uv": "v7",
-    "google-github-actions/auth": "v3",
+    "actions/checkout": 7,
+    "astral-sh/setup-uv": 10,
+    "google-github-actions/auth": 3,
 }
+# YAML drops comments, so the pin's `# vX.Y.Z` is read from the text.
+PIN = re.compile(r"^[ \t]+(?:- )?uses: ([^@\s]+)@\S+ # v(\d+)\.\d+\.\d+$", re.MULTILINE)
 
 
 @pytest.fixture(scope="module")
@@ -69,12 +74,58 @@ def test_checkout_brings_the_skill_submodules(ci: dict, name: str) -> None:
     assert checkout["with"]["submodules"] is True
 
 
+@pytest.mark.parametrize("workflow", ["ci.yml", "audit.yml"])
+def test_actions_are_at_or_above_their_floor(workflow: str) -> None:
+    """The form itself (`@<sha> # vX.Y.Z` on every `uses:`) is test_dependabot.py's."""
+    text = (WORKFLOW.parent / workflow).read_text()
+    pins = PIN.findall(text)
+    assert len(pins) == text.count("uses:"), "a `uses:` without its tag comment"
+    for action, major in pins:
+        assert action in ACTIONS, f"{action}: an action with no floor here"
+        assert int(major) >= ACTIONS[action], f"{action} v{major} < v{ACTIONS[action]}"
+
+
 @pytest.mark.parametrize("name", ["lint", "test"])
-def test_actions_are_on_node_24_majors(ci: dict, name: str) -> None:
-    for step in _steps(ci["jobs"][name]):
-        if "uses" in step:
-            action, version = step["uses"].split("@")
-            assert ACTIONS[action] == version, step["uses"]
+def test_ci_prunes_the_cache_it_saves(ci: dict, name: str) -> None:
+    """The repo is public, and a fork's PR can restore a cache saved on `main`.
+    Unpruned, that cache holds co-core unpacked from the private wheelhouse.
+    setup-uv v9 flipped `prune-cache` to false, so it is set, not defaulted (#80,
+    as broker#88)."""
+    (setup,) = [
+        s for s in _steps(ci["jobs"][name]) if s.get("uses", "").startswith("astral-sh/setup-uv")
+    ]
+    assert setup["with"]["enable-cache"] is True
+    assert setup["with"]["prune-cache"] is True
+
+
+def _wheelhouse_packages_without_a_wheel(lock: Path) -> list[str]:
+    packages = tomllib.loads(lock.read_text())["package"]
+    return [
+        p["name"]
+        for p in packages
+        if p.get("source", {}).get("registry") == ".wheelhouse" and not p.get("wheels")
+    ]
+
+
+def test_every_wheelhouse_package_is_locked_to_a_wheel() -> None:
+    """The prune's premise: `uv cache prune --ci` drops a wheel it downloaded and
+    keeps one it built from source. Locked sdist-only, co-core would be built and
+    kept in the saved cache (broker#88, measured on uv 0.13.0)."""
+    lock = WORKFLOW.parent.parent.parent / "uv.lock"
+    packages = tomllib.loads(lock.read_text())["package"]
+    from_wheelhouse = {p["name"] for p in packages if p["source"].get("registry") == ".wheelhouse"}
+    assert "co-core" in from_wheelhouse, "the check found no wheelhouse package to hold"
+    assert _wheelhouse_packages_without_a_wheel(lock) == []
+
+
+def test_wheel_check_fails_on_an_sdist_only_lock(tmp_path: Path) -> None:
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        '[[package]]\nname = "co-core"\nversion = "9.9.9"\n'
+        'source = { registry = ".wheelhouse" }\n'
+        'sdist = { path = "co_core-9.9.9.tar.gz" }\n'
+    )
+    assert _wheelhouse_packages_without_a_wheel(lock) == ["co-core"]
 
 
 @pytest.mark.parametrize("name", ["lint", "test"])
