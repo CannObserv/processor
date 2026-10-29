@@ -19,9 +19,8 @@ BROKER_REDIS = "mirror.gcr.io/library/redis:7.0.15"
 MIRROR = "mirror.gcr.io/"
 # Each action's floor major: what #80 pinned (broker's majors, operator 2026-10-29).
 # A floor, not an exact major, so a Dependabot major PR passes and a downgrade fails.
-# Below them: setup-uv@v5 and auth@v2 target Node 20, which GitHub deprecated (run
-# 36962791709 warned it was forcing them onto Node 24), and setup-uv < 9 still prunes
-# by default, which test_ci_prunes_the_cache_it_saves no longer relies on.
+# Below them lie Node 20 majors: setup-uv@v5 and auth@v2 target Node 20, which GitHub
+# deprecated (run 36962791709 warned it was forcing them onto Node 24).
 ACTIONS = {
     "actions/checkout": 7,
     "astral-sh/setup-uv": 10,
