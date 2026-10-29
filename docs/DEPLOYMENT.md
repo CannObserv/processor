@@ -263,6 +263,67 @@ A stop mid-reclaim finishes the command in hand and leaves the rest pending. A c
 - **The lock audit is not in the gate.** `audit.yml` is its own workflow, so its run never counts, and a finding never blocks a deploy (§ The lock audit).
 - **`--skip-ci`** deploys without asking GitHub at all: for a fix that can't wait for CI, or when GitHub can't answer. It is logged before anything is built, as `CI not checked for <build> (--skip-ci)`. A gate that passes is logged too, as `CI passed for <build>: <run>`.
 
+## CI pins and Dependabot
+
+Ported from broker#88 and broker#90 (#80).
+
+**Pins.** Every `uses:` in `ci.yml` and `audit.yml` takes the form `owner/action@<40-hex sha> # vX.Y.Z`. A tag can be moved, and setup-uv publishes no floating major since v8. As of #80:
+
+| Action | Pin |
+|---|---|
+| `actions/checkout` | v7.0.1 |
+| `astral-sh/setup-uv` | v10.3.2 |
+| `google-github-actions/auth` | v3.0.0 |
+
+These are broker's majors (operator, 2026-10-29). `tests/test_dependabot.py` holds the form. `tests/test_ci.py` holds each major to a floor, so a Dependabot major passes and a downgrade fails. `tests/test_lock_audit.py` holds `audit.yml`'s pins equal to `ci.yml`'s.
+
+That a SHA *is* its tag needs the network, so it is checked by hand whenever a pin moves:
+
+```bash
+gh api repos/<owner>/<action>/git/ref/tags/<tag> --jq '.object.type + " " + .object.sha'
+```
+
+- `commit`: that SHA is the pin.
+- `tag`: an annotated tag, whose SHA names the tag object rather than a commit. The pin is the commit it points at: `gh api repos/<owner>/<action>/git/tags/<sha> --jq .object.sha`. setup-uv's old `v7` was one.
+
+**The cache.** `ci.yml` sets `prune-cache: true` on both setup-uv steps, because setup-uv v9 flipped the default to false. The repo is public, and a fork's PR can restore a cache saved on `main`. Unpruned, that cache holds co-core unpacked from the private wheelhouse. The prune drops downloaded wheels and keeps wheels built from source, so it covers co-core only while `uv.lock` locks co-core to a wheel. `tests/test_ci.py` checks both.
+
+**Dependabot** (`.github/dependabot.yml`) proposes action bumps only: `github-actions`, weekly, at most 10 open PRs, with `chore:` subjects.
+- **Never `uv` or `pip`.** Processor owns the exact co-core pin and holds the extraction stack ([§ Extraction dependencies](#extraction-dependencies)). The wheelhouse is private, so Dependabot's updater couldn't sync it anyway. `uv.lock` has its own signal ([§ The lock audit](#the-lock-audit)).
+- **Settings → Code security** (operator reading, 2026-10-29, #80):
+  - Dependency graph: **on**. It is the `Graph Update: uv in /.` run on each push, and opens nothing.
+  - Dependabot alerts: **on**. These are the operator's.
+  - Dependabot security updates: **off**, and they stay off. They open PRs that move `uv.lock` whatever `dependabot.yml` says.
+
+  No test can see these settings, and our token gets 403 on both APIs. Re-read them in the UI whenever the repo's security settings change.
+
+**A Dependabot run reads its own credential context.** GitHub runs it as if from a fork: a read-only `GITHUB_TOKEN`, and Dependabot secrets only.
+- `ci.yml` needs no secret. It needs `vars.GCP_WIF_PROVIDER` to resolve, plus the OIDC token that `id-token: write` asks for.
+- Both held on CannObserv/watcher's Dependabot PRs (same provider, same SA; watcher#356, watcher#364, per broker's `docs/CI.md`). This repo's first Dependabot PR is the confirmation here.
+- On a red one, read **Authenticate to Google Cloud** first:
+  - *"must specify exactly one of workload_identity_provider or credentials_json"*: the variable didn't reach the run.
+  - *"did not inject $ACTIONS_ID_TOKEN_REQUEST_TOKEN"*: no OIDC token.
+  - Past both, the cause is the provider's attribute condition or the SA binding.
+
+  None of these is the bump's fault, so the fix belongs on the CI side. Don't take the bump to make it green.
+
+**How a Dependabot PR lands:** fast-forwarded in this checkout, on `main`, like every other PR. Never squashed, and never by switching this checkout's branch.
+
+```bash
+# Read the action's release notes, not just the diff: a major can change inputs.
+gh pr comment <N> --body "@dependabot rebase"   # only if main moved; wait for the force-push
+gh pr checks <N> --watch                        # green on the commit that lands
+# check the PR's new SHA against its tag, as under Pins above
+git fetch origin "$(gh pr view <N> --json headRefName -q .headRefName)"
+git merge --ff-only FETCH_HEAD
+git push origin main                            # GitHub marks the PR merged
+```
+
+- The commit CI tested is the commit that lands, and its subject (`chore: bump …`) already follows AGENTS.md.
+- Land one PR at a time. After each push, the next may need `@dependabot rebase`.
+- A major bump that changes the pin's floor moves `ACTIONS` in `tests/test_ci.py` too, in a commit on the same branch.
+- **No deploy:** an action bump touches `.github/` alone, which is outside `RUNTIME_*` ([§ The drift check](#the-drift-check)).
+
 ## The lock audit
 
 Disclosures arrive without commits: #71's 12 advisories surfaced only because someone ran `uv audit` by hand. Two things read the lock against OSV now:
@@ -718,7 +779,7 @@ uv run pytest tests/test_needrestart.py tests/test_tailscaled.py   # on the node
 
 **The record** goes on the issue (`records CannObserv/processor`), per run.md §7, and ends with the next window's date. What each run leaves pending, by class, comes from step 9 and includes:
 - **Ubuntu Pro / ESM:** Pro isn't attached, and 25 esm-apps updates were visible on 2026-10-26.
-- **Language:** `/srv/processor/live/uv.lock`, its OSV advisory count, owner `self`. Run.md §7 asks for the owning repo's update mechanism; here that is `audit.yml`, report-only, with no Dependabot or Renovate ([§ The lock audit](#the-lock-audit)). A count above 0 goes to that section's "Where a finding goes" and is linked from the record. A tree listed as not audited, or the class in `not_read`, is recorded as no read, never as 0.
+- **Language:** `/srv/processor/live/uv.lock`, its OSV advisory count, owner `self`. Run.md §7 asks for the owning repo's update mechanism; here that is `audit.yml`, report-only ([§ The lock audit](#the-lock-audit)). Dependabot covers Actions only, never `uv.lock`, and its security updates are off ([§ CI pins and Dependabot](#ci-pins-and-dependabot)). A count above 0 goes to that section's "Where a finding goes" and is linked from the record. A tree listed as not audited, or the class in `not_read`, is recorded as no read, never as 0.
 
 ## Disk GC
 
