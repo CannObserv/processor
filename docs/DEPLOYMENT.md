@@ -676,6 +676,21 @@ The second unit polled every 0.25 s, starting 0.32 s (reboot) and 0.44 s (reset)
 - The broker path was direct on the first ping and still direct after 5 idle minutes.
 - `tests/test_main.py` pins the restart path: preflight failure exits 1, `Restart=on-failure`, inside the default start limit.
 
+**With the unit installed, a hard reset on 2026-10-30 (#83)** (`ssh exe.dev restart co-processor`, the operator's, at about 17:54:12Z; the record is on #83):
+
+- **The old boot just ends.** There's no shutdown, and no `stopped` from `processor`. Nothing of its journal was lost: a `logger` marker written seconds before the restart is its last line. That's measured but unexplained, since journald syncs every 5 min by default.
+- **The new boot:**
+  - the kernel's first line came at 17:54:32.5Z, the same kernel (`6.12.113`);
+  - tailscaled and `processor` started at 17:54:33.6–33.9Z, and tailscaled took the file over 1.55 s later;
+  - `starting` came at 38.430 (most of the 4.7 s since the unit started is the GCS preflight), and `consuming` at 38.447.
+- **The bus was out for about 26 s at most** (from the marker to `consuming`), against about 20 s at #77's graceful reboot.
+- **No restart or warning:** `NRestarts=0`, no WARNING, and no name-resolution error.
+- **Status:**
+  - liveness checked in at once (202); the silence was about 47 s against the 900 s grace, so nothing paged;
+  - drift was `ok` at boot + 5.5 min (`OnBootSec=5min`);
+  - disk headroom checked in at boot + 6 min, and neither GC timer caught up.
+- **Nothing was in flight,** so nothing was reclaimed, and the DLQ stayed empty. A command caught mid-run would come back 10–11 min after its delivery (`reclaim_min_idle_ms` plus the 60 s tick), since a hard reset sends no SIGTERM and the command doesn't finish.
+
 On both paths, tailnet names such as `broker` don't resolve until tailscaled takes the file over, 1.5–1.6 s after it starts; public names do. The bus loop backs off and retries a name that does not resolve yet, as it does for any broker fault (`tests/test_consumer.py`). The GCS preflight's listing retries a connection error for up to 120 s (the storage client's `DEFAULT_RETRY`). A start that still fails exits 1, and systemd restarts it 5 s later.
 
 Check after a reboot:
