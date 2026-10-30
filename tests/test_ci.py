@@ -22,6 +22,7 @@ AUDIT_WORKFLOW = WORKFLOW.parent / "audit.yml"
 # co-processor's image: every job runs on it, not ubuntu-latest (#81, as broker#88).
 NODE = "co-processor"
 NODE_IMAGE = "ubuntu-24.04"
+OS_RELEASE = Path("/etc/os-release")
 # Each action's floor major: what #80 pinned (broker's majors, operator 2026-10-29).
 # A floor, not an exact major, so a Dependabot major PR passes and a downgrade fails.
 # Below them lie Node 20 majors: setup-uv@v5 and auth@v2 target Node 20, which GitHub
@@ -175,13 +176,32 @@ def test_the_node_is_on_that_image() -> None:
     upgrade moves NODE_IMAGE and every runs-on with it."""
     if socket.gethostname() != NODE:
         pytest.skip("not co-processor")
-    assert f"ubuntu-{_os_version_id(Path('/etc/os-release'))}" == NODE_IMAGE
+    assert f"ubuntu-{_os_version_id(OS_RELEASE)}" == NODE_IMAGE
 
 
-def test_the_version_read_fails_on_a_node_that_moved(tmp_path: Path) -> None:
+def _outcome_of(test) -> BaseException | None:
+    """The skip, fail or assertion ``test()`` ends in, or ``None`` if it returns.
+    A skip is caught too, so "fails on the node" regressing to "skips" shows."""
+    try:
+        test()
+    except (pytest.skip.Exception, pytest.fail.Exception, AssertionError) as outcome:
+        return outcome
+    return None
+
+
+@pytest.mark.parametrize(("host", "version_id", "outcome"), [
+    ("co-processor", "26.04", AssertionError),
+    ("co-processor", "24.04", type(None)),
+    ("elsewhere", "26.04", pytest.skip.Exception),
+])  # fmt: skip
+def test_the_node_check_fails_on_a_node_that_moved(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, host: str, version_id: str, outcome: type
+) -> None:
     os_release = tmp_path / "os-release"
-    os_release.write_text('NAME="Ubuntu"\nVERSION_ID="26.04"\n')
-    assert f"ubuntu-{_os_version_id(os_release)}" != NODE_IMAGE
+    os_release.write_text(f'NAME="Ubuntu"\nVERSION_ID="{version_id}"\n')
+    monkeypatch.setattr(f"{__name__}.OS_RELEASE", os_release)
+    monkeypatch.setattr(socket, "gethostname", lambda: host)
+    assert isinstance(_outcome_of(test_the_node_is_on_that_image), outcome)
 
 
 def test_lint_gates(ci: dict) -> None:
