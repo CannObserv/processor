@@ -324,7 +324,7 @@ git push origin main                            # GitHub marks the PR merged
 - A major passes `tests/test_ci.py`'s floor (`ACTIONS`) as it is. Raising the floor is a PR of its own: never push to Dependabot's branch, since Dependabot stops rebasing a PR someone else has pushed to.
 - **No deploy:** an action bump touches `.github/` alone, which is outside `RUNTIME_*` ([§ The drift check](#the-drift-check)).
 
-**The runner image.** Every job in `ci.yml` and `audit.yml` runs on `ubuntu-24.04`, co-processor's image, not `ubuntu-latest`. That moved to 26.04 in October 2026 (#81, as broker#88). The shell lint and the suite then run on the node's userland, and `test`'s Redis fallback, 24.04's apt `redis-server`, is 7.0.15. `tests/test_ci.py` holds every `runs-on` to one image, and on co-processor holds that image to `/etc/os-release`. So a node upgrade fails the suite there until the pins move with it.
+**The runner image.** Every job in `ci.yml` and `audit.yml` runs on `ubuntu-24.04`, co-processor's image, not `ubuntu-latest`. That is 26.04 now: main's run 41003391205 (2026-10-30) ran on `ubuntu-26.04` (#81, as broker#88). The shell lint and the suite then run on the node's userland, and `test`'s Redis fallback, 24.04's apt `redis-server`, is 7.0.15. `tests/test_ci.py` holds every `runs-on` to one image, and on co-processor holds that image to `/etc/os-release`. So a node upgrade fails the suite there until the pins move with it.
 
 ## Shell lint
 
