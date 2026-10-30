@@ -726,7 +726,7 @@ A flap is the tailnet path to `broker` going away for minutes while tailscaled k
 - co-broker and co-replicator, behind the same egress, each logged the first balloon pressure of their boot (04:13:07Z and 04:13:39Z), then a 31–33 s time jump;
 - co-status (moved onto that egress during the event) had balloon pressure at 04:14:04Z and a pause at about 04:17:07–24Z;
 - notifier, behind it too, had the same 19 min later: balloon pressure at 04:32:48Z, then a pause logged at 04:51:10Z;
-- on two small VMs without swap (status, notifier), the balloon pushed memory to earlyoom's floor, and earlyoom killed a user process (not a service);
+- on two VMs without swap (status at 7.9 GiB, notifier at 3.8 GiB, as their earlyoom configs size them), the balloon pushed memory to earlyoom's floor, and earlyoom killed a user process (not a service);
 - co-index, behind the same egress, logged neither. It has room to spare, and `Out of puff` appears only when the guest *can't* give pages back, so a quiet balloon there isn't ruled out. It did pause on its own on 2026-10-18 around 04:06Z; co-processor didn't;
 - co-registrar (archiver), co-provisioner and co-watcher, each on its own egress, logged neither; they only lost `broker` for about 2 min.
 
