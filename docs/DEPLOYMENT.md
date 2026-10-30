@@ -870,10 +870,10 @@ uv run pytest tests/test_disk_gc.py   # on the node: the installed copy matches,
 **The kernel's order** (`oom_score`, 2026-10-30):
 - first `exedev`'s `systemd --user` (734, adj 100) and its `(sd-pam)`, about 11 MiB between them;
 - then the sessions at adj 0: `claude`, `MainThread` (VS Code's node) and `npm exec socrat` (SocratiCode), 672–691;
-- `processor` at -500, tailscaled at -950 (§ tailscaled's OOM rank);
+- `processor` (adj -500) at 342, tailscaled at -950 (§ tailscaled's OOM rank);
 - only `exe-init` and `sshd` at -1000.
 
-An extraction child volunteers at 1000 while it runs (§ Containment), so it goes before all of them. The service is never ahead of a session.
+An extraction child volunteers at 1000 while it runs (§ Containment), so it goes before all of them. The -500 is worth half the host's pages, so the service would pass a session only with about 3.9 GiB more resident than that session. `MemoryMax=6G` allows that; the measured peak is 105M.
 
 **Re-open the decision** (install as broker does, disabled, or as co-status does) on any of these:
 - `available` under 1 GiB at any reading;
