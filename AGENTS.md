@@ -85,7 +85,7 @@ uv sync                                  # install deps (wheelhouse first)
 uv run pytest                            # tests
 uv run pytest -m integration             # bus tests against the scratch redis-server
 uv run ruff check . && uv run ruff format --check .
-bash scripts/shellcheck.sh               # our shell scripts; hook: git config core.hooksPath .githooks
+bash scripts/shellcheck.sh               # our shell scripts, as CI's lint step
 scripts/deploy.sh [<build>]              # ship: CI green, then build a release from origin/main, switch, verify (as exedev)
 ```
 
