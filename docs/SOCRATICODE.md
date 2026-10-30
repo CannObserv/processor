@@ -197,7 +197,8 @@ is not the threat; OOM is, and the service already sits at
 `OOMScoreAdjust=-500` (about 64 MiB resident, under `MemoryMax=6G`) while each
 extraction child volunteers at +1000. The peak that took broker down on
 2026-09-16 was an unpinned npm install at session start, which the pin removes.
-Revisit if the service's resident memory grows into hundreds of MiB.
+Revisit if the service's resident memory grows into hundreds of MiB. No earlyoom
+either (decided 2026-10-30, #83): [DEPLOYMENT.md](DEPLOYMENT.md#memory-no-earlyoom).
 
 **Index scope here.** `.socraticodeignore` drops `skills-vendor/`, `skills/`,
 `.claude/skills/` and `.skills/` (vendored, or an upstream override; none since

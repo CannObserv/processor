@@ -850,6 +850,47 @@ uv run pytest tests/test_disk_gc.py   # on the node: the installed copy matches,
 
 **Updates and removal** are the skill's ([SKILL.md](../skills/maintaining-host-disk/SKILL.md)). A new release arrives as a pin bump in the daily skills-vendor refresh.
 
+## Memory: no earlyoom
+
+**earlyoom is not installed** (operator, 2026-10-30, #83). The kernel's own OOM killer is the only one on this host, and it already ranks agent sessions ahead of the service. That is broker's reasoning (CannObserv/broker#58, broker#71): sessions sit at adj 0 once they're off exe.dev's -1000, and what earlyoom would add is acting at its `-m` floor instead of at exhaustion. The cohort's other two positions:
+- **co-status runs it** (`-m 12,6`, `--avoid` the service, `--prefer` the sessions; copied from notifier). Its reason: with no swap, the kernel's killer acts late.
+- **broker installs it and keeps it disabled**, with its config current, so enabling it is one command.
+
+**The figures** `[measured 2026-10-30 on release d29e240cb85f, unless cited]`:
+
+| What | Reading |
+|---|---|
+| Host | 7935 MiB, no swap; `available` 6373–6685 MiB; `/proc/pressure/memory` all zeros |
+| `processor` | `MemoryPeak` 105M, `MemoryCurrent` 69M (both since the 15:58:47Z start); `MemoryMax=6G`, `OOMScoreAdjust=-500` |
+| A patch run (#77) | the dry run peaked at 265 MB max RSS, the held steps at about 190 MB; no OOM |
+| The disk GC (#82) | the report-only run peaked at 26 MB max RSS. A finished oneshot keeps no `MemoryPeak` on systemd 255, so the real prunes have no figure |
+| The kernel log | no `oom-kill`, `Out of memory` or `page allocation failure` since 2026-09-29: the whole retention, 5 boots |
+| The 2026-10-22 balloon event | on status and notifier (small, swapless) earlyoom killed a user process. co-processor logged no memory pressure (§ Tailnet flaps) |
+
+**The kernel's order** (`oom_score`, 2026-10-30):
+- first `exedev`'s `systemd --user` (734, adj 100) and its `(sd-pam)`, about 11 MiB between them;
+- then the sessions at adj 0: `claude`, `MainThread` (VS Code's node) and `npm exec socrat` (SocratiCode), 672–691;
+- `processor` at -500, tailscaled at -950 (§ tailscaled's OOM rank);
+- only `exe-init` and `sshd` at -1000.
+
+An extraction child volunteers at 1000 while it runs (§ Containment), so it goes before all of them. The service is never ahead of a session.
+
+**Re-open the decision** (install as broker does, disabled, or as co-status does) on any of these:
+- `available` under 1 GiB at any reading;
+- an `oom-kill` or a `page allocation failure` in the kernel log. Watch for the second as well: co-status's `deploy/earlyoom.default` records that on broker nothing was OOM-killed, while atomic allocations failed in unrelated processes;
+- a session back at -1000 (an exe-init regression, as broker#58). Broker pins that with a node-only test, and nothing here does, so the check below reads it.
+
+```bash
+free -m; cat /proc/pressure/memory
+journalctl -k --since -30d | grep -ciE 'oom-kill|out of memory|page allocation failure'   # 0
+ps -eo oomadj=,comm= | grep -E 'claude|MainThread|npm exec' | sort | uniq -c             # every line 0
+```
+
+**Not changed here:**
+- the unit's `OOMScoreAdjust` and `MemoryMax`;
+- `MemoryLow=` ([docs/SOCRATICODE.md](SOCRATICODE.md#repo-specific-notes));
+- `vm.min_free_kbytes`, 11399 here. Broker raised its own to 64 MiB for atomic allocations (broker#21).
+
 ## Node.js (agent tooling only)
 
 Node 24 LTS from NodeSource's apt repo, for `using-mayfly-chat` and SocratiCode (`npx`). The `processor` unit never runs it. The cohort survey and the reasons for NodeSource and for 24 are in #6.
