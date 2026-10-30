@@ -98,7 +98,8 @@ jobs:
     # mirror serves only tags it has cached (an old one 404s), and 7.0 is past EOL:
     # "manifest unknown" at Initialize containers means 7.0.15 left the cache, not
     # a broken commit. The fallback is the runner's apt redis-server: runs-on is
-    # 24.04 (#81), whose is 7.0.15. Assert the version and wait on redis-cli ping (#43).
+    # 24.04 (#81), whose apt redis-server is 7.0.15. Assert the version and wait on
+    # redis-cli ping (#43).
     # broker#85 decides the broker's next Redis; this pin moves with it.
     services:
       redis:
