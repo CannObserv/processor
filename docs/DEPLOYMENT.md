@@ -865,7 +865,7 @@ uv run pytest tests/test_disk_gc.py   # on the node: the installed copy matches,
 | A patch run (#77) | the dry run peaked at 265 MB max RSS, the held steps at about 190 MB; no OOM |
 | The disk GC (#82) | the report-only run peaked at 26 MB max RSS. A finished oneshot keeps no `MemoryPeak` on systemd 255, so the real prunes have no figure |
 | The kernel log | no `oom-kill`, `Out of memory` or `page allocation failure` since 2026-09-29: the whole retention, 5 boots |
-| The 2026-10-22 balloon event | on status and notifier (small, swapless) earlyoom killed a user process. co-processor logged no memory pressure (§ Tailnet flaps) |
+| The 2026-10-22 balloon event | co-processor took the same balloon (`Out of puff` ×26, § Tailnet flaps) with no earlyoom: no OOM kill and no allocation failure. status (7.9 GiB, as sized in its `earlyoom.default`) and notifier (3.8 GiB), both swapless, run earlyoom, and it killed a user process on each at its floor |
 
 **The kernel's order** (`oom_score`, 2026-10-30):
 - first `exedev`'s `systemd --user` (734, adj 100) and its `(sd-pam)`, about 11 MiB between them;
