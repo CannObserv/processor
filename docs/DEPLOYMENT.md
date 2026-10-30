@@ -873,7 +873,7 @@ uv run pytest tests/test_disk_gc.py   # on the node: the installed copy matches,
 - `processor` (adj -500) at 342, tailscaled at -950 (§ tailscaled's OOM rank);
 - only `exe-init` and `sshd` at -1000.
 
-An extraction child volunteers at 1000 while it runs (§ Containment), so it goes before all of them. The -500 is worth half the host's pages, so the service would pass a session only with about 3.9 GiB more resident than that session. `MemoryMax=6G` allows that; the measured peak is 105M.
+An extraction child volunteers at 1000 while it runs ([deploy/processor.service](../deploy/processor.service)'s `OOMPolicy=continue` comment), so it goes before all of them. The -500 is worth half the host's pages, so the service would pass a session only with about 3.9 GiB more resident than that session. `MemoryMax=6G` allows that; the measured peak is 105M.
 
 **Re-open the decision** (install as broker does, disabled, or as co-status does) on any of these:
 - `available` under 1 GiB at any reading;
