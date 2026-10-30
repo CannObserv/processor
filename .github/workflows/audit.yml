@@ -34,7 +34,8 @@ concurrency:
 jobs:
   audit:
     name: uv audit (report-only)
-    runs-on: ubuntu-latest
+    # The node's image, not ubuntu-latest (#81, as broker#88): tests/test_ci.py.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       # No submodules: the audit reads uv.lock alone.

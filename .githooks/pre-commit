@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# The commit-time half of the lint gate (#81, as CannObserv/broker#112): shellcheck
+# and ruff over what is staged. Enabled per clone, `git config core.hooksPath
+# .githooks` (docs/DEPLOYMENT.md § Shell lint). --no-verify skips it, so CI's lint
+# job is the enforcement.
+#
+# It lints the working-tree copy of each staged path, so a partly staged file is
+# read as it stands on disk. The tools come from uv.lock's lint group, without the
+# project or the config, so a clone needs no wheelhouse to commit.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+scripts/shellcheck.sh --staged
+
+# Python only: ruff here reads no Markdown (no extend-include). --force-exclude: a
+# path named on the command line is still held to extend-exclude (skills-vendor/).
+python=()
+while IFS= read -r -d '' f; do
+	python+=("$f")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.py' '*.pyi')
+
+if [ ${#python[@]} -gt 0 ]; then
+	uv run --frozen --no-config --only-group lint ruff check --force-exclude -- "${python[@]}"
+	uv run --frozen --no-config --only-group lint ruff format --check --force-exclude -- "${python[@]}"
+fi

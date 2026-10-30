@@ -45,7 +45,7 @@ find-links locks by filename, not hash, so each locked file's sha256 is pinned i
 | Input | `gs://co-gcs-blobs` (Replicator's raw blobs), read-only |
 | Output | `gs://co-gcs-processor/blobs/<sha256>.bin`, write-if-absent, **never deleted** |
 | Node.js | 24 LTS from NodeSource apt, agent tooling only (mayfly, SocratiCode): `deploy/nodesource.sh install\|check`, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#nodejs-agent-tooling-only) |
-| CI | GitHub Actions [.github/workflows/ci.yml](.github/workflows/ci.yml): lint, then the full suite against `redis:7.0.15` (the broker's, not 7.2: CLIENT SETINFO; upstream EOL, the next is broker#85's call), pulled from `mirror.gcr.io`, never anonymously from Docker Hub (#43). Keyless WIF to `co-pypi-reader` needs the org variable `GCP_WIF_PROVIDER` shared with this repo and a `roles/iam.workloadIdentityUser` binding for `principalSet://…/attribute.repository/CannObserv/processor`. Actions SHA-pinned; Dependabot `github-actions` only ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#ci-pins-and-dependabot), #80) |
+| CI | GitHub Actions [.github/workflows/ci.yml](.github/workflows/ci.yml) on `ubuntu-24.04`, the node's image: lint (ruff, shellcheck), then the full suite against `redis:7.0.15` (the broker's, not 7.2: CLIENT SETINFO; upstream EOL, the next is broker#85's call), pulled from `mirror.gcr.io`, never anonymously from Docker Hub (#43). Keyless WIF to `co-pypi-reader` needs the org variable `GCP_WIF_PROVIDER` shared with this repo and a `roles/iam.workloadIdentityUser` binding for `principalSet://…/attribute.repository/CannObserv/processor`. Actions SHA-pinned; Dependabot `github-actions` only ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#ci-pins-and-dependabot), #80). Shell lint, with an opt-in pre-commit hook: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#shell-lint) (#81) |
 | Lock audit | [.github/workflows/audit.yml](.github/workflows/audit.yml): `uv audit --frozen`, report-only, outside the deploy gate (#73). The weekly patch window reads the live lock (#75): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#the-lock-audit) |
 | Drift check | `processor-drift.timer`, hourly: does live lag `origin/main` in code that runs (`processor.drift.RUNTIME_*`)? Checks in to Status's `co-processor-drift` (`http://status:9000`, status#24); `alert` past 8 h. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#the-drift-check) (#35) |
 | Patching | `scheduled` (knob `.skills/patching-hosts`): one approved run a week, `Tue 05:00–10:00` UTC (Monday night Pacific), as the broker's window closes. Never a bare `apt-get upgrade`. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#patching) (#77) |
@@ -85,6 +85,7 @@ uv sync                                  # install deps (wheelhouse first)
 uv run pytest                            # tests
 uv run pytest -m integration             # bus tests against the scratch redis-server
 uv run ruff check . && uv run ruff format --check .
+bash scripts/shellcheck.sh               # our shell scripts; hook: git config core.hooksPath .githooks
 scripts/deploy.sh [<build>]              # ship: CI green, then build a release from origin/main, switch, verify (as exedev)
 ```
 
@@ -103,7 +104,7 @@ scripts/deploy.sh [<build>]              # ship: CI green, then build a release 
 ## Detail Docs
 
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, `/etc/processor/`, releases and `scripts/deploy.sh`, CI pins and Dependabot, the lock audit, the drift check, liveness, containment, install and rollback, operate, co-core bumps, extraction dependencies, TLS trust, Tailscale DNS, tailnet flaps (signature, rule), patching (posture, window, the run), the disk GC, Node.js
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, `/etc/processor/`, releases and `scripts/deploy.sh`, CI pins and Dependabot, shell lint, the lock audit, the drift check, liveness, containment, install and rollback, operate, co-core bumps, extraction dependencies, TLS trust, Tailscale DNS, tailnet flaps (signature, rule), patching (posture, window, the run), the disk GC, Node.js
 - [docs/plans/](docs/plans/) — implementation plans
 - [docs/SKILLS.md](docs/SKILLS.md) — vendored agent skills: inventory, overrides (none), the refresh hook, worktrees
 - [docs/SOCRATICODE.md](docs/SOCRATICODE.md) — semantic search: tools, the shared store, link stubs, the pin, the memory decision

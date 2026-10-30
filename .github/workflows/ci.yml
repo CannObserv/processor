@@ -21,7 +21,8 @@ concurrency:
 jobs:
   lint:
     name: lint
-    runs-on: ubuntu-latest
+    # The node's image, not ubuntu-latest (#81, as broker#88): tests/test_ci.py.
+    runs-on: ubuntu-24.04
     # A run takes ~2 min; bound a hang well short of GitHub's 360-minute default.
     timeout-minutes: 15
     # WIF: an OIDC token for google-github-actions/auth to impersonate the
@@ -71,12 +72,17 @@ jobs:
       - name: ruff format --check
         run: uv run ruff format --check .
 
+      - name: shellcheck
+        # A step, not a job: scripts/deploy.sh's CI_JOBS gate covers it as is (#81).
+        run: bash scripts/shellcheck.sh
+
       - name: uv lock --locked
         run: uv lock --locked
 
   test:
     name: test
-    runs-on: ubuntu-latest
+    # The node's image, not ubuntu-latest (#81, as broker#88): tests/test_ci.py.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -91,8 +97,8 @@ jobs:
     # pull limit, and a red main run blocks deploys (#43, tests/test_ci.py). The
     # mirror serves only tags it has cached (an old one 404s), and 7.0 is past EOL:
     # "manifest unknown" at Initialize containers means 7.0.15 left the cache, not
-    # a broken commit. The fallback is Ubuntu 24.04's apt redis-server, which is
-    # 7.0.15: pin runs-on, assert the version, and wait on redis-cli ping (#43).
+    # a broken commit. The fallback is the runner's apt redis-server: runs-on is
+    # 24.04 (#81), whose is 7.0.15. Assert the version and wait on redis-cli ping (#43).
     # broker#85 decides the broker's next Redis; this pin moves with it.
     services:
       redis:

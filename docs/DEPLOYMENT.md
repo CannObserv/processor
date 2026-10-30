@@ -324,6 +324,38 @@ git push origin main                            # GitHub marks the PR merged
 - A major passes `tests/test_ci.py`'s floor (`ACTIONS`) as it is. Raising the floor is a PR of its own: never push to Dependabot's branch, since Dependabot stops rebasing a PR someone else has pushed to.
 - **No deploy:** an action bump touches `.github/` alone, which is outside `RUNTIME_*` ([§ The drift check](#the-drift-check)).
 
+**The runner image.** Every job in `ci.yml` and `audit.yml` runs on `ubuntu-24.04`, co-processor's image, not `ubuntu-latest`. That moved to 26.04 in October 2026 (#81, as broker#88). The shell lint and the suite then run on the node's userland, and `test`'s Redis fallback, 24.04's apt `redis-server`, is 7.0.15. `tests/test_ci.py` holds every `runs-on` to one image, and on co-processor holds that image to `/etc/os-release`. So a node upgrade fails the suite there until the pins move with it.
+
+## Shell lint
+
+Ported from broker#112 (#81). `scripts/shellcheck.sh` lints this repo's own shell scripts: every tracked `*.sh` and `.githooks/*`.
+- **Not a symlink:** the `.claude/hooks/` ones point into `skills-vendor/`.
+- **Not `.skills/`:** the vendored refresh hook rewrites `doctor.sh` there.
+- A finding in either is an issue on gregoryfoster/skills.
+
+`ci.yml` runs the script over the tree as a step of `lint`. A step, not a job: `deploy.sh`'s `CI_JOBS` gate covers it as is, and a new job would need a `CI_JOBS` entry.
+
+A commit runs it over what is staged, along with `ruff check` and `ruff format --check` over staged Python, once the clone opts in:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook is per clone, and `--no-verify` skips it, so CI is the enforcement.
+
+**The version.** Both run shellcheck 0.11.0 from `shellcheck-py` in `uv.lock`'s `lint` group, a hash-pinned wheel:
+- no root install on the node, and nothing fetched at run time;
+- `audit_lock.sh` reads it;
+- the release's `uv sync --no-dev` installs neither tool.
+
+They call `uv run --frozen --no-config --only-group lint`, without the project, so a clone needs no wheelhouse to commit. `--no-config` because `[tool.uv] find-links` is read even under `--only-group`, and a clone has no `./.wheelhouse` (as for the sync, #79).
+
+**A bump** changes what the gate finds, so it lands with its fixes: `uv lock --upgrade-package shellcheck-py`, then `bash scripts/shellcheck.sh`, then this paragraph's version. Never `uv lock --upgrade` (the co-core rule). It moves `pyproject.toml` or `uv.lock`, so it is a deploy.
+
+**Disables.** Fix a finding rather than disable it. A `# shellcheck disable=` that stays sits on the line before the command, with its reason on the same line: `# shellcheck disable=SC2064 # expanded now: …`. A trailing directive after the command doesn't suppress.
+
+`tests/test_shellcheck.py` pins the selector, the hook, the group and the version named here.
+
 ## The lock audit
 
 Disclosures arrive without commits: #71's 12 advisories surfaced only because someone ran `uv audit` by hand. Two things read the lock against OSV now:

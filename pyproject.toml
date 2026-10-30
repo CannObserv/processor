@@ -34,14 +34,21 @@ processor = "processor.__main__:main"
 
 [dependency-groups]
 dev = [
+    { include-group = "lint" },
     "pypdf>=5.0,<7",
     "openpyxl>=3.1.0,<4",
     "pytest>=9.1.1,<10",
     "pytest-asyncio>=1.4.0,<2",
     "pytest-cov>=7.1.0,<8",
-    "ruff>=0.16.8,<0.17",
     "pyyaml>=6,<7",
 ]
+# The gate's tools (#81, as broker#112). .githooks/pre-commit and scripts/shellcheck.sh
+# run them as `uv run --frozen --no-config --only-group lint`: no project, so no
+# wheelhouse. shellcheck-py's wheel carries the shellcheck binary, so the lock
+# hash-pins it: no root install on the node, one version everywhere. A bump moves the
+# gate: `uv lock --upgrade-package shellcheck-py`, then fix what it finds and the
+# version docs/DEPLOYMENT.md § Shell lint names, which tests/test_shellcheck.py holds.
+lint = ["ruff>=0.16.8,<0.17", "shellcheck-py>=0.11.0.1,<0.12"]
 # scripts/sync_wheelhouse.py's own deps, locked (#79, as broker#113): `uv run
 # --frozen --no-config --only-group wheelhouse` installs them without the
 # project, whose co-core is what the sync fetches. The project's own spec.

@@ -1,6 +1,7 @@
 """The CI workflow's load-bearing choices (#12), pinned so they cannot drift quietly."""
 
 import re
+import socket
 import subprocess
 import tomllib
 from pathlib import Path
@@ -17,6 +18,10 @@ WIF_SA = "co-pypi-reader@co-gcs.iam.gserviceaccount.com"
 # Docker Hub's official image via Google's mirror (#43): see test_image_comes_from_the_mirror.
 BROKER_REDIS = "mirror.gcr.io/library/redis:7.0.15"
 MIRROR = "mirror.gcr.io/"
+AUDIT_WORKFLOW = WORKFLOW.parent / "audit.yml"
+# co-processor's image: every job runs on it, not ubuntu-latest (#81, as broker#88).
+NODE = "co-processor"
+NODE_IMAGE = "ubuntu-24.04"
 # Each action's floor major: what #80 pinned (broker's majors, operator 2026-10-29).
 # A floor, not an exact major, so a Dependabot major PR passes and a downgrade fails.
 # Below them lie Node 20 majors: setup-uv@v5 and auth@v2 target Node 20, which GitHub
@@ -139,6 +144,44 @@ def test_wheel_check_fails_on_an_sdist_only_lock(tmp_path: Path) -> None:
 def test_jobs_are_time_bounded(ci: dict, name: str) -> None:
     # The integration suite blocks on Redis reads: a hang must not bill GitHub's 360.
     assert 0 < ci["jobs"][name]["timeout-minutes"] <= 15
+
+
+def _runners() -> dict[str, str]:
+    """Each job's runs-on, by workflow and job, across ci.yml and audit.yml."""
+    return {
+        f"{path.name}:{name}": job["runs-on"]
+        for path in (WORKFLOW, AUDIT_WORKFLOW)
+        for name, job in yaml.safe_load(path.read_text())["jobs"].items()
+    }
+
+
+def test_every_job_runs_on_the_nodes_image() -> None:
+    """Not ubuntu-latest, which moved to 26.04 under us (#81, as broker#88): the
+    shell lint and the suite run on co-processor's userland, and the Redis
+    fallback above is 24.04's apt redis-server."""
+    runners = _runners()
+    assert {"ci.yml:lint", "ci.yml:test", "audit.yml:audit"} <= set(runners)
+    assert set(runners.values()) == {NODE_IMAGE}, runners
+
+
+def _os_version_id(os_release: Path) -> str:
+    found = re.search(r'^VERSION_ID="?([^"\n]+)"?$', os_release.read_text(), re.MULTILINE)
+    assert found, f"{os_release} names no VERSION_ID"
+    return found[1]
+
+
+def test_the_node_is_on_that_image() -> None:
+    """On co-processor, by hostname (never by the file, broker#79): a node
+    upgrade moves NODE_IMAGE and every runs-on with it."""
+    if socket.gethostname() != NODE:
+        pytest.skip("not co-processor")
+    assert f"ubuntu-{_os_version_id(Path('/etc/os-release'))}" == NODE_IMAGE
+
+
+def test_the_version_read_fails_on_a_node_that_moved(tmp_path: Path) -> None:
+    os_release = tmp_path / "os-release"
+    os_release.write_text('NAME="Ubuntu"\nVERSION_ID="26.04"\n')
+    assert f"ubuntu-{_os_version_id(os_release)}" != NODE_IMAGE
 
 
 def test_lint_gates(ci: dict) -> None:

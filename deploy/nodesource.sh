@@ -46,7 +46,7 @@ install_nodesource() {
   [ "$(id -u)" -eq 0 ] || { echo "install needs root: sudo bash $0 install" >&2; exit 2; }
   local tmp got
   tmp="$(mktemp -d)"
-  # Expanded now: $tmp is local, and gone by the time EXIT fires.
+  # shellcheck disable=SC2064 # expanded now: $tmp is local, and gone by the time EXIT fires
   trap "rm -rf '$tmp'" EXIT
 
   curl -fsSL "$KEY_URL" -o "$tmp/key.asc" || { echo "could not fetch $KEY_URL" >&2; exit 2; }
