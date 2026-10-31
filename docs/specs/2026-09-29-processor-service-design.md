@@ -110,6 +110,20 @@ on `co-processor`.
   only when stderr is the journal stream (Section 3). `processor_version` does
   not move.
 
+**Amended 2026-10-31 (the bucket's readers, processor#106):**
+- The Grants table gains two readers of `gs://co-gcs-processor`, both
+  `objectViewer`, bucket-level (Section 2): Archiver's
+  `archiver-processor-text-reader` (CannObserv/archiver#367, its D4) and
+  Provisioner's `co-gcs-provisioner-reader` (CannObserv/provisioner's spec, D6).
+  Provisioner's grant dates from its go-live; this table missed it until now.
+- Written from the operator's `gcloud storage buckets get-iam-policy`, read
+  2026-10-31 ~20:20Z: `gs://co-gcs-processor` at etag `CAY=`,
+  `gs://co-gcs-blobs` at etag `CAk=`. Archiver's reader has no binding on
+  `gs://co-gcs-blobs`. The bucket's project convenience bindings are recorded
+  under the table.
+- Watcher, Archiver and Provisioner all read `blobs/`, so a prefix split names
+  all three (Sections 1 and 2).
+
 ---
 
 ## Why a new service
@@ -175,7 +189,8 @@ adapters later, selected by `command.processor` + spec); its bucket; draining
 
 **Does not own:** spec authoring (issuer), interpretation (issuers), fetching
 bytes (Replicator), change detection and diffing (Watcher), the durable registry
-(Archiver).
+(Archiver), what readers do with its output. Watcher, Archiver and Provisioner
+each read `blobs/` with their own `objectViewer` (Section 2).
 
 **v1:** Watcher's text extraction — #629's requirements 1–7 as amended here.
 **Later, each its own spec:** agenda adapters; Observo as an issuer; migrating
@@ -211,6 +226,15 @@ processor-version pin on the command; no job API — the bus is the interface.
 | `co-gcs-processor-writer` | `gs://co-gcs-blobs` | `objectViewer` (Replicator's raw blobs — the input) |
 | Status tenant `co-processor` (production key, `/etc/processor/status-checkin.key`) | Status monitors `co-processor-drift` and `co-processor-live` | check-in only (`POST /api/v1/monitors/{id}/checkin`); Status's operator owns the monitors and their channels (CannObserv/status#24, #35, #39) |
 | Watcher's service account, `co-gcs-blob-reader` (its `GCS_BLOB_CREDENTIALS`; confirmed on watcher#325, granted 2026-10-02) | `gs://co-gcs-processor` | `objectViewer`, bucket-level |
+| Archiver's `archiver-processor-text-reader@co-gcs.iam.gserviceaccount.com` (its notification composer: a size check, a ranged read and a hash check of `blobs/<sha256>.bin`; CannObserv/archiver#367 D4). No binding on `gs://co-gcs-blobs`, read 2026-10-31 | `gs://co-gcs-processor` | `objectViewer`, bucket-level |
+| Provisioner's `co-gcs-provisioner-reader@co-gcs.iam.gserviceaccount.com` (`provisioner-consumer`, by `LoadCredential=`: the current text by `extracted_fingerprint`; CannObserv/provisioner's spec D6). Bound since Provisioner's go-live, recorded here 2026-10-31 (processor#106) | `gs://co-gcs-processor` | `objectViewer`, bucket-level |
+
+The GCP rows match the buckets' IAM policies as the operator read them on
+2026-10-31 (`gs://co-gcs-processor` etag `CAY=`, `gs://co-gcs-blobs` etag
+`CAk=`; processor#106). `gs://co-gcs-processor` also carries the defaults GCS
+gives a new bucket, for project `co-gcs`: Owner and Editor hold
+`legacyBucketOwner` and `legacyObjectOwner`, Viewer holds `legacyBucketReader`
+and `legacyObjectReader`. So anyone with Viewer on `co-gcs` can read our objects.
 
 The ACL shape copies broker#62's `observo` user. Withheld on purpose, as there:
 `+xpending`, `+xclaim`, `+xread`, `+xtrim`, and `+set`/`+exists` — Processor
@@ -220,8 +244,11 @@ and the broker widens grants live.
 
 Bucket: uniform bucket-level access, public access prevention, no lifecycle
 rules, key scheme `blobs/<sha256>.bin` (co-core's cohort scheme,
-`DEFAULT_PREFIX = "blobs"`). A later processor whose output Watcher must not
-read gets its own prefix then.
+`DEFAULT_PREFIX = "blobs"`). Every reader's grant is bucket-level, so Watcher,
+Archiver and Provisioner read every prefix, and all three read `blobs/` today. A
+later processor whose output any of them must not read gets its own prefix then,
+and the split names, for each of the three, whether its grant narrows to
+`blobs/`.
 
 ## Section 3 — runtime and code structure
 
