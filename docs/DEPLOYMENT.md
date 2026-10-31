@@ -830,7 +830,7 @@ uv run pytest tests/test_needrestart.py tests/test_tailscaled.py   # on the node
 
 ## Disk GC
 
-Provisioner's disk GC and headroom sensor (provisioner#61), **VERSION 2**, installed and turned on through gregoryfoster/skills `maintaining-host-disk` ([skills/maintaining-host-disk](../skills/maintaining-host-disk/SKILL.md), #82). The skill's [turning-on.md](../skills/maintaining-host-disk/references/turning-on.md) is the procedure; this section is what's particular to this host. The GC's tiers and rules are Provisioner's. A change to them is raised there, through the operator, and never patched into the installed copy: the installer refuses a copy that doesn't match its MANIFEST.
+Provisioner's disk GC and headroom sensor (provisioner#61), **VERSION 3** (#99), installed and turned on through gregoryfoster/skills `maintaining-host-disk` ([skills/maintaining-host-disk](../skills/maintaining-host-disk/SKILL.md), #82). VERSION 3 changed only the `vscode-servers` tier: it keeps every `Stable-*` build newer than the newest live one, and the newest when none is live, by `server/product.json`'s version ([editor-builds.md](../skills/maintaining-host-disk/references/editor-builds.md)). Its first run, 2026-10-31 05:44Z, exited 0: it removed 135.3M in 2 items (a 135.1M `vsix-cache` entry and the npm cache), kept 6 (among them `Stable-2c33b50b`, 1.144.0, newer than the live 1.140.0), and left `/` at 57%. The skill's [turning-on.md](../skills/maintaining-host-disk/references/turning-on.md) is the procedure; this section is what's particular to this host. The GC's tiers and rules are Provisioner's. A change to them is raised there, through the operator, and never patched into the installed copy: the installer refuses a copy that doesn't match its MANIFEST.
 
 | What | Where |
 |---|---|
@@ -858,7 +858,7 @@ uv run pytest tests/test_disk_gc.py   # on the node: the installed copy matches,
 **With § Patching:**
 - **patching-hosts reads `[sensor] mount` and `alert_at_percent` as a floor** (gregoryfoster/skills#390). It refuses a step whose download and install would take `/` to 85%, and stops on a config the GC would refuse.
 - **The GC's daily run (05:15–05:45) falls inside the Tuesday window.** It never touches apt's trees, and it yields: `Nice=10`, idle I/O.
-- **After a reboot,** if the GC runs before VS Code reconnects, it finds no build running and keeps none. The next session re-downloads its build (about 640M). That's accepted (#82).
+- **After a reboot,** if the GC runs before VS Code reconnects, it finds no build running and keeps the newest (VERSION 3, #99). Under VERSION 2 it kept none, and the next session re-downloaded its build (about 640M).
 - **A run the reboot cuts off** finishes the next day. A missed day pages only as `gc-stale`, after 72 h.
 
 **Read it** without sudo: `exedev` is in `adm`, so `journalctl -u cannobserv-disk-headroom -p err --since -1d` reads the alerts. verifying.md's `sudo` is for users outside `adm`, for whom the same command prints `-- No entries --`. Its rule holds here too: only `checked in ok (ok): HTTP 202` proves a check-in.
