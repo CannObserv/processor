@@ -117,7 +117,7 @@ on `co-processor`.
   Provisioner's `co-gcs-provisioner-reader` (CannObserv/provisioner's spec, D6).
   Provisioner's grant dates from its go-live; this table missed it until now.
 - Written from the operator's `gcloud storage buckets get-iam-policy`, read
-  2026-10-31 ~20:20Z: `gs://co-gcs-processor` at etag `CAY=`,
+  2026-10-31: `gs://co-gcs-processor` at etag `CAY=`,
   `gs://co-gcs-blobs` at etag `CAk=`. Archiver's reader has no binding on
   `gs://co-gcs-blobs`. The bucket's project convenience bindings are recorded
   under the table.
