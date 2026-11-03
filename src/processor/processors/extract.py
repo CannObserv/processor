@@ -21,8 +21,9 @@ from co_core.pure.extract.spec_fingerprint import spec_fingerprint, spec_schema_
 # Bump by hand when output can move in a way co-core's version cannot see (spec §5):
 # Processor's own logic (config merging, dispatch), or the locked extraction stack
 # moving outside a co-core bump (tests/test_pin.py's EXTRACTION_STACK). 1 matched
-# Watcher's LOCAL_EXTRACTION_GENERATION at the cutover; 2 is pypdf 6.19.0 -> 6.21.2 (#71).
-LOCAL_GENERATION = 2
+# Watcher's LOCAL_EXTRACTION_GENERATION at the cutover; 2 is pypdf 6.19.0 -> 6.21.2 (#71);
+# 3 is pypdf 6.21.2 -> 6.21.4 (#112).
+LOCAL_GENERATION = 3
 PROCESSOR_VERSION = processor_version(LOCAL_GENERATION)
 
 

@@ -35,16 +35,17 @@ ROOT = Path(__file__).resolve().parent.parent
 PINNED = ("co-core", "co-core-aio", "co-core-sync")
 SRC = ROOT / "src" / "processor"
 RESOLVERS = frozenset({"resolve_dispatch_essence", "extension_media_type"})
-GENERATION = 2  # 1 was Watcher's LOCAL_EXTRACTION_GENERATION at the cutover; 2: #71
+GENERATION = 3  # 1 was Watcher's LOCAL_EXTRACTION_GENERATION at the cutover; 2: #71; 3: #112
 # The transitive closure of co-core's ``extract`` extra in uv.lock: what turns bytes
-# into text beside co-core itself. Moved together with GENERATION (#71: pypdf 6.21.2).
+# into text beside co-core itself. Moved together with GENERATION (#71: pypdf 6.21.2;
+# #112: pypdf 6.21.4).
 EXTRACTION_STACK = {
     "beautifulsoup4": "4.15.0",
     "et-xmlfile": "2.0.0",
     "html5lib": "1.1",
     "lxml": "6.1.3",
     "openpyxl": "3.1.5",
-    "pypdf": "6.21.2",
+    "pypdf": "6.21.4",
     "python-jsonpath": "2.2.2",
     "six": "1.17.0",
     "soupsieve": "2.10",

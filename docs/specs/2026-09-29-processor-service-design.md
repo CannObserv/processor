@@ -124,6 +124,13 @@ on `co-processor`.
 - Watcher, Archiver and Provisioner all read `blobs/`, so a prefix split names
   all three (Sections 1 and 2).
 
+**Amended 2026-11-03 (the extraction stack again, processor#112):**
+- pypdf 6.21.2 → 6.21.4 for 7 advisories, so `LOCAL_GENERATION` 2 → **3** and
+  facts report `0.38.0+3` (Sections 5 and 7). Over the same two sample corpora as
+  #71 (110 PDFs at HEAD), no fingerprint moved. The bump follows the rule, not a
+  measured move: the corpora can't show that no Watcher PDF moves.
+- pyasn1 0.6.4 → 0.6.5 (4 advisories) is a floor only: it isn't in the stack.
+
 ---
 
 ## Why a new service
@@ -514,9 +521,12 @@ reclaim re-running (not re-publishing) the extraction.
   - A move gives Watcher notice, as a co-core bump does, with the evidence of
     what moved. At a co-core bump the stack may move with it; the version moves
     anyway, so the generation stays.
-  - **`LOCAL_GENERATION = 2`** since processor#71: pypdf 6.19.0 → 6.21.2 for
-    its advisories. Over pypdf's and py-pdf's sample corpora, 4 of 106 PDFs
-    extracted differently (word spacing); the goldens and the real corpus held.
+  - **`LOCAL_GENERATION = 3`** since processor#112: pypdf 6.21.2 → 6.21.4 for
+    its advisories. Over the same corpora at HEAD, 0 of 110 PDFs extracted
+    differently; the goldens and the real corpus held.
+  - 2 was processor#71: pypdf 6.19.0 → 6.21.2 for its advisories. Over pypdf's
+    and py-pdf's sample corpora, 4 of 106 PDFs extracted differently (word
+    spacing); the goldens and the real corpus held.
 - **co-core `==0.38.0`** since processor#37 (2026-10-20). Before it,
   `==0.37.0` since processor#21 (2026-10-17), and `==0.32.0` since processor#29
   (2026-10-12), the catch-up jump from
@@ -690,8 +700,9 @@ TDD, red first.
   - Parity with Watcher's local path should be proven before shadow, not
     discovered in it.
 - **Pin test.** The lock's co-core equals the expected exact version and
-  `processor_version(LOCAL_GENERATION) == "0.38.0+2"` — a bump is a deliberate,
-  test-failing act. So is moving the extraction stack (Section 5, processor#71).
+  `processor_version(LOCAL_GENERATION) == "0.38.0+3"` — a bump is a deliberate,
+  test-failing act. So is moving the extraction stack (Section 5, processor#71,
+  processor#112).
 - **Shells — one test per Section 4 row.** Input/output stores: a local co-core
   store on a temp dir behind the same interface, plus fakes raising GCS 5xx /
   429 / `NotFound`. Bus: fakeredis (or co-core-aio's test double, if it ships

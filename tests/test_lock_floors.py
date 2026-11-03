@@ -1,9 +1,11 @@
-"""Security floors on the lock that a re-lock must not undo (#71).
+"""Security floors on the lock that a re-lock must not undo (#71, #112).
 
-pypdf 6.21.2 fixes 11 advisories against 6.19.0 (infinite loops, long runtimes, large
-memory, unvalidated JPEG loading), on attacker-reachable PDFs; opentelemetry-api 1.45.1
-fixes unbounded tracestate parsing (GHSA-xcq7-p3pf-p88h). ``[tool.uv]
-constraint-dependencies`` holds both floors, beside certifi's (``test_tls_trust.py``).
+pypdf 6.21.2 fixed 11 advisories against 6.19.0 (infinite loops, long runtimes, large
+memory, unvalidated JPEG loading), and 6.21.4 7 more against 6.21.2 (memory and runtime
+blowups, two infinite loops), on attacker-reachable PDFs; opentelemetry-api 1.45.1
+fixes unbounded tracestate parsing (GHSA-xcq7-p3pf-p88h); pyasn1 0.6.5 fixes
+quadratic-time BER/DER decoding (#112). ``[tool.uv] constraint-dependencies`` holds
+the floors, beside certifi's (``test_tls_trust.py``).
 """
 
 import tomllib
@@ -13,7 +15,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-FLOORS = {"pypdf": (6, 21, 2), "opentelemetry-api": (1, 45, 1)}
+FLOORS = {"pypdf": (6, 21, 4), "opentelemetry-api": (1, 45, 1), "pyasn1": (0, 6, 5)}
 
 
 def _parts(v: str) -> tuple[int, ...]:

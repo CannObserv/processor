@@ -291,10 +291,10 @@ gh api repos/<owner>/<action>/git/ref/tags/<tag> --jq '.object.type + " " + .obj
 **Dependabot** (`.github/dependabot.yml`) proposes action bumps only: `github-actions`, weekly, at most 10 open PRs, with `chore:` subjects.
 - **A 3-day cooldown, GitHub's default.** `dependabot.yml` sets no `cooldown`, so Dependabot skips a release less than 3 days old (`cooldown days 3` in its log). setup-uv v10.3.3, published 2026-10-28, was held back from the first run on 2026-10-30 ("Found acceptable version outside cooldown: 10.3.2"). It arrived as #110 on 2026-11-02.
 - **Never `uv` or `pip`.** Processor owns the exact co-core pin and holds the extraction stack ([§ Extraction dependencies](#extraction-dependencies)). The wheelhouse is private, so Dependabot's updater couldn't sync it anyway. `uv.lock` has its own signal ([§ The lock audit](#the-lock-audit)).
-- **Settings → Code security** (operator reading, 2026-10-29, #80):
+- **Settings → Code security** (operator reading, 2026-10-29, #80; security updates re-read 2026-11-03, #112):
   - Dependency graph: **on**. It is the `Graph Update: uv in /.` run on each push, and opens nothing.
   - Dependabot alerts: **on**. These are the operator's.
-  - Dependabot security updates: **off**, and they stay off. They open PRs that move `uv.lock` whatever `dependabot.yml` says.
+  - Dependabot security updates: **on**, and left on (operator, 2026-11-03, #112). The 2026-10-29 reading said off. A security update ignores `dependabot.yml`: it is a `uv` job (`"command":"security"`) per advisory. Here every one fails before it opens anything: `PathDependenciesNotReachable: --find-links`, since the updater can't sync the private wheelhouse. The first two ran on the push of `312552a` (2026-11-03T01:27Z), for pyasn1 and pypdf. So a red security-update job is the signal, never a PR, and the fix goes through [§ The lock audit](#the-lock-audit)'s "Where a finding goes". If one ever opens a PR, don't land it: it moves `uv.lock` without the floor, and in the extraction stack without the generation.
 
   No test can see these settings, and our token gets 403 on both APIs. Re-read them in the UI whenever the repo's security settings change.
 
@@ -612,7 +612,7 @@ co-core is pinned `==`, and Processor owns the pin (spec D5, §5; amended 2026-1
 3. Measure what moved: the parity tests (goldens, real corpus) must pass unchanged (a golden that moves is a co-core-pin question, not this one), and run co-core's extractor for the moved package over a wider corpus on both versions (#71 used pypdf's and py-pdf's sample PDFs: 4 of 106 moved). Put the result in the PR.
 4. **Notice to Watcher** before deploy: the new `processor_version` and the evidence. Merge, then `scripts/deploy.sh`.
 
-Since #71: `0.38.0+2`, pypdf 6.21.2, opentelemetry-api 1.45.1 (not stack; a floor only).
+Since #71: `0.38.0+2`, pypdf 6.21.2, opentelemetry-api 1.45.1 (not stack; a floor only). Since #112: `0.38.0+3`, pypdf 6.21.4, pyasn1 0.6.5 (not stack; a floor only).
 
 ## TLS trust
 
@@ -828,7 +828,7 @@ uv run pytest tests/test_needrestart.py tests/test_tailscaled.py   # on the node
 
 **The record** goes on the issue (`records CannObserv/processor`), per run.md §7, and ends with the next window's date. What each run leaves pending, by class, comes from step 9 and includes:
 - **Ubuntu Pro / ESM:** Pro isn't attached, and 25 esm-apps updates were visible on 2026-10-26.
-- **Language:** `/srv/processor/live/uv.lock`, its OSV advisory count, owner `self`. Run.md §7 asks for the owning repo's update mechanism; here that is `audit.yml`, report-only ([§ The lock audit](#the-lock-audit)). Dependabot covers Actions only, never `uv.lock`, and its security updates are off ([§ CI pins and Dependabot](#ci-pins-and-dependabot)). A count above 0 goes to that section's "Where a finding goes" and is linked from the record. A tree listed as not audited, or the class in `not_read`, is recorded as no read, never as 0.
+- **Language:** `/srv/processor/live/uv.lock`, its OSV advisory count, owner `self`. Run.md §7 asks for the owning repo's update mechanism; here that is `audit.yml`, report-only ([§ The lock audit](#the-lock-audit)). Dependabot's version updates cover Actions only, never `uv.lock`, and its security updates fail on the private wheelhouse without opening anything ([§ CI pins and Dependabot](#ci-pins-and-dependabot)). A count above 0 goes to that section's "Where a finding goes" and is linked from the record. A tree listed as not audited, or the class in `not_read`, is recorded as no read, never as 0.
 
 ## Disk GC
 
