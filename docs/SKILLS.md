@@ -33,7 +33,7 @@ Two artifacts, and only the second makes it run: the `.claude/hooks/skills-submo
 |---|---|
 | Check both halves | `bash skills/managing-skills/scripts/install-refresh.sh --check` |
 | Remove both | `bash skills/managing-skills/scripts/install-refresh.sh --uninstall` |
-| Refresh by hand | `git submodule update --init --remote --merge -- skills-vendor/` (`--init` is load-bearing: without it an unregistered submodule is skipped with exit 0) |
+| Refresh by hand | on a branch in a worktree, landed as a PR (`merge_mode pr`): `git submodule update --init --remote --merge -- skills-vendor/` (`--init` is load-bearing: without it an unregistered submodule is skipped with exit 0) |
 | Hold one submodule | a `<submodule-path> <commit-ish>` line in `.skills/skills-pin`; never suspend the hook |
 
 The first session in a fresh clone or worktree fails the hook with exit 127 (hooks run in parallel; nothing inits the submodule first). `bash .skills/doctor.sh` once fixes it.
