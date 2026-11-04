@@ -25,7 +25,7 @@ Upstream folded the `shipping-work-*` variants into one `shipping-work` (gregory
 3. **The #334 replica, local:**
    - `scripts/env-value.sh`: reads one name from the primary checkout's `.env`, as data, never executing it.
    - `.claude/hooks/gh-env.sh`: a SessionStart hook. It writes `export GH_TOKEN=<%q>` to `$CLAUDE_ENV_FILE`, leaves a `GH_TOKEN` that is already set alone, warns when `gh` is older than 2.78.0, never prints the token, and always exits 0.
-   - The refresh hook's `settings.json` entry runs `GH_TOKEN="$(bash scripts/env-value.sh GH_TOKEN)" bash …/skills-submodule-update.sh`. `install-refresh.sh --check` still exits 0 on that entry (measured). An install-mode re-run puts the canonical command back: a known limit.
+   - The refresh hook's `settings.json` entry runs `GH_TOKEN="${GH_TOKEN:-$(bash scripts/env-value.sh GH_TOKEN)}" bash …/skills-submodule-update.sh` (a token already in the environment wins). `install-refresh.sh --check` still exits 0 on that entry (measured). An install-mode re-run puts the canonical command back: a known limit.
 4. **Docs:**
    - AGENTS.md *Agent Skills* and *Conventions → Workflow*: shorter, within the budget.
    - `docs/SKILLS.md`: the inventory, § Refresh, the `:68` section (it becomes "Merging under `pr`", where the FF merge is recorded), § Not installed, and a doc-check section.
