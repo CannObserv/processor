@@ -9,6 +9,7 @@
 #   - says so when .env has no GH_TOKEN, or when CLAUDE_ENV_FILE is unset
 #     (anthropics/claude-code#15840), with the manual export;
 #   - warns when gh is missing or older than 2.78.0 (cli/cli#11514).
+#     GH_ENV_GH names the gh it checks (default gh; tests/test_gh_env.py).
 # Only GH_TOKEN: cross-repo GH_TOKEN_<REPO> stay per call. It never prints the
 # token and always exits 0. Other SessionStart hooks run in parallel and never
 # see this export: the refresh hook reads the token in its own registration.
