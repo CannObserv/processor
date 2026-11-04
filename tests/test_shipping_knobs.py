@@ -97,7 +97,10 @@ def test_each_doc_section_names_tracked_docs_and_real_headings() -> None:
     """Each line leads with ``<doc> ["Heading"], …: ``; every doc and heading exists."""
     tracked = set(_tracked())
     for line in _lines("doc-sections"):
-        lead = line.split(": ", 1)[0]
+        # The first ": " outside quotes: a heading may hold one ("Deploy a change: …").
+        lead = re.match(r'((?:"[^"]*"|[^"])*?): ', line)
+        assert lead, line
+        lead = lead.group(1)
         for doc, heading in re.findall(r'([\w./-]+\.md)(?: "([^"]+)")?', lead):
             assert doc in tracked, (doc, line)
             if heading:
