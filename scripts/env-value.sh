@@ -9,8 +9,8 @@
 # `set -a; . .env` runs the file. This reads `NAME=value` and `export NAME=value`
 # lines, strips one pair of matching surrounding quotes and a trailing CR, and the
 # last match wins. Nothing is expanded. Exit 1, printing nothing, when the file or
-# the name is absent. A local replica of gregoryfoster/skills#334's load-env.sh
-# contract, until that ships.
+# the name is absent. Follows gregoryfoster/skills#334's parse-as-data rule for one
+# name, not its loader (system env file, then .env); retired when that ships.
 set -euo pipefail
 
 name=${1:?usage: env-value.sh NAME [FILE]}
