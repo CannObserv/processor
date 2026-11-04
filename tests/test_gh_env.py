@@ -87,7 +87,7 @@ def _project(tmp_path: Path, env_text: str | None) -> Path:
 
 
 def _fake_gh(tmp_path: Path, version: str) -> str:
-    bin_dir = tmp_path / "bin"
+    bin_dir = tmp_path / f"bin-{version}"
     bin_dir.mkdir(exist_ok=True)
     gh = bin_dir / "gh"
     gh.write_text(f'#!/bin/sh\necho "gh version {version} (2026-01-01)"\n')

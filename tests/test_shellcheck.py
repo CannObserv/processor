@@ -9,7 +9,8 @@ node, CI and every clone run the same binary. No root install on the node.
 
 **Two callers, one selector.** ``scripts/shellcheck.sh`` decides which files are
 this repo's: every tracked ``*.sh`` and ``.githooks/*``, never a symlink (the
-``.claude/hooks/`` ones point into ``skills-vendor/``) and never ``.skills/``
+vendored ``.claude/hooks/`` ones point into ``skills-vendor/``; ``gh-env.sh`` is a file
+of ours until gregoryfoster/skills#334 ships) and never ``.skills/``
 (the vendored refresh hook rewrites ``doctor.sh`` there with no review).
 ``.githooks/pre-commit`` runs it over what is staged; ``ci.yml``'s ``lint`` job
 over the tree. The hook is per clone and ``--no-verify`` skips it, so CI is the
@@ -150,7 +151,8 @@ class TestTheSelector:
             ".githooks/pre-commit",
         } <= taken
         assert ".skills/doctor.sh" not in taken
-        assert not any(p.startswith(".claude/") for p in taken)
+        assert ".claude/hooks/gh-env.sh" in taken
+        assert not any(p.startswith(".claude/") and (ROOT / p).is_symlink() for p in taken)
 
     def test_the_tree_is_clean(self, tmp_path):
         """The gate starts green: the same run CI's step makes."""
