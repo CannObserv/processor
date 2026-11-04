@@ -1,0 +1,5 @@
+# Production runs releases (#2): scripts/deploy.sh is the only way code reaches the
+# unit, and `systemctl restart` deploys nothing. -w waits, so the exit code is the
+# deploy's (broker#123). run-deploy-command.sh appends the pushed SHA. Offered after
+# every merge: decline it when the merge touched no RUNTIME_* path (AGENTS.md).
+setsid -w scripts/deploy.sh

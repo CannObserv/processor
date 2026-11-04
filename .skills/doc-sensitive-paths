@@ -1,0 +1,41 @@
+# doc-check.sh sensitive paths for processor (#115). Replaces shipping-work's
+# defaults wholesale: one path per line, `#`-comments and blank lines ignored.
+# Entries match whole path SEGMENTS at any depth. Edit beside doc-sections, which
+# says where a hit sends you. tests/test_shipping_knobs.py fails on a dead entry.
+# No README.md, schema, Alembic or .env.example here: the defaults' are dropped.
+
+# Agent orientation; CLAUDE.md is `@AGENTS.md`.
+AGENTS.md
+CLAUDE.md
+
+# The co-core pin, the wheelhouse digests, the extraction stack (#71, #87).
+pyproject.toml
+uv.lock
+
+# Behaviour: the spec is the design of record. Goldens move only at a bump.
+src/
+tests/fixtures/parity/
+
+# Deploy and operator surface: units, the release script, the wheelhouse tools.
+deploy/
+scripts/
+
+# CI, its pins and Dependabot (DEPLOYMENT.md § CI pins and Dependabot).
+.github/
+
+# Skills, hooks and this gate's own knobs (docs/SKILLS.md). skills-vendor/ is
+# absent: the refresh bumps it with no doc consequence; .gitmodules stands in.
+skills/
+.claude/
+.gitmodules
+.githooks/
+merge_mode
+deploy_command
+doc-sensitive-paths
+doc-sections
+gate-stamp-inputs
+
+# Semantic search (docs/SOCRATICODE.md).
+.socraticode.json
+.socraticodecontextartifacts.json
+.socraticodeignore

@@ -1,0 +1,5 @@
+# Untracked inputs whose content joins the ship gate's pass stamp. Replaces the
+# default (.env) wholesale, so .env is named again: tests/test_child.py probes it.
+# .wheelhouse is git-ignored and decides which co-core `uv run` installs (#87).
+.env
+.wheelhouse/*

@@ -1,0 +1,4 @@
+# Work lands on main through a PR, never a local merge (#9). The merge itself is a
+# fast-forward push from the main checkout, never GitHub's buttons: docs/SKILLS.md
+# § Merging under pr (#115). Also moves the refresh hook onto one PR (skills#560).
+pr
