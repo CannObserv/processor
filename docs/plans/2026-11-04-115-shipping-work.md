@@ -8,7 +8,7 @@ status: per #115 (body, the coordinator's pre-flight, the implementer's correcti
 
 ## Problem
 
-Upstream folded the `shipping-work-*` variants into one `shipping-work` (gregoryfoster/skills#537). Processor is the last cohort repo still linked to `shipping-work-python-fastapi`. The doctor at `2026-11-03-1` repoints the link on its own; the docs and knobs have to follow.
+Upstream folded the `shipping-work-*` variants into one `shipping-work` (gregoryfoster/skills#537). Processor is the last cohort repo still linked to its FastAPI variant. The doctor at `2026-11-03-1` repoints the link on its own; the docs and knobs have to follow.
 
 `.skills/merge_mode pr` also moves the daily refresh hook onto a PR path (gregoryfoster/skills#560): it pushes `skills/submodule-refresh` and opens one PR with `gh`. Two things stop that here:
 1. `gh` has no token in the hook's environment. `GH_TOKEN` lives in `.env`, which nothing loads automatically, and SessionStart hooks run in parallel, so no export from another hook reaches it (#334, comment of 2026-09-28).

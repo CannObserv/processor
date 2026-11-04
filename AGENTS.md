@@ -65,12 +65,12 @@ find-links locks by filename, not hash, so each locked file's sha256 is pinned i
 
 ## Agent Skills
 
-`gregoryfoster/skills` and `obra/superpowers` vendored under `skills-vendor/`, symlinked into `skills/` (agentskills.io) and `.claude/skills/` (Claude Code). Symlinks dangle until the submodules are initialised: `bash .skills/doctor.sh`. A `SessionStart` hook bumps them daily on `main` and pushes. Inventory, refresh, worktrees: [docs/SKILLS.md](docs/SKILLS.md).
+`gregoryfoster/skills` and `obra/superpowers` vendored under `skills-vendor/`, symlinked into `skills/` (agentskills.io) and `.claude/skills/` (Claude Code). Symlinks dangle until the submodules are initialised: `bash .skills/doctor.sh`. A `SessionStart` hook proposes a daily bump as one PR. Inventory, refresh, worktrees, `.skills/` knobs: [docs/SKILLS.md](docs/SKILLS.md).
 
 ## Environment Files
 
 1. `/etc/processor/` (root, dir 700, files 600) — production: `.env` (`CO_PROCESSOR_*`, the broker credential), read by systemd, never by the service user; the GCS key and the Status key, handed over by `LoadCredential=` (#2, #35, #39). Managed by the operator. Commands needing it run as the service: `processor_cli` in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
-2. `.env` (repo root, git-ignored) — dev/agent secrets: `GH_TOKEN` (this repo), `GH_TOKEN_<REPO>` (sibling repos, read). **Never commit, never print values.**
+2. `.env` (repo root, git-ignored) — dev/agent secrets: `GH_TOKEN` (this repo; `.claude/hooks/gh-env.sh` exports it), `GH_TOKEN_<REPO>` (sibling repos, read). **Never commit, never print values.**
 
 Settings via pydantic-settings, prefix `CO_PROCESSOR_` — **never `os.getenv`**. Anything naming a shared external resource takes a service-prefixed name.
 
@@ -91,9 +91,9 @@ scripts/deploy.sh [<build>]              # ship: CI green, then build a release 
 
 ## Conventions
 
-**Commit messages:** `#<number> <type>: <description>` (or `<type>: <description>` without an issue). Types: feat, fix, refactor, docs, test, chore. **Shipping is `scripts/deploy.sh`** after the merge: it replaces the vendored shipping skill's "restart the service" step. What runs is `/srv/processor/live/REVISION`.
+**Commit messages:** `#<number> <type>: <description>` (or `<type>: <description>` without an issue). Types: feat, fix, refactor, docs, test, chore. **Ship** with `shipping-work`: `merge_mode` `pr`, and its deploy is `scripts/deploy.sh` (`deploy_command`). What runs is `/srv/processor/live/REVISION`.
 
-**Workflow:** every change is issue → branch → PR; never commit to `main` directly. Branch in a worktree (`using-git-worktrees`), not by switching this checkout: `scripts/deploy.sh` and the skills hook both run from it. Provisioning a worktree (venv, wheelhouse, submodules): [docs/SKILLS.md](docs/SKILLS.md#worktrees). The vendored ship/worktree skills' local merge to `main` does not apply here ([docs/SKILLS.md](docs/SKILLS.md)). Sole exception: the skills refresh hook's daily submodule bump. After a PR merges, `git pull --ff-only` in this checkout (while it lags `origin/main` the hook's push is rejected), then `scripts/deploy.sh` if the merge touched `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml` or `uv.lock` (the drift check alerts 8 h after such a push).
+**Workflow:** every change is issue → branch → PR; never commit to `main` directly. Branch in a worktree (`using-git-worktrees`), not by switching this checkout: `scripts/deploy.sh` and the skills hook both run from it. Provisioning a worktree (venv, wheelhouse, submodules): [docs/SKILLS.md](docs/SKILLS.md#worktrees). Merge by fast-forward push from this checkout ([docs/SKILLS.md](docs/SKILLS.md#merging-under-pr)); deploy only if the merge touched `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml` or `uv.lock` (the drift check alerts 8 h after such a push).
 
 **Logging:** structured JSON, one record per line, cohort four-key floor: `timestamp` (ISO 8601 UTC), `level`, `logger`, `message`. Every command outcome logs `command_id`, `info_source_id`, reason, timings and the command's digests (fields: spec §4).
 
