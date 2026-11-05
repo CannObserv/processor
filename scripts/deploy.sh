@@ -66,6 +66,9 @@ HOST_CONFIGS=(
   "apt/nodesource.sources=apt/sources.list.d/nodesource.sources"
   "apt/nodesource.pref=apt/preferences.d/nodesource.pref"
   "apt/tailscale.pref=apt/preferences.d/tailscale.pref"
+  "apt/apt.conf.d/processor-periodic=apt/apt.conf.d/processor-periodic"
+  "apt-daily.timer.d/processor-window.conf=systemd/system/apt-daily.timer.d/processor-window.conf"
+  "apt-daily-upgrade.timer.d/processor-window.conf=systemd/system/apt-daily-upgrade.timer.d/processor-window.conf"
   "needrestart.conf.d/processor.conf=needrestart/conf.d/processor.conf"
   "disk-gc/disk-gc.conf=cannobserv/disk-gc/disk-gc.conf"
 )

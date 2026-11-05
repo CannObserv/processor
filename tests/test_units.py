@@ -161,6 +161,9 @@ HOST_CONFIGS = {
     "apt/tailscale.pref",
     "needrestart.conf.d/processor.conf",
     "disk-gc/disk-gc.conf",
+    "apt/apt.conf.d/processor-periodic",
+    "apt-daily.timer.d/processor-window.conf",
+    "apt-daily-upgrade.timer.d/processor-window.conf",
 }
 SCRIPTS = {"nodesource.sh"}
 

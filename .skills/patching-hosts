@@ -3,7 +3,13 @@
 # Times are UTC. A malformed line makes the host report-only until fixed.
 
 class production
-posture scheduled
+# automatic (#113, operator 2026-11-03): unattended-upgrades takes -security daily
+# (apt-daily-upgrade.timer, moved to 13:00 + 60 m UTC, clear of the window), with no
+# restart and no reboot. The maintenance lane (-updates, the followed origins, the
+# held steps, any reboot or restart due) stays the attended run, in the window,
+# weekly. Host files: deploy/apt/apt.conf.d/, deploy/apt-daily*.timer.d/.
+posture automatic
+cadence weekly
 
 # --- when -----------------------------------------------------------------
 # The owner's weekly window, Monday night Pacific (operator, 2026-10-26):

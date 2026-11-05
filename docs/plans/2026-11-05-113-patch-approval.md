@@ -1,7 +1,7 @@
 ---
 title: Patching — `automatic` for -security (A), a Status "patch due" check (B) (#113)
 date: 2026-11-05
-status: draft — per #113 (body; the coordinator's brief of 2026-11-03 and its addendum of 2026-11-05; the implementer's corrections, posted on #113 before building)
+status: approved by the operator 2026-11-05 (timer times and alert-at-open as recommended) — per #113 (body; the coordinator's brief of 2026-11-03 and its addendum of 2026-11-05; the implementer's corrections, posted on #113 before building)
 ---
 
 # Patching: `automatic` for -security, and a "patch due" check

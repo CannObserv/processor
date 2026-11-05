@@ -771,12 +771,16 @@ Log a flap on the epic as: the window (first WARNING to the first `ack: complete
 
 ## Patching
 
-Posture **`scheduled`** (#77), under gregoryfoster/skills `patching-hosts` ([skills/patching-hosts](../skills/patching-hosts/SKILL.md)), read from the knob [.skills/patching-hosts](../.skills/patching-hosts). The owner approves a run **every week**, in **`Tue 05:00–10:00` UTC**: Monday night Pacific, 21:00–02:00 PST or 22:00–03:00 PDT (operator, 2026-10-26). That is more often than the skill's policy.md, which has `scheduled` hosts run once a month; there's no knob directive for the cadence, so this is a declared deviation. The window opens as the broker's closes (`Mon 23:00–05:00`, CannObserv/broker#67). Both VMs hold the bus link, so the hosts never patch at once and a flap stays attributable to one host. Each run is approved in this repo's session, like the first.
+Posture **`automatic`** since #113 (operator, 2026-11-03; `scheduled` from #77), under gregoryfoster/skills `patching-hosts` ([skills/patching-hosts](../skills/patching-hosts/SKILL.md)), read from the knob [.skills/patching-hosts](../.skills/patching-hosts). Two lanes (the skill's policy.md):
 
-The apt timers stay masked and `APT::Periodic::Enable` stays 0 (both from the image). Both lanes run in the window: security plus `-updates` plus the followed origins, `--lane maintenance`. **Never a bare `apt-get upgrade`:** it takes every origin. The skill's [run.md](../skills/patching-hosts/references/run.md) is the procedure; this section is what is particular to this host.
+- **Security, daily and unattended.** `apt-daily-upgrade.timer` runs `unattended-upgrade` on `-security` (and the release pocket and ESM security, its stock origins) at **13:00 + up to 60 min UTC**, with needrestart listing restarts and performing none, and `Automatic-Reboot "false"`. Nothing restarts `processor` and nothing reboots: a maintainer script's own restart still happens (the scratch `redis-server`'s). A `-security` libssl or libc leaves the service on the old library until the next deploy, attended run or reboot: the attended run's step 6 picks it up.
+- **Maintenance, weekly and attended** (`cadence weekly`). The owner approves a run **every week**, in **`Tue 05:00–10:00` UTC**: Monday night Pacific, 21:00–02:00 PST or 22:00–03:00 PDT (operator, 2026-10-26). It takes the security lane's set plus `-updates` plus the followed origins, `--lane maintenance`, and any reboot or restart due. The window opens as the broker's closes (`Mon 23:00–05:00`, CannObserv/broker#67). Both VMs hold the bus link, so the hosts never patch at once and a flap stays attributable to one host. Each run is approved in this repo's session, like the first.
+
+**The timers are moved, not only unmasked.** `apply.sh` refuses any step whose span meets `apt-daily-upgrade.timer`'s range, its calendar time plus its random delay, and refuses while either apt service runs. The stock `06:00` + 60 min sits inside the window, so the drop-ins below move it to 13:00, and `apt-daily.timer` (stock: any hour) to 12:00 + 30 min, before it. `tests/test_apt_automatic.py` holds both outside every knob window: a window change that meets them fails CI. **Never a bare `apt-get upgrade`:** it takes every origin. The skill's [run.md](../skills/patching-hosts/references/run.md) is the procedure; this section is what is particular to this host.
 
 | Knob line | Why |
 |---|---|
+| `posture automatic`, `cadence weekly` | The security lane is the apt timers'; the maintenance lane is the weekly attended run in the `window` |
 | `service processor.service` | The reboot chain stops it. `--post-boot` checks its first start and `NRestarts` |
 | `inflight pgrep … processor\._child` | An extraction in progress. The chain checks it again before it stops anything |
 | `health` ×2 | The unit is active, and nothing at `-p warning` in 6 min ([§ Operate → Logs](#operate); valid since #76) |
@@ -792,6 +796,9 @@ The apt timers stay masked and `APT::Periodic::Enable` stays 0 (both from the im
 |---|---|---|
 | [deploy/needrestart.conf.d/processor.conf](../deploy/needrestart.conf.d/processor.conf) | `/etc/needrestart/conf.d/` | `$nrconf{restart} = 'l'`: apt's hook lists restarts and performs none. With it unset, Ubuntu mode restarts `processor` by itself after a libssl update (its `python3.12` maps the library). `tailscaled` is static Go and maps none; only its own postinst restarts it, in the held `tailscale` step. `NEEDRESTART_MODE=l` is now a backup, not the guard |
 | [deploy/apt/tailscale.pref](../deploy/apt/tailscale.pref) | `/etc/apt/preferences.d/` | Scopes the followed origin to `tailscale` and its keyring (policy.md) |
+| [deploy/apt/apt.conf.d/processor-periodic](../deploy/apt/apt.conf.d/processor-periodic) | `/etc/apt/apt.conf.d/` | `APT::Periodic::Enable "1"` and `Automatic-Reboot "false"` (#113). The name sorts after the image's `docker-disable-periodic-update`, which sets 0: apt reads the directory in name order, so a `99…` name would lose |
+| [deploy/apt-daily-upgrade.timer.d/processor-window.conf](../deploy/apt-daily-upgrade.timer.d/processor-window.conf) | `/etc/systemd/system/apt-daily-upgrade.timer.d/` | 13:00 + 60 min UTC, clear of the window (above) |
+| [deploy/apt-daily.timer.d/processor-window.conf](../deploy/apt-daily.timer.d/processor-window.conf) | `/etc/systemd/system/apt-daily.timer.d/` | 12:00 + 30 min UTC: the lists, before the upgrade |
 
 Install once, **before any apt run**, from the deploy checkout's root, after `git pull --ff-only` (until then it lags `origin/main` and has neither file):
 
@@ -800,8 +807,16 @@ sudo install -m 644 deploy/needrestart.conf.d/processor.conf /etc/needrestart/co
 sudo needrestart -m u -b -r l    # "Disabling Ubuntu mode, explicit restart mode configured"; never without -r l
 sudo install -m 644 deploy/apt/tailscale.pref /etc/apt/preferences.d/tailscale.pref
 sudo tailscale set --auto-update=false   # the tailnet's switch is off (broker#67); this is the node's own
-uv run pytest tests/test_needrestart.py tests/test_tailscaled.py   # on the node, the installed and live tests run and pass
+# posture automatic (#113): the files first, then the timers
+sudo install -m 644 deploy/apt/apt.conf.d/processor-periodic /etc/apt/apt.conf.d/processor-periodic
+sudo install -D -m 644 deploy/apt-daily.timer.d/processor-window.conf /etc/systemd/system/apt-daily.timer.d/processor-window.conf
+sudo install -D -m 644 deploy/apt-daily-upgrade.timer.d/processor-window.conf /etc/systemd/system/apt-daily-upgrade.timer.d/processor-window.conf
+sudo systemctl unmask apt-daily.timer apt-daily-upgrade.timer && sudo systemctl daemon-reload
+sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer   # unattended-upgrades.service (the shutdown hook) stays masked
+uv run pytest tests/test_needrestart.py tests/test_tailscaled.py tests/test_apt_automatic.py   # on the node, the installed and live tests run and pass
 ```
+
+The first unattended run reads in `journalctl -u apt-daily-upgrade` and `/var/log/unattended-upgrades/unattended-upgrades.log` (root). No apt timer had a stamp under `/var/lib/systemd/timers/` at the switch, so `Persistent=true` fired nothing on enabling. **To go back to `scheduled`:** `sudo systemctl disable --now` and `mask` both timers, remove `processor-periodic`, and set the knob's `posture`.
 
 **The probe escalates by itself.** `probe.sh` runs its root readings through `sudo -n` whenever that works, without asking. So every run, including `--dry-run-into` and `--post-boot`, is a sudo step and needs the owner's approval. For a non-root read, put a `sudo` that exits 1 first on `PATH`; the root readings then land in its `not_read`.
 
@@ -815,12 +830,12 @@ uv run pytest tests/test_needrestart.py tests/test_tailscaled.py   # on the node
    - `redis`: the scratch server restarts;
    - `docker`: `containerd`. Docker and containerd are disabled and inactive here, so nothing is running to restart;
    - `tailscale`, if pending: a 2.3 s tailnet blip, sockets survive ([§ Tailnet flaps](#tailnet-flaps), "A tailscaled restart here").
-6. The reboot decision: `sudo needrestart -b -r l` and `sudo grep -c '(deleted)' /proc/1/maps`. The kernel never decides one on exe.dev. Expect a reboot when `systemd` or `libsystemd0` is in the set: after those families, needrestart listed dbus and logind on co-broker and co-status, and PID 1 mapped deleted files.
+6. The reboot and restart decision, from the host, never from this run's set: under `automatic` a `-security` library may have landed any day since the last run. `sudo needrestart -b -r l` and `sudo grep -c '(deleted)' /proc/1/maps`. The kernel never decides one on exe.dev. Expect a reboot when `systemd` or `libsystemd0` is in the set: after those families, needrestart listed dbus and logind on co-broker and co-status, and PID 1 mapped deleted files.
 7. The reboot: `reboot-chain.sh --run <run>` prints the chain; `--approve` launches it. It stops `processor` (up to `TimeoutStopSec=240`), then reboots in-guest. **Never `exe.dev restart`**: that is a hard reset (#83).
 8. After it: `probe.sh --post-boot --run <run>`, § Tailscale DNS → *Check after a reboot*, `NRestarts=0`, and drift and liveness `ok` in Status. The disk sensor's first tick after boot logs `checked in ok (ok): HTTP 202` within 10 min ([§ Disk GC](#disk-gc)). Read `journalctl -u processor -p warning --since <window start>` raw (systemd's own lines, such as a failed stop) and through `-o cat | jq -cR 'fromjson? | …'`. A crash is `PRIORITY=6`, so check `NRestarts` too.
 9. The after-probe, last, after the reboot or the no-reboot restart below: `probe.sh --refresh-into <dir>`. It is what's left pending, by class, for the record, and the only step that audits the live `uv.lock` (`pending.language`). The dry run and `--post-boot` never ask OSV ([§ The lock audit](#the-lock-audit)).
 
-**With no reboot,** restart the service anyway after a libssl update: `/usr/bin/python3.12`'s `_ssl` links the system `libssl.so.3`, so the old library stays mapped until a restart. `sudo grep -c 'libssl.so.3 (deleted)' /proc/$(systemctl show -p MainPID --value processor)/maps` must read 0 afterwards.
+**With no reboot,** restart the service anyway when needrestart lists it, or after a libssl update by either lane: `/usr/bin/python3.12`'s `_ssl` links the system `libssl.so.3`, so the old library stays mapped until a restart. `sudo grep -c 'libssl.so.3 (deleted)' /proc/$(systemctl show -p MainPID --value processor)/maps` must read 0 afterwards.
 
 **Liveness's grace** is 900 s. The heartbeat ticks as soon as the service starts, so the silence is at most the time since the last tick (300 s), plus the stop (240 s), plus the boot. That stays inside the grace, so Status needs a warning only if a step stalls.
 
@@ -929,7 +944,7 @@ bash deploy/nodesource.sh check          # exit 0 in sync (a pending update is a
 
 ### Patching Node
 
-The host's posture is `scheduled` ([§ Patching](#patching)), so nothing updates Node on its own. NodeSource ships security fixes in its own repo, never `noble-security`, so its policy is **follow**: `nodejs` rides the weekly maintenance lane. Never a bare `apt-get upgrade`.
+unattended-upgrades takes Ubuntu's security origins alone ([§ Patching](#patching)), so nothing updates Node on its own. NodeSource ships security fixes in its own repo, never `noble-security`, so its policy is **follow**: `nodejs` rides the weekly maintenance lane. Never a bare `apt-get upgrade`.
 
 **Select it by host, not by origin.** NodeSource's Release file says `Origin: . nodistro`, aptly's default, which every aptly-published `nodistro` repo shares. So the knob names the site, `origin deb.nodesource.com follow` (a value holding a dot is read as a site: the skill's knob.md), and the lane's `APT_CONFIG` takes:
 

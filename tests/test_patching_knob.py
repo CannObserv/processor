@@ -58,7 +58,9 @@ def test_the_knob_reads_clean() -> None:
     assert knob["findings"] == []
     assert knob["report_only"] is False, knob["report_only_reasons"]
     assert knob["class"]["value"] == "production"
-    assert knob["posture"]["value"] == "scheduled"
+    assert knob["posture"]["value"] == "automatic"
+    assert knob["cadence"] == {"value": "weekly", "line": knob["cadence"]["line"]}
+    assert knob["cadence"]["line"] is not None, "cadence is stated, not defaulted"
 
 
 def test_the_window_is_the_owners() -> None:
