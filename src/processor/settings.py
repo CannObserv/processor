@@ -100,3 +100,17 @@ class DriftSettings(StatusSettings):
     # co-processor-drift's id (CannObserv/status#24), set in
     # deploy/processor-drift.service.
     drift_monitor_id: str = Field(default="", pattern=_MONITOR_ID)
+
+
+class PatchingSettings(StatusSettings):
+    """``processor patching``'s knobs (#113): Status, the monitor, the credentials
+    directory, and the knob the window is read from.
+
+    Apart from :class:`Settings`, so the patching unit never needs the broker credential.
+    """
+
+    # co-processor-patching's id (CannObserv/status, #113), set in
+    # deploy/processor-patching.service.
+    patching_monitor_id: str = Field(default="", pattern=_MONITOR_ID)
+    # The release's own knob, relative to the unit's WorkingDirectory=, the release.
+    patching_knob: Path = Path(".skills/patching-hosts")

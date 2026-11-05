@@ -11,6 +11,7 @@ stubs (``tests/conftest.py``), never the network.
 import json
 import logging
 import os
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -97,10 +98,27 @@ class TestCounts:
             "scripts/deploy.sh",
             "pyproject.toml",
             "uv.lock",
+            ".skills/patching-hosts",
         ],
     )
     def test_what_runs_counts(self, path):
         assert counts(path)
+
+    def test_the_docs_name_every_runtime_path(self):
+        """AGENTS.md's deploy rule and DEPLOYMENT.md § Deploy a change say the list;
+        it is defined here once, so a path added here and not there fails."""
+        root = Path(__file__).resolve().parent.parent
+        rule = re.search(
+            r"deploy only if the merge touched (.+?) \(", (root / "AGENTS.md").read_text()
+        )
+        deploy = re.search(
+            r"A merge that changes nothing under (.+?) needs no deploy",
+            (root / "docs" / "DEPLOYMENT.md").read_text(),
+        )
+        assert rule and deploy
+        for path in (*drift.RUNTIME_DIRS, *drift.RUNTIME_FILES):
+            assert f"`{path}`" in rule[1], path
+            assert f"`{path}`" in deploy[1], path
 
     @pytest.mark.parametrize(
         "path",

@@ -263,11 +263,12 @@ def _first_counting(get: Get, live: str, found: list[Push], now: datetime) -> Pu
     return found[min(WALK_LIMIT, len(found) - 1)]
 
 
-def github(api: str | None = None) -> Get:
+def github(api: str | None = None, *, expect: type = Mapping) -> Get:
     """A ``get`` for :func:`assess`: GitHub's REST API, no call started past one deadline.
 
-    Raises :class:`GitHubSilent` for anything but a JSON object: a refusal (with
-    GitHub's message), an error page, a timeout, an empty or wrong-shaped 200.
+    Raises :class:`GitHubSilent` for anything but a JSON object (*expect* ``list``: a
+    JSON array, as :mod:`processor.patching` reads): a refusal (with GitHub's message),
+    an error page, a timeout, an empty or wrong-shaped 200.
     """
     base = (api or GITHUB_API).rstrip("/")
     deadline = time.monotonic() + CHECK_TIMEOUT_SECONDS
@@ -295,8 +296,9 @@ def github(api: str | None = None) -> Get:
             answer = response.json()
         except ValueError:
             answer = None
-        if not isinstance(answer, Mapping):
-            raise GitHubSilent(f"{response.status_code}, not a JSON object")
+        if not isinstance(answer, expect):
+            shape = "array" if expect is list else "object"
+            raise GitHubSilent(f"{response.status_code}, not a JSON {shape}")
         return answer
 
     return get

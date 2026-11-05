@@ -9,13 +9,15 @@ from pathlib import Path
 
 import pytest
 
-from processor.settings import DriftSettings, Settings
+from processor.settings import DriftSettings, PatchingSettings, Settings
 
 DEPLOY = Path(__file__).resolve().parent.parent / "deploy"
 SERVICE = DEPLOY / "processor.service"
 DRIFT = DEPLOY / "processor-drift.service"
 DRIFT_TIMER = DEPLOY / "processor-drift.timer"
-SERVICES = (SERVICE, DRIFT)
+PATCHING = DEPLOY / "processor-patching.service"
+PATCHING_TIMER = DEPLOY / "processor-patching.timer"
+SERVICES = (SERVICE, DRIFT, PATCHING)
 
 
 def _directives(path: Path) -> list[tuple[str, str]]:
@@ -151,9 +153,70 @@ class TestTheDriftUnits:
         assert _one("WantedBy", DRIFT_TIMER) == "timers.target"
 
 
+class TestThePatchingUnits:
+    """``processor-patching.{service,timer}`` (#113): hourly, on the hour, drift's shape."""
+
+    def test_a_oneshot_of_the_live_releases_entry_point_as_the_service_user(self) -> None:
+        assert _one("Type", PATCHING) == "oneshot"
+        assert (_one("User", PATCHING), _one("Group", PATCHING)) == ("processor", "processor")
+        # The release: its .skills/patching-hosts is the knob the window is read from.
+        assert _one("WorkingDirectory", PATCHING) == "/srv/processor/live"
+        assert _one("ExecStart", PATCHING) == "/srv/processor/live/.venv/bin/processor patching"
+
+    def test_it_names_co_processor_patching(self) -> None:
+        # The monitor's id, posted on CannObserv/status: not a secret. PatchingSettings
+        # must accept it, or `processor patching` exits 2 every hour.
+        (env,) = _all("Environment", PATCHING)
+        name, _, value = env.partition("=")
+        assert name == "CO_PROCESSOR_PATCHING_MONITOR_ID"
+        assert PatchingSettings(patching_monitor_id=value).patching_monitor_id == value
+
+    def test_it_never_reads_the_broker_credential(self) -> None:
+        assert _all("EnvironmentFile", PATCHING) == []
+
+    def test_the_status_key_is_drifts_credential_with_an_empty_fallback(self) -> None:
+        assert _one("LoadCredential", PATCHING) == _one("LoadCredential", DRIFT)
+        assert _one("SetCredential", PATCHING) == "status-checkin-key:\\n"
+
+    def test_bounded_and_never_restarted(self) -> None:
+        assert _one("TimeoutStartSec", PATCHING) == "90"
+        assert _all("Restart", PATCHING) == []
+
+    def test_it_is_started_by_its_timer_alone(self) -> None:
+        assert "[Install]" not in PATCHING.read_text()
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("NoNewPrivileges", "yes"),
+            ("PrivateTmp", "yes"),
+            ("ProtectSystem", "strict"),
+            ("ProtectHome", "yes"),
+        ],
+    )
+    def test_hardening(self, key: str, value: str) -> None:
+        assert _one(key, PATCHING) == value
+
+    def test_the_timer_runs_it_on_the_hour(self) -> None:
+        # Status's monitor expects a check-in every 3600 s. On the hour, so a window
+        # that opens on one alerts within a minute; not Persistent: the next hour is
+        # the catch-up, and a boot's first run is OnBootSec's.
+        assert _one("Unit", PATCHING_TIMER) == "processor-patching.service"
+        assert _one("OnCalendar", PATCHING_TIMER) == "*-*-* *:00:30"
+        assert _one("OnBootSec", PATCHING_TIMER) == "5min"
+        assert _all("Persistent", PATCHING_TIMER) == []
+        assert _one("WantedBy", PATCHING_TIMER) == "timers.target"
+
+
 # What deploy.sh does with each file under deploy/: installs a unit, compares a host
 # config (HOST_CONFIGS in scripts/deploy.sh), or nothing (a script run by hand).
-UNITS = {"processor.service", "processor-drift.service", "processor-drift.timer"}
+UNITS = {
+    "processor.service",
+    "processor-drift.service",
+    "processor-drift.timer",
+    "processor-patching.service",
+    "processor-patching.timer",
+}
 HOST_CONFIGS = {
     "tailscaled.service.d/90-processor-oom.conf",
     "apt/nodesource.sources",

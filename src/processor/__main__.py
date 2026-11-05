@@ -1,6 +1,6 @@
 """``processor run`` — the service, with its liveness check-in; ``processor ensure-group``
 — the hard ordering; ``processor dlq list|show|drop`` — the drainer; ``processor drift``
-— the drift check."""
+— the drift check; ``processor patching`` — the patch-due check."""
 
 import argparse
 import asyncio
@@ -17,7 +17,7 @@ from co_core_aio.bus import AsyncBusPublisher
 from pydantic import ValidationError
 from redis.asyncio import Redis
 
-from processor import dlq, drift
+from processor import dlq, drift, patching
 from processor._contain import landlock_abi, make_undumpable, unavailable_reason
 from processor.build import build_id
 from processor.checkin import CREDENTIAL_NAME, CheckinFailed, post_checkin, read_key
@@ -28,7 +28,7 @@ from processor.liveness import Heartbeat
 from processor.logging import configure_logging
 from processor.processors import TRANSFORMS
 from processor.processors.extract import PROCESSOR_VERSION
-from processor.settings import DriftSettings, Settings
+from processor.settings import DriftSettings, PatchingSettings, Settings, StatusSettings
 from processor.stores import build_stores
 
 logger = logging.getLogger("processor")
@@ -66,17 +66,27 @@ def main(argv: list[str] | None = None) -> int:
     drift_parser.add_argument(
         "--test-alert", action="store_true", help="send one test alert, asking GitHub nothing"
     )
+    patching_parser = commands.add_parser(
+        "patching",
+        help="check once whether this week's patch run is recorded, and check in to Status (#113)",
+    )
+    patching_parser.add_argument(
+        "--test-alert", action="store_true", help="send one test alert, asking GitHub nothing"
+    )
     args = parser.parse_args(argv)
 
     configure_logging()
+    settings_of = {"drift": DriftSettings, "patching": PatchingSettings}
     try:
-        settings = DriftSettings() if args.command == "drift" else Settings()
+        settings = settings_of.get(args.command, Settings)()
     except ValidationError as exc:
         errors = exc.errors(include_url=False, include_input=False)
         logger.error("invalid settings", extra={"errors": errors})
         return 2
     if args.command == "drift":
         return _drift(settings, test_alert=args.test_alert)
+    if args.command == "patching":
+        return _patching(settings, test_alert=args.test_alert)
     if args.command == "run":
         return asyncio.run(_run(settings))
     if args.command == "ensure-group":
@@ -96,37 +106,81 @@ def _drift(settings: DriftSettings, *, test_alert: bool) -> int:
     else:
         verdict = drift.assess(live, now=datetime.now(UTC), get=drift.github())
     fields = {"build": live, "main": verdict.main, "kind": verdict.kind, "body": verdict.body}
+    return _check_in(
+        "drift check",
+        fields,
+        verdict,
+        settings,
+        ("CO_PROCESSOR_DRIFT_MONITOR_ID", settings.drift_monitor_id),
+    )
+
+
+def _patching(settings: PatchingSettings, *, test_alert: bool) -> int:
+    """One patch-due check, one check-in, one ``patching check`` record (#113).
+
+    Exit 0 when Status took the check-in, ok or alert; 1 when there was none to send
+    (GitHub silent) or Status did not take it. A knob that can't be read is an alert.
+    """
+    if test_alert:
+        verdict = patching.deliberate_alert()
+    else:
+        try:
+            knob = settings.patching_knob.read_text()
+        except OSError as exc:
+            knob = f"[unreadable: {type(exc).__name__}]"
+        verdict = patching.assess(
+            knob,
+            now=datetime.now(UTC),
+            get=drift.github(patching.GITHUB_API, expect=list),
+        )
+    fields = {
+        "window": verdict.window,
+        "record": verdict.record,
+        "kind": verdict.kind,
+        "body": verdict.body,
+    }
+    return _check_in(
+        "patching check",
+        fields,
+        verdict,
+        settings,
+        ("CO_PROCESSOR_PATCHING_MONITOR_ID", settings.patching_monitor_id),
+    )
+
+
+def _check_in(
+    message: str,
+    fields: dict[str, str],
+    verdict: drift.Verdict | patching.Verdict,
+    settings: StatusSettings,
+    monitor: tuple[str, str],
+) -> int:
+    """Send *verdict* to the *monitor* (its variable's name and id) and log one *message*
+    record. Exit 0 when Status took it; 1 when there was none to send or it was refused."""
     if verdict.status is None:
-        logger.warning("drift check", extra=fields | {"checkin": None})
+        logger.warning(message, extra=fields | {"checkin": None})
         return 1
     key = read_key(settings.credentials_directory)
     missing = [
-        name
-        for name, value in (
-            ("CO_PROCESSOR_DRIFT_MONITOR_ID", settings.drift_monitor_id),
-            (f"the {CREDENTIAL_NAME} credential", key),
-        )
-        if not value
+        name for name, value in (monitor, (f"the {CREDENTIAL_NAME} credential", key)) if not value
     ]
     if missing:
-        logger.error(
-            "drift check", extra=fields | {"checkin": f"not sent: missing {', '.join(missing)}"}
-        )
+        logger.error(message, extra=fields | {"checkin": f"not sent: missing {', '.join(missing)}"})
         return 1
     try:
         code = post_checkin(
             settings.status_url,
-            settings.drift_monitor_id,
+            monitor[1],
             key,
             verdict.status,
             verdict.variables(),
             metadata=verdict.metadata(),
         )
     except CheckinFailed as exc:
-        logger.error("drift check", extra=fields | {"checkin": f"failed: {exc}"})
+        logger.error(message, extra=fields | {"checkin": f"failed: {exc}"})
         return 1
     level = logging.INFO if verdict.status == "ok" else logging.WARNING
-    logger.log(level, "drift check", extra=fields | {"checkin": code})
+    logger.log(level, message, extra=fields | {"checkin": code})
     return 0
 
 

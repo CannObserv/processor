@@ -138,7 +138,11 @@ def test_the_language_read_finds_the_live_lock() -> None:
         for line in unit.read_text().splitlines()
         if line.startswith("WorkingDirectory=")
     }
-    assert set(dirs) == {"processor.service", "processor-drift.service"}
+    assert set(dirs) == {
+        "processor.service",
+        "processor-drift.service",
+        "processor-patching.service",
+    }
     assert set(dirs.values()) == {live}, dirs
     assert [path for path, _ in _named("owner")] == [live]
 
