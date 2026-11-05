@@ -816,7 +816,7 @@ sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer   # unattend
 uv run pytest tests/test_needrestart.py tests/test_tailscaled.py tests/test_apt_automatic.py   # on the node, the installed and live tests run and pass
 ```
 
-The first unattended run reads in `journalctl -u apt-daily-upgrade` and `/var/log/unattended-upgrades/unattended-upgrades.log` (root). No apt timer had a stamp under `/var/lib/systemd/timers/` at the switch, so `Persistent=true` fired nothing on enabling. **To go back to `scheduled`:** `sudo systemctl disable --now` and `mask` both timers, remove `processor-periodic`, and set the knob's `posture`.
+The first unattended run reads in `journalctl -u apt-daily-upgrade` and `/var/log/unattended-upgrades/unattended-upgrades.log` (root). No apt timer has a stamp under `/var/lib/systemd/timers/` (measured 2026-11-05), so `Persistent=true` has no missed run to catch up: enabling fires nothing, and the first run is the next 13:00. **To go back to `scheduled`:** `sudo systemctl disable --now` and `mask` both timers, remove `processor-periodic`, and set the knob's `posture`.
 
 **The probe escalates by itself.** `probe.sh` runs its root readings through `sudo -n` whenever that works, without asking. So every run, including `--dry-run-into` and `--post-boot`, is a sudo step and needs the owner's approval. For a non-root read, put a `sudo` that exits 1 first on `PATH`; the root readings then land in its `not_read`.
 
