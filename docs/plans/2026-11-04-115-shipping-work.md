@@ -12,7 +12,7 @@ Upstream folded the `shipping-work-*` variants into one `shipping-work` (gregory
 
 `.skills/merge_mode pr` also moves the daily refresh hook onto a PR path (gregoryfoster/skills#560): it pushes `skills/submodule-refresh` and opens one PR with `gh`. Two things stop that here:
 1. `gh` has no token in the hook's environment. `GH_TOKEN` lives in `.env`, which nothing loads automatically, and SessionStart hooks run in parallel, so no export from another hook reaches it (#334, comment of 2026-09-28).
-2. The hook takes `--repo` from the configured remote URL. Ours is the SSH alias `git@github-processor:…`, so `gh` dials host `github-processor` and fails. That is an upstream bug. The workaround is local config, and it needs the operator's approval.
+2. The hook takes `--repo` from the configured remote URL. Ours is the SSH alias `git@github-processor:…`, so `gh` dials host `github-processor` and fails. That is an upstream bug. Workaround, approved by the operator on 2026-11-05: drop the `git@` from origin (`github-processor:CannObserv/processor.git`, as archiver has it), so the hook omits `--repo` (docs/SKILLS.md § Refresh).
 
 ## Approach
 
