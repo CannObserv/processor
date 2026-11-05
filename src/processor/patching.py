@@ -54,6 +54,9 @@ PER_PAGE = 100
 PAGE_LIMIT = 3
 
 DAY = 24 * 60
+#: How far back an opening is looked for: a ``#5`` window, which most months lack,
+#: opens up to 119 days after the last (every weekday, 2026-2040).
+LOOKBACK_DAYS = 120
 _DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _WEEKDAY = re.compile(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:#([1-5]))?")
 _DATE = re.compile(r"\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])")
@@ -162,10 +165,11 @@ def parse_windows(text: str) -> list[Window]:
 def opening(windows: list[Window], now: datetime) -> Opening:
     """The latest opening of any of *windows* at or before *now*.
 
-    Looks back 35 days, so a ``#5`` week, which some months lack, is still found.
+    Looks back :data:`LOOKBACK_DAYS`, so a ``#5`` week, which most months lack, is
+    still found.
     """
     found: list[Opening] = []
-    for back in range(36):
+    for back in range(LOOKBACK_DAYS + 1):
         day = (now - timedelta(days=back)).date()
         for window in windows:
             if not window.opens_on(day):
@@ -175,7 +179,7 @@ def opening(windows: list[Window], now: datetime) -> Opening:
                 found.append(Opening(start, start + timedelta(minutes=window.end - window.start)))
         if found:
             return max(found, key=lambda o: o.start)
-    raise KnobUnreadable("no window opened in the last 35 days")
+    raise KnobUnreadable(f"no window opened in the last {LOOKBACK_DAYS} days")
 
 
 def is_record(comment: Mapping, since: datetime) -> bool:

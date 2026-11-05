@@ -217,6 +217,12 @@ class TestOpening:
             2026, 10, 11, 5, 0, tzinfo=UTC
         )
 
+    def test_a_fifth_week_window_across_the_months_without_one(self):
+        """CR 1: ``Sun#5`` opened 2026-08-30, then not until 2026-11-29: 91 days."""
+        windows = parse_windows("window Sun#5 05:00-10:00\n")
+        now = datetime(2026, 11, 28, tzinfo=UTC)
+        assert opening(windows, now).start == datetime(2026, 8, 30, 5, 0, tzinfo=UTC)
+
     def test_the_latest_of_two_windows(self):
         windows = parse_windows(TUE + "window Fri 05:00-10:00\n")
         now = datetime(2026, 11, 13, 6, 0, tzinfo=UTC)
