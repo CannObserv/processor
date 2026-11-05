@@ -135,9 +135,10 @@ CO_PROCESSOR_BUS_URL=redis://processor:<password>@broker:6379/0
 - **The GCS key** is `/etc/processor/co-gcs-processor-writer.json`. The unit loads it with `LoadCredential=gcs-writer-key:…` and sets `GOOGLE_APPLICATION_CREDENTIALS=%d/gcs-writer-key`, which is `/run/credentials/processor.service/gcs-writer-key`.
 - **Keep `GOOGLE_APPLICATION_CREDENTIALS` out of `.env`.** `EnvironmentFile=` overrides `Environment=`, so a leftover line would point the service back at the root-only key path, and the preflight would fail.
 - **The service user can read the credentials directory, and so can the child.** Landlock refuses it to the child (§ Containment).
-- **The Status key** is `/etc/processor/status-checkin.key`. Both units load it as `LoadCredential=status-checkin-key:…`:
+- **The Status key** is `/etc/processor/status-checkin.key`. Each unit that checks in loads it as `LoadCredential=status-checkin-key:…`:
   - `processor-drift.service`, which reads no `.env`, so the drift check never holds the broker credential (§ The drift check);
-  - `processor.service`, since #39, for the liveness check-in (§ Liveness). Landlock refuses it to the child, as it refuses the GCS key.
+  - `processor.service`, since #39, for the liveness check-in (§ Liveness). Landlock refuses it to the child, as it refuses the GCS key;
+  - `processor-patching.service`, since #113, which reads no `.env` either (§ The patch-due check).
 
 A command that needs the service's settings runs as the service, through systemd. Don't load the file into a shell:
 
@@ -841,9 +842,37 @@ The first unattended run reads in `journalctl -u apt-daily-upgrade` and `/var/lo
 
 **Deploys don't wait for a window** (operator, 2026-10-26, #77). The skill's policy.md says a deploy that restarts a declared `service` takes one (gregoryfoster/skills#366). Here `scripts/deploy.sh` runs after each merge, as before: it restarts `processor` alone, verifies the new build and switches back on failure ([§ Deploy a change](#deploy-a-change-scriptsdeploysh)). A merge that lands during a window is deployed after the post-boot checks, so a flap stays attributable.
 
-**The record** goes on the issue (`records CannObserv/processor`), per run.md §7, and ends with the next window's date. What each run leaves pending, by class, comes from step 9 and includes:
+**The record** goes on the issue (`records CannObserv/processor`), per run.md §7, and ends with the next window's date. **Its first line is `## Patch run record: co-processor`**, then anything (a date, the lane), posted by an `OWNER` or `MEMBER`: that line is what [§ The patch-due check](#the-patch-due-check) reads as this week's run, a nothing-pending run's included. A run that can't take its window still posts one, saying why, or the monitor stays `missed` until the next. What each run leaves pending, by class, comes from step 9 and includes:
 - **Ubuntu Pro / ESM:** Pro isn't attached, and 25 esm-apps updates were visible on 2026-10-26.
 - **Language:** `/srv/processor/live/uv.lock`, its OSV advisory count, owner `self`. Run.md §7 asks for the owning repo's update mechanism; here that is `audit.yml`, report-only ([§ The lock audit](#the-lock-audit)). Dependabot's version updates cover Actions only, never `uv.lock`, and its security updates fail on the private wheelhouse without opening anything ([§ CI pins and Dependabot](#ci-pins-and-dependabot)). A count above 0 goes to that section's "Where a finding goes" and is linked from the record. A tree listed as not audited, or the class in `not_read`, is recorded as no read, never as 0.
+
+### The patch-due check
+
+`processor patching`, hourly on the hour from `processor-patching.timer` (#113), asks for the attended run, since nothing else does (the 2026-11-03 window passed unnoticed). It checks in to Status's `co-processor-patching` (tenant `co-processor`, the drift check's key and `LoadCredential=`):
+
+| Kind | Status | When |
+|---|---|---|
+| `ok` | ok | a record has been posted since the window last opened |
+| `due` | alert | the window is open and no record yet: **the request for the run**, within a minute of 05:00Z |
+| `missed` | alert | the window closed with no record, until it next opens. A new fault, so it reports at once |
+| `knob` | alert | the window can't be read from the release's knob |
+| `test` | alert | `processor patching --test-alert`, by hand |
+| — | none | GitHub didn't answer: silence, which the monitor's grace turns into `missing`, never a false `ok` |
+
+- **The window** is the release's own `.skills/patching-hosts`, its weekday `window` lines. `read-knob.sh` isn't in a release (a `git archive` leaves the submodule empty), so `src/processor/patching.py` parses them, and `tests/test_patching.py` holds the parse equal to the skill's reader. A dated line is a one-off and opens no due period. A `[host` section is unread (`knob`). The knob is a `RUNTIME_FILES` path: a change to it is a deploy, or the drift check alerts.
+- **The record** is an issue comment anywhere in this repo whose first line is `## Patch run record: co-processor`, from an `OWNER` or `MEMBER` (the repo is public: anyone else's comment never counts), created at or after the opening. One unauthenticated request an hour, newest first; past 300 comments since the opening it can't say, and is silent.
+- **What it doesn't report:** a restart or reboot due. The service user can't read `processor`'s maps (it's undumpable) or run needrestart, so the weekly run's step 6 picks that up.
+
+Read a run with `journalctl -u processor-patching -n 3 -o cat`: one `patching check` record, its `kind`, `window`, `record` and `checkin` (Status's 202). A deliberate alert (`kind: test`, fault `test`, asking GitHub nothing) proves the channels, as the drift check's does ([§ The drift check](#the-drift-check)):
+
+```bash
+sudo systemd-run --quiet --pipe --wait --collect -p User=processor -p Group=processor \
+  -p LoadCredential=status-checkin-key:/etc/processor/status-checkin.key \
+  -p "$(systemctl show -p Environment processor-patching.service)" -p WorkingDirectory=/srv/processor/live \
+  /srv/processor/live/.venv/bin/processor patching --test-alert
+```
+
+**Silence it** for a week you mean to skip: `sudo systemctl stop processor-patching.timer`, and the monitor goes `missing`, which is honest; `start` resumes it. Better: post a record saying why, which reads `ok`.
 
 ## Disk GC
 
