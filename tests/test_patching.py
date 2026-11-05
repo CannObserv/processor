@@ -506,11 +506,15 @@ class TestTheCommand:
         record = outcome(capsys)
         assert (record["level"], record["kind"], record["checkin"]) == ("WARNING", "silent", None)
 
-    def test_a_missing_knob_alerts(self, world, capsys):
+    def test_a_missing_knob_alerts_naming_it(self, world, capsys):
+        """CR 2: the alert names the file and the error, never a parse of its absence."""
         world.knob.unlink()
         assert main(["patching"]) == 0
         (checkin,) = world.checkins()
         assert checkin["variables"]["kind"] == "knob"
+        body = checkin["variables"]["body"]
+        assert ".skills/patching-hosts" in body and "FileNotFoundError" in body
+        assert "[host]" not in body
         assert world.github.requests == []
 
     def test_status_refusing_fails_once(self, world, capsys):

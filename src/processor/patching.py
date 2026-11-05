@@ -257,6 +257,11 @@ def _assess(get: Get, this: Opening, now: datetime) -> Verdict:
     )
 
 
+def unreadable(path: object, exc: OSError) -> Verdict:
+    """The verdict when the knob file itself can't be read: an alert naming it."""
+    return Verdict("knob", f"the patching knob {path} can't be read: {type(exc).__name__}")
+
+
 def deliberate_alert() -> Verdict:
     """The deliberate alert ``processor patching --test-alert`` sends: proves the channels."""
     return Verdict("test", "a test alert from co-processor's patching check, sent by hand")

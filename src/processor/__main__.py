@@ -127,12 +127,13 @@ def _patching(settings: PatchingSettings, *, test_alert: bool) -> int:
         try:
             knob = settings.patching_knob.read_text()
         except OSError as exc:
-            knob = f"[unreadable: {type(exc).__name__}]"
-        verdict = patching.assess(
-            knob,
-            now=datetime.now(UTC),
-            get=drift.github(patching.GITHUB_API, expect=list),
-        )
+            verdict = patching.unreadable(settings.patching_knob, exc)
+        else:
+            verdict = patching.assess(
+                knob,
+                now=datetime.now(UTC),
+                get=drift.github(patching.GITHUB_API, expect=list),
+            )
     fields = {
         "window": verdict.window,
         "record": verdict.record,
