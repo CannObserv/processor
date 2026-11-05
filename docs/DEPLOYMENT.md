@@ -220,7 +220,7 @@ A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pypr
 
 **On success,** a timer this deploy installed for the first time is enabled (`systemctl enable --now`), so a deploy that was switched back never ran it. A timer installed before is never enabled again, so an operator's `disable` sticks. A timer that won't enable or re-arm is a note, never a switch back: it watches the deploy, it never decides one. Still by hand: `sudo systemctl reenable <unit>` after its `[Install]` section changes, and retiring a unit (`disable --now`, remove the file, `daemon-reload`), since a unit gone from `deploy/` stays installed.
 
-Then the host configs under `deploy/` (`HOST_CONFIGS`: tailscaled's drop-in, the apt files, needrestart's, the disk GC's) are compared with their installed copies. A difference is a note, never an install, and is journaled, as is an installed unit the release lacks. The deploy keeps the 5 most recently deployed releases plus `live`.
+Then the host configs under `deploy/` (`HOST_CONFIGS`: tailscaled's drop-in, the apt files and the apt timers' drop-ins, needrestart's, the disk GC's) are compared with their installed copies. A difference is a note, never an install, and is journaled, as is an installed unit the release lacks. The deploy keeps the 5 most recently deployed releases plus `live`.
 
 **Interrupted** (INT, TERM or HUP: Ctrl-C, or an agent's tool call timing out), the deploy says where it stopped once the step in progress ends:
 - before the switch: `interrupted before the switch; nothing switched`, exit 1, nothing journaled;
