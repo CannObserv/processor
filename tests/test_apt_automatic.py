@@ -170,7 +170,21 @@ def test_the_periodic_file_sorts_after_the_images_disable() -> None:
 
 @pytest.mark.parametrize("timer", TIMERS, ids=str)
 def test_each_timer_dropin_replaces_the_calendar(timer: str) -> None:
-    """A drop-in's ``OnCalendar=`` adds to the stock list; an empty one resets it."""
+    """A drop-in's ``OnCalendar=`` adds to the stock list; an empty one resets it.
+    Outside a ``[Timer]`` section systemd ignores each assignment, and the stock
+    06:00 comes back inside the window."""
+    sections = [
+        line.strip()
+        for line in TIMERS[timer].read_text().splitlines()
+        if line.strip().startswith("[")
+    ]
+    assert sections == ["[Timer]"], f"{timer}: one [Timer] section"
+    first = next(
+        line.strip()
+        for line in TIMERS[timer].read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+    assert first == "[Timer]", f"{timer}: an assignment before [Timer] is ignored"
     keys = _timer(TIMERS[timer])
     assert keys["OnCalendar"][0] == "", f"{timer}: reset OnCalendar= first"
     assert len(keys["OnCalendar"]) == 2, f"{timer}: one calendar time after the reset"
