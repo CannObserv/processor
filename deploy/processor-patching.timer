@@ -1,0 +1,16 @@
+# Hourly, on the hour: Status's co-processor-patching monitor expects a check-in every
+# 3600 s, with a grace of 5400 s (#113). On the hour so a window that opens on one
+# (Tue 05:00) alerts within a minute. Not Persistent=: a boot's first run is
+# OnBootSec's. Enabled by scripts/deploy.sh the first time it installs this file.
+[Unit]
+Description=Processor: check hourly whether this week's patch run is recorded
+
+[Timer]
+Unit=processor-patching.service
+# After tailscaled: Status is reached by its MagicDNS name.
+OnBootSec=5min
+OnCalendar=*-*-* *:00:30
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

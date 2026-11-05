@@ -192,7 +192,7 @@ journalctl -t processor-deploy -n 20     # "CI passed for …", "wheelhouse for 
 
 **The journal holds the verdict** (`-t processor-deploy`, #93). A verified deploy ends with `live is on <build>: pid <N> logged starting (child_containment required), then consuming; the smoke run passed`: both proofs of step 4, `<N>` the new `MainPID`. A `live -> <build>` with no `live is on <build>` after it was never verified: a rollback (`live rolled back to …` / `… NOT answering`), an interrupt (below), or a SIGKILL, which leaves nothing. Before #93's deploy only the switch was journaled.
 
-A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml` or `uv.lock` needs no deploy. That list is `RUNTIME_DIRS` and `RUNTIME_FILES` in `src/processor/drift.py`, and the drift check alerts on it (§ The drift check).
+A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml`, `uv.lock` or `.skills/patching-hosts` (the patch-due check reads the release's knob, #113) needs no deploy. That list is `RUNTIME_DIRS` and `RUNTIME_FILES` in `src/processor/drift.py`, and the drift check alerts on it (§ The drift check).
 
 **In order:**
 0. **Ask CI** whether the commit passed (§ The CI gate). A refusal builds nothing.

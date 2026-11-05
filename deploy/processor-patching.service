@@ -1,0 +1,43 @@
+# Processor's patch-due check (#113): has this week's attended patch run been recorded?
+# Started hourly, on the hour, by processor-patching.timer; scripts/deploy.sh installs
+# both from the release and enables the timer the first time it installs it.
+#
+# Reads the window from the release's own knob (.skills/patching-hosts) and the run
+# records from this repo's issue comments on GitHub, and checks in to Status's
+# co-processor-patching monitor: ok while this week's record is posted; alert `due`
+# while the window is open without one, `missed` once it has closed without one. No
+# check-in when GitHub cannot say: silence, never a false ok. src/processor/patching.py
+# has the rules.
+#
+# Apart from processor.service, as the drift check is: a Status or GitHub outage costs
+# this unit its exit code and nothing else.
+[Unit]
+Description=Processor: is this week's patch run recorded? Check in to Status
+Documentation=https://github.com/CannObserv/processor/blob/main/docs/DEPLOYMENT.md
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service
+
+[Service]
+Type=oneshot
+User=processor
+Group=processor
+# A release, never a checkout (#2). Its .skills/patching-hosts is the knob read.
+WorkingDirectory=/srv/processor/live
+ExecStart=/srv/processor/live/.venv/bin/processor patching
+# co-processor-patching, tenant co-processor (CannObserv/status, #113). Not a secret;
+# the base URL defaults to http://status:9000 (src/processor/settings.py).
+Environment=CO_PROCESSOR_PATCHING_MONITOR_ID=PENDING
+# No GitHub call starts past 60 s (one page each, at most three), then one check-in
+# (10 s per read). Killed here, the run sends nothing. No Restart=: the next hour is
+# the retry, and the monitor's grace absorbs one missed run.
+TimeoutStartSec=90
+
+# No EnvironmentFile=: /etc/processor/.env holds the broker credential. Only the
+# Status key the drift check uses, root 600 on disk, handed over at start.
+LoadCredential=status-checkin-key:/etc/processor/status-checkin.key
+SetCredential=status-checkin-key:\n
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes

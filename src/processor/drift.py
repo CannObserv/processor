@@ -57,11 +57,14 @@ REQUEST_TIMEOUT_SECONDS = 10.0
 #: cut short, and what was cut could be anything.
 COMPARE_FILES_LIMIT = 300
 
-#: What a release runs: the package, the units, the deploy, the dependencies.
+#: What a release runs: the package, the units, the deploy, the dependencies, the knob.
 #: AGENTS.md's rule for when a merge needs ``scripts/deploy.sh``, defined here
 #: once. Everything else (docs, tests, CI, skills, the other scripts) never runs.
 RUNTIME_DIRS = ("src/", "deploy/")
-RUNTIME_FILES = frozenset({"scripts/deploy.sh", "pyproject.toml", "uv.lock"})
+#: ``.skills/patching-hosts``: the patching check reads the release's knob (#113).
+RUNTIME_FILES = frozenset(
+    {"scripts/deploy.sh", "pyproject.toml", "uv.lock", ".skills/patching-hosts"}
+)
 
 UNSTAMPED = "dev"
 
