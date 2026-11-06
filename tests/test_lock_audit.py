@@ -291,8 +291,9 @@ def test_runs_on_push_pr_schedule_and_dispatch(audit: dict) -> None:
 
 
 def test_holds_no_secret_and_no_oidc(audit: dict) -> None:
-    """``uv audit --frozen`` reads the lock without the wheelhouse, so the job needs
-    no WIF to ``co-pypi-reader``, and gets nothing more than read."""
+    """``uv audit --frozen`` reads the lock without fetching a package (measured with
+    no co-pypi token, #121), so the job needs no WIF to ``co-pypi-reader``, and gets
+    nothing more than read."""
     text = WORKFLOW.read_text()
     assert audit["permissions"] == {"contents": "read"}
     for name, job in audit["jobs"].items():
@@ -300,7 +301,7 @@ def test_holds_no_secret_and_no_oidc(audit: dict) -> None:
     assert "secrets." not in text
     assert "id-token" not in text
     assert "google-github-actions/auth" not in text
-    assert "sync_wheelhouse" not in text
+    assert "UV_INDEX" not in text
 
 
 def test_runs_the_script_and_nothing_masks_it(audit: dict) -> None:

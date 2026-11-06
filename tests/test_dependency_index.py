@@ -70,6 +70,12 @@ class TestTheIndex:
         assert "find-links" not in _uv(), "#121 retired the wheelhouse; one source per name"
         assert [i["name"] for i in _uv()["index"]] == [INDEX]
 
+    def test_no_digest_table(self):
+        """#87's table is the lock's job now. Its 0.38.0 rows equalled the lock's
+        sha256, and the host's built files, before it went (#121's one-shot proof,
+        commit bfc6311)."""
+        assert "wheelhouse-sha256" not in PYPROJECT.get("tool", {}).get("processor", {})
+
 
 class TestEveryCoCorePackage:
     def test_the_sweep_finds_all_three(self):
@@ -144,16 +150,3 @@ def test_the_wrappers_group_is_locked_and_needs_nothing_from_the_index():
     assert "requests" in closure, "the extra the mint's transport needs"
     assert not closure & CO_CORE
     assert all(p["source"].get("registry") != URL for n in closure for p in by_name[n])
-
-
-class TestTheSwapProof:
-    """One-shot (#121): the relocked wheels' sha256 equal #87's table, the pins
-    built on co-processor and compared with gs://co-gcs-pypi. Deleted with the
-    table in the next commit; this one is the green commit where both agree."""
-
-    @pytest.mark.parametrize("package", _locked_co_core(), ids=lambda p: p["name"])
-    def test_the_lock_equals_the_table(self, package: dict):
-        table = PYPROJECT["tool"]["processor"]["wheelhouse-sha256"]
-        for wheel in package["wheels"]:
-            name = wheel["url"].rsplit("/", 1)[1]
-            assert wheel["hash"] == f"sha256:{table[name]}", name

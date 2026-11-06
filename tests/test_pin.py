@@ -1,9 +1,9 @@
 """The co-core pin is exact, and Processor owns it (spec D5, amended 2026-10-10; §5).
 
 A bump changes ``processor_version`` on every fact, and Watcher re-baselines on it, so
-it must be a deliberate act: edit ``EXPECTED`` here, in the same commit as the pin,
-``scripts/build_wheelhouse.sh``'s default tag and the wheelhouse digests (#87), with
-the goldens regenerated co-core-direct and every moved digest in the bump note.
+it must be a deliberate act: edit ``EXPECTED`` here, in the same commit as the pin
+and its ``uv lock`` through ``scripts/co-pypi.sh`` (#121), with the goldens
+regenerated co-core-direct and every moved digest in the bump note.
 
 Whether a bump is notice or coordination turns on the contract (§5). Essence
 resolution is outside it only because Processor never calls co-core's resolvers
@@ -18,7 +18,6 @@ amended 2026-10-24, processor#71).
 """
 
 import ast
-import re
 import tomllib
 from importlib.metadata import version
 from pathlib import Path
@@ -28,9 +27,6 @@ import pytest
 from processor.processors.extract import LOCAL_GENERATION, PROCESSOR_VERSION
 
 EXPECTED = "0.38.0"
-# The build backend EXPECTED's bucket wheels were built on (#87): a local build matches
-# their pinned digests only on the same one.
-HATCHLING = "1.32.4"
 ROOT = Path(__file__).resolve().parent.parent
 PINNED = ("co-core", "co-core-aio", "co-core-sync")
 SRC = ROOT / "src" / "processor"
@@ -124,36 +120,6 @@ def test_lock_resolves_the_pin(name: str) -> None:
 @pytest.mark.parametrize("name", PINNED)
 def test_installed_matches_the_pin(name: str) -> None:
     assert version(name) == EXPECTED
-
-
-def test_the_wheelhouse_digests_move_with_the_pin() -> None:
-    # #87: a bump that moves the pin and not [tool.processor.wheelhouse-sha256] would
-    # fail every sync and deploy; one that keeps an old row pins a file no lock names.
-    # tests/test_sync_wheelhouse.py holds the table to uv.lock; this, to EXPECTED.
-    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    table = pyproject["tool"]["processor"]["wheelhouse-sha256"]
-    assert sorted(table) == sorted(
-        f"{name.replace('-', '_')}-{EXPECTED}-py3-none-any.whl" for name in PINNED
-    )
-
-
-def test_the_wheelhouse_builder_defaults_to_the_pin() -> None:
-    # A fresh checkout runs it with no tag (AGENTS.md); a stale default builds wheels
-    # the lock can't resolve.
-    script = (ROOT / "scripts" / "build_wheelhouse.sh").read_text()
-    (default,) = re.findall(r'^tag="\$\{1:-(v[^}]+)\}"$', script, re.MULTILINE)
-    assert default == f"v{EXPECTED}"
-
-
-def test_the_wheelhouse_builder_holds_the_build_backend() -> None:
-    # #87: hatchling normalizes timestamps but writes its own version into each wheel,
-    # and cannobserv's build-system requires it unpinned. 0.38.0 built on hatchling
-    # 1.33.0 misses the pinned digests; on 1.32.4 it matches the bucket byte for byte
-    # (measured 2026-10-28). A bump re-checks HATCHLING (DEPLOYMENT.md, Bumping co-core).
-    script = (ROOT / "scripts" / "build_wheelhouse.sh").read_text()
-    assert re.findall(r'^HATCHLING="([^"]+)"$', script, re.MULTILINE) == [HATCHLING]
-    (build,) = [ln for ln in script.splitlines() if "uv build" in ln]
-    assert "--build-constraint" in build
 
 
 def test_processor_version_is_co_core_plus_generation() -> None:

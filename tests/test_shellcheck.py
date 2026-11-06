@@ -145,7 +145,7 @@ class TestTheSelector:
         assert {
             "scripts/deploy.sh",
             "scripts/audit_lock.sh",
-            "scripts/build_wheelhouse.sh",
+            "scripts/co-pypi.sh",
             "scripts/shellcheck.sh",
             "deploy/nodesource.sh",
             ".githooks/pre-commit",

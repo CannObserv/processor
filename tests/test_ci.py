@@ -2,7 +2,6 @@
 
 import re
 import socket
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -62,14 +61,45 @@ def test_cloud_access_is_job_scoped(ci: dict) -> None:
         assert job["permissions"] == {"contents": "read", "id-token": "write"}, name
 
 
+PAIR = {
+    "UV_INDEX_CO_PYPI_USERNAME": "oauth2accesstoken",
+    "UV_INDEX_CO_PYPI_PASSWORD": "${{ steps.auth.outputs.access_token }}",
+}
+
+
 @pytest.mark.parametrize("name", ["lint", "test"])
-def test_wheelhouse_comes_keyless_from_the_read_only_identity(ci: dict, name: str) -> None:
+def test_co_core_comes_keyless_from_the_read_only_identity(ci: dict, name: str) -> None:
+    """#121: the WIF step mints an access token for co-pypi-reader, the index's
+    reader; the action masks the output."""
     job = ci["jobs"][name]
     (auth,) = [s for s in _steps(job) if s.get("uses", "").startswith("google-github-actions/auth")]
+    assert auth["id"] == "auth"
     assert auth["with"]["service_account"] == WIF_SA
     assert auth["with"]["workload_identity_provider"] == "${{ vars.GCP_WIF_PROVIDER }}"
-    runs = _runs(job)
-    assert runs.index("scripts/sync_wheelhouse.py") < runs.index("uv sync")
+    assert auth["with"]["token_format"] == "access_token"
+    steps = _steps(job)
+    assert steps.index(auth) < steps.index(_sync_step(job))
+
+
+def _sync_step(job: dict) -> dict:
+    (step,) = [s for s in _steps(job) if s.get("run", "").startswith("uv sync")]
+    return step
+
+
+@pytest.mark.parametrize("name", ["lint", "test"])
+def test_only_the_sync_gets_the_token(ci: dict, name: str) -> None:
+    """The one step that downloads co-core takes the pair; every later `uv run`
+    finds the venv synced. `uv lock --locked` resolves from the lock alone
+    (measured offline from an empty cache, #121), so it needs none."""
+    job = ci["jobs"][name]
+    assert _sync_step(job)["env"] == PAIR
+    others = [s for s in _steps(job) if s is not _sync_step(job)]
+    assert not [s for s in others if "UV_INDEX" in str(s)]
+    assert "UV_INDEX" not in str(ci.get("env", {})) + str(job.get("env", {}))
+
+
+def test_no_wheelhouse_step_is_left(ci: dict) -> None:
+    assert "wheelhouse" not in WORKFLOW.read_text().lower()
 
 
 @pytest.mark.parametrize("name", ["lint", "test"])
@@ -100,7 +130,7 @@ def test_the_uses_count_skips_comments() -> None:
 @pytest.mark.parametrize("name", ["lint", "test"])
 def test_ci_prunes_the_cache_it_saves(ci: dict, name: str) -> None:
     """The repo is public, and a fork's PR can restore a cache saved on `main`.
-    Unpruned, that cache holds co-core unpacked from the private wheelhouse.
+    Unpruned, that cache holds co-core from the private co-pypi index (#121).
     setup-uv v9 flipped `prune-cache` to false, so it is set, not defaulted (#80,
     as broker#88)."""
     (setup,) = [
@@ -242,45 +272,3 @@ def test_image_comes_from_the_mirror(site: str, image: str) -> None:
         f"or on docker.io, is an anonymous Docker Hub pull. "
         f"Use {MIRROR}library/<image> for an official image."
     )
-
-
-# The one spelling of the sync (#79, as broker#113). `--only-group` installs uv.lock's
-# wheelhouse group without the project, whose co-core is what the sync fetches.
-# `--no-config` stands in for broker's tracked .wheelhouse/.gitkeep: without it uv
-# reads [tool.uv] find-links, and a fresh checkout has no ./.wheelhouse yet.
-LOCKED_SYNC = "--frozen --no-config --only-group wheelhouse"
-
-
-def _sync_commands(text: str) -> list[str]:
-    """The flags of each `uv run … python scripts/sync_wheelhouse.py`, `\\`-continued
-    lines joined."""
-    logical = re.sub(r"\s*\\+\n\s*", " ", text)
-    return re.findall(r"uv run (.*?) python scripts/sync_wheelhouse\.py", logical)
-
-
-def test_sync_commands_join_continued_lines() -> None:
-    doc = "    uv run --no-project --with 'x' \\\\\n        python scripts/sync_wheelhouse.py\n"
-    assert _sync_commands(doc) == ["--no-project --with 'x'"]
-
-
-def test_every_spelling_of_the_sync_runs_from_the_lock() -> None:
-    """#79: `--no-project --with` resolved the sync's env afresh from PyPI on every
-    run, under the reader credential, outside uv.lock and the audit. Every tracked
-    file outside tests/ that spells the sync spells the locked form."""
-    root = WORKFLOW.parent.parent.parent
-    tracked = subprocess.run(
-        ["git", "ls-files"], cwd=root, capture_output=True, text=True, check=True
-    ).stdout.splitlines()
-    spellings: dict[str, set[str]] = {}
-    for name in tracked:
-        path = root / name
-        if name.startswith("tests/") or path.is_symlink() or not path.is_file():
-            continue
-        try:
-            text = path.read_text()
-        except UnicodeDecodeError:
-            continue
-        for flags in _sync_commands(text):
-            spellings.setdefault(name, set()).add(flags)
-    assert set(spellings) >= {".github/workflows/ci.yml", "scripts/sync_wheelhouse.py", "AGENTS.md"}
-    assert {n: s for n, s in spellings.items() if s != {LOCKED_SYNC}} == {}

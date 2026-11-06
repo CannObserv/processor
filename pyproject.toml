@@ -55,22 +55,6 @@ lint = ["ruff>=0.16.8,<0.17", "shellcheck-py>=0.11.0.1,<0.12"]
 # nothing in the process that holds the key is resolved at run time.
 co-pypi = ["google-auth[requests]>=2,<3"]
 
-# The sha256 of each wheelhouse file uv.lock names (#87, as broker#125). uv records
-# none for a find-links path, and a hand-added one is gone at the next `uv lock`.
-# scripts/sync_wheelhouse.py fetches a file that misses its digest again and refuses
-# a download that misses it too; scripts/deploy.sh refuses a release whose copy
-# misses it, before `uv sync`. A pin change moves these in the same diff
-# (docs/DEPLOYMENT.md § Bumping co-core). Each digest stops a later swap, local or
-# in transit, not one made at pin time (cannobserv#591). One "file" = "hex" line
-# each, the form deploy.sh's awk reads: tests/test_sync_wheelhouse.py holds it, and
-# the table to the lock. 0.38.0's: built on co-processor from the v0.38.0 tag with
-# hatchling 1.32.4 (2026-10-20), rebuilt byte for byte by build_wheelhouse.sh on
-# 2026-10-28, and equal to gs://co-gcs-pypi's (CI's from-empty sync, #87).
-[tool.processor.wheelhouse-sha256]
-"co_core-0.38.0-py3-none-any.whl" = "44a62404f645de685c6260e087311d3e2cf0cf6074e9a9cfc2d6cf35b3c566f9"
-"co_core_aio-0.38.0-py3-none-any.whl" = "aac71c6f5e8d34e5a9aff856ce0f1c40898b41561ad399df908896ece718aef1"
-"co_core_sync-0.38.0-py3-none-any.whl" = "f69d84215d6df4d92b261eed5b11d69a9d4c95a1ce659d362b825d094f5072f4"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--import-mode=importlib"

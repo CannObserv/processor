@@ -26,7 +26,7 @@ jobs:
     # A run takes ~2 min; bound a hang well short of GitHub's 360-minute default.
     timeout-minutes: 15
     # WIF: an OIDC token for google-github-actions/auth to impersonate the
-    # read-only co-pypi-reader SA and pull the cannobserv wheelhouse, as in the
+    # read-only co-pypi-reader SA, the co-pypi index's reader (#121), as in the
     # other cohort repos. Job-scoped, so no other step gains cloud access.
     permissions:
       contents: read
@@ -42,28 +42,30 @@ jobs:
         with:
           enable-cache: true
           # Set, not defaulted: false since setup-uv v9. The repo is public, and
-          # unpruned, the cache saved on main holds co-core unpacked from the
-          # private wheelhouse, restorable by a fork's PR (#80, as broker#88).
+          # unpruned, the cache saved on main holds co-core from the private
+          # co-pypi index, restorable by a fork's PR (#80, as broker#88).
           prune-cache: true
 
       - name: Install Python
         run: uv python install 3.12
 
       - name: Authenticate to Google Cloud (WIF, read-only)
+        id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: co-pypi-reader@co-gcs.iam.gserviceaccount.com
-
-      # co-core resolves from ./.wheelhouse (find-links), so it must exist before
-      # any project-aware uv command, `uv lock --locked` included. The sync's own
-      # deps are uv.lock's wheelhouse group, never the project (#79). --no-config:
-      # without it uv reads [tool.uv] find-links, and a fresh checkout has no
-      # ./.wheelhouse yet (the script creates it).
-      - name: Sync cannobserv wheelhouse
-        run: uv run --frozen --no-config --only-group wheelhouse python scripts/sync_wheelhouse.py
+          # For the co-pypi index's basic auth (#121); a masked step output.
+          token_format: access_token
 
       - name: uv sync
+        # The co-pypi pair, on this step alone (#121, as watcher#358): co-core
+        # comes from the index, and later `uv run`s find the venv synced and
+        # download nothing. `uv lock --locked` resolves from the lock alone. A
+        # masked output; never echo it.
+        env:
+          UV_INDEX_CO_PYPI_USERNAME: oauth2accesstoken
+          UV_INDEX_CO_PYPI_PASSWORD: ${{ steps.auth.outputs.access_token }}
         run: uv sync --locked
 
       - name: ruff check
@@ -121,23 +123,30 @@ jobs:
         with:
           enable-cache: true
           # Set, not defaulted: false since setup-uv v9. The repo is public, and
-          # unpruned, the cache saved on main holds co-core unpacked from the
-          # private wheelhouse, restorable by a fork's PR (#80, as broker#88).
+          # unpruned, the cache saved on main holds co-core from the private
+          # co-pypi index, restorable by a fork's PR (#80, as broker#88).
           prune-cache: true
 
       - name: Install Python
         run: uv python install 3.12
 
       - name: Authenticate to Google Cloud (WIF, read-only)
+        id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: co-pypi-reader@co-gcs.iam.gserviceaccount.com
-
-      - name: Sync cannobserv wheelhouse
-        run: uv run --frozen --no-config --only-group wheelhouse python scripts/sync_wheelhouse.py
+          # For the co-pypi index's basic auth (#121); a masked step output.
+          token_format: access_token
 
       - name: uv sync
+        # The co-pypi pair, on this step alone (#121, as watcher#358): co-core
+        # comes from the index, and later `uv run`s find the venv synced and
+        # download nothing. `uv lock --locked` resolves from the lock alone. A
+        # masked output; never echo it.
+        env:
+          UV_INDEX_CO_PYPI_USERNAME: oauth2accesstoken
+          UV_INDEX_CO_PYPI_PASSWORD: ${{ steps.auth.outputs.access_token }}
         run: uv sync --locked
 
       # No marker filter: the integration tests are the bus contract. Host-bound
