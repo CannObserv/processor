@@ -198,7 +198,7 @@ Status's CI gate (status#11) is adopted as § The CI gate (#34), and its drift c
 
 ## Deploy a change: `scripts/deploy.sh`
 
-Run as `exedev`, from `~/processor`, after the PR merges. It needs `git`, `uv`, `jq`, `curl` and `flock` (util-linux) on the `PATH`, HTTPS to `api.github.com`, the co-pypi reader's key (§ GCP provisioning) for a build, plus `sudo` for `systemctl`, `systemd-run` and the unit file; `co-processor` has all of them. The script fetches `origin` itself:
+Run as `exedev`, from `~/processor`, after the PR merges. It needs `git`, `uv`, `jq`, `curl` and `flock` (util-linux) on the `PATH`, HTTPS to `api.github.com`, and for a build the co-pypi reader's key (§ GCP provisioning) with HTTPS to `oauth2.googleapis.com` (the mint) and `us-west1-python.pkg.dev` (the index), plus `sudo` for `systemctl`, `systemd-run` and the unit file; `co-processor` has all of them. The script fetches `origin` itself:
 
 ```bash
 cd ~/processor && git pull --ff-only     # for the skills hook; the deploy fetches on its own
