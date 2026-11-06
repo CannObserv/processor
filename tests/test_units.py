@@ -168,7 +168,7 @@ class TestThePatchingUnits:
         # must accept it, or `processor patching` exits 2 every hour.
         (env,) = _all("Environment", PATCHING)
         name, _, value = env.partition("=")
-        assert name == "CO_PROCESSOR_PATCHING_MONITOR_ID"
+        assert (name, value) == ("CO_PROCESSOR_PATCHING_MONITOR_ID", "01M6RKA237BX5MMWH0CM4V599E")
         assert PatchingSettings(patching_monitor_id=value).patching_monitor_id == value
 
     def test_it_never_reads_the_broker_credential(self) -> None:

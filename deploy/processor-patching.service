@@ -24,9 +24,10 @@ Group=processor
 # A release, never a checkout (#2). Its .skills/patching-hosts is the knob read.
 WorkingDirectory=/srv/processor/live
 ExecStart=/srv/processor/live/.venv/bin/processor patching
-# co-processor-patching, tenant co-processor (CannObserv/status, #113). Not a secret;
+# co-processor-patching, tenant co-processor (CannObserv/status#95, created
+# 2026-11-06T14:13:25Z; processor#113 comment 6686885488). Not a secret;
 # the base URL defaults to http://status:9000 (src/processor/settings.py).
-Environment=CO_PROCESSOR_PATCHING_MONITOR_ID=PENDING
+Environment=CO_PROCESSOR_PATCHING_MONITOR_ID=01M6RKA237BX5MMWH0CM4V599E
 # No GitHub call starts past 60 s (one page each, at most three), then one check-in
 # (10 s per read). Killed here, the run sends nothing. No Restart=: the next hour is
 # the retry, and the monitor's grace absorbs one missed run.
