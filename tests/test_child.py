@@ -319,6 +319,16 @@ async def test_the_child_cannot_read_the_real_secrets(path: str) -> None:
 
 
 @needs_landlock
+async def test_the_child_cannot_open_the_deploy_hosts_index_key() -> None:
+    """#121's co-pypi-reader key is exedev's (root:exedev 640), so a suite run as
+    exedev can reach it but for Landlock. Opened, never read: the control proves
+    the uid could open it without a byte of the key leaving the file. In
+    production the child is the service user, outside that group too."""
+    key = _secret(Path("/etc/processor-deploy/co-pypi-reader.json"))
+    await _denied("try_open", str(key))
+
+
+@needs_landlock
 async def test_the_child_cannot_read_the_parents_environment() -> None:
     await _denied("try_read", f"/proc/{os.getpid()}/environ")
 

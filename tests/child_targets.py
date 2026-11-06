@@ -119,6 +119,16 @@ def try_read(path: str) -> list:
     return _attempt(read)
 
 
+def try_open(path: str) -> list:
+    """Open and close, reading nothing: for a key no test may read (#121)."""
+
+    def opened() -> int:
+        os.close(os.open(path, os.O_RDONLY))
+        return 0
+
+    return _attempt(opened)
+
+
 def try_write(path: str) -> list:
     def write() -> int:
         with open(path, "w") as f:

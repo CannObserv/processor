@@ -20,9 +20,9 @@
 #
 # In this order:
 #   0. ask GitHub whether the commit's CI passed (unless --skip-ci)
-#   1. build releases/<build> (or reuse it): archive, the wheelhouse files
-#      uv.lock names, each held to its pinned sha256 (#87), uv sync,
-#      REVISION last, read-only
+#   1. build releases/<build> (or reuse it): archive, uv sync through the
+#      checkout's scripts/co-pypi.sh (co-core from the co-pypi index, each file
+#      held to the lock's sha256; #121), REVISION last, read-only
 #   2. switch the link (rename(2), atomic), then install each unit under deploy/
 #      from the release when it differs from the installed copy (#35)
 #   3. restart processor (it lets the in-flight command finish: up to
@@ -121,8 +121,10 @@ git -C "$SRC" rev-parse --git-dir >/dev/null 2>&1 ||
 
 [[ -d "$ROOT" ]] ||
   die "$ROOT does not exist. Once: sudo install -d -o exedev -g exedev -m 755 $ROOT"
-# co-core is private: uv resolves it from ./.wheelhouse (AGENTS.md).
-[[ -d "$SRC/.wheelhouse" ]] || die "$SRC/.wheelhouse is missing; populate it first (AGENTS.md)"
+# co-core is private: the release's uv sync reads the co-pypi index through this
+# checkout's wrapper, which mints the reader's token for that one uv (#121).
+CO_PYPI="$SRC/scripts/co-pypi.sh"
+[[ -f "$CO_PYPI" ]] || die "$CO_PYPI is missing; run from a checkout of #121 or later"
 
 exec 9>"$ROOT/.deploy.lock"
 flock -n 9 || die "another deploy is running (it holds $ROOT/.deploy.lock)"
@@ -289,75 +291,13 @@ fi
 
 make_writable() { chmod -R u+w "$1"; }
 
-# The wheelhouse files the release's uv.lock names: the sdist and wheel paths of
-# each package whose source is registry = ".wheelhouse" (co-core), relative to
-# that directory. "./.wheelhouse" too: pyproject.toml spells it so (broker#106).
-locked_wheels() {
-  awk '
-    /^\[/ { wheelhouse = 0 }
-    /^source = \{ registry = "(\.\/)?\.wheelhouse" \}$/ { wheelhouse = 1 }
-    wheelhouse && match($0, /path = "[^"]*"/) { print substr($0, RSTART + 8, RLENGTH - 9) }
-  ' "$release/uv.lock"
-}
-
-# The digest the release's pyproject.toml pins for each wheelhouse file, as
-# "<file> <sha256>" lines (#87): its [tool.processor.wheelhouse-sha256] table, one
-# "file" = "hex" line each, the form tests/test_sync_wheelhouse.py holds.
-pinned_digests() {
-  awk '
-    /^\[/ { table = ($0 == "[tool.processor.wheelhouse-sha256]"); next }
-    table && /^"[^"]+" = "[^"]*"$/ { split($0, field, "\""); print field[2], field[4] }
-  ' "$release/pyproject.toml"
-}
-
-# Only what the lock names goes into the release, each copy held to the release's
-# own pinned digest (#87, as broker#125): uv.lock records none, so `uv sync
-# --locked` would install any file of that name. The check is on the copy, the
-# bytes uv sync reads, and comes before it. Copied with cp, never linked: a link
-# shares an inode with the checkout, and the chmod below would reach it. Said, so
-# journaled, both ways: before the switch a plain die is stderr only (#93).
-wheelhouse() {
-  local name digest got missing=() checked=()
-  local -A pinned=()
-  while read -r name digest; do
-    pinned[$name]="$digest"
-  done < <(pinned_digests)
-  mkdir -p "$release/.wheelhouse"
-  while read -r name; do
-    [[ -n "$name" && "$name" != */* ]] ||
-      die "uv.lock names the wheelhouse file '$name', not a file name; nothing switched"
-    digest="${pinned[$name]:-}"
-    if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
-      say "refused $build: uv.lock names $name, which its pyproject.toml [tool.processor.wheelhouse-sha256] pins no sha256 for; nothing switched"
-      exit 1
-    fi
-    if [[ -f "$SRC/.wheelhouse/$name" ]]; then
-      cp -- "$SRC/.wheelhouse/$name" "$release/.wheelhouse/$name" ||
-        die "copying $name into $build's wheelhouse failed; nothing switched"
-      got="$(sha256sum -- "$release/.wheelhouse/$name")" ||
-        die "cannot hash $name in $build's wheelhouse; nothing switched"
-      got="${got%% *}"
-      if [[ "$got" != "$digest" ]]; then
-        say "refused $build: $name in $SRC/.wheelhouse has sha256 $got, not the $digest its pyproject.toml pins; nothing switched"
-        die "Remove it, populate the wheelhouse again (AGENTS.md; a local build: docs/DEPLOYMENT.md § Bumping co-core) and deploy again"
-      fi
-      checked+=("$name")
-    else
-      missing+=("$name")
-    fi
-  done < <(locked_wheels)
-  if ((${#missing[@]})); then
-    say "refused $build: uv.lock names ${missing[*]}, which $SRC/.wheelhouse lacks; nothing switched"
-    exit 1
-  fi
-  # An awk that no longer reads the lock would check nothing: a refusal like the rest (CR 7).
-  if ((${#checked[@]} == 0)); then
-    say "refused $build: its uv.lock names no wheelhouse file, so co-core cannot resolve; nothing switched"
-    exit 1
-  fi
-  # Journaled when it passes too: otherwise a deploy that checked reads like one
-  # from a deploy.sh that never did.
-  say "wheelhouse for $build: ${checked[*]} match their pinned sha256"
+# A lock from before #121 resolves co-core from ./.wheelhouse, which this script no
+# longer builds or checks (#87's table went with it). Said, so journaled: before
+# the switch a plain die is stderr only (#93).
+refuse_a_wheelhouse_lock() {
+  grep -Eq '^source = \{ registry = "(\./)?\.wheelhouse" \}$' "$release/uv.lock" || return 0
+  say "refused $build: its uv.lock resolves co-core from ./.wheelhouse (before #121), which this deploy.sh does not build; nothing switched"
+  die "Roll back to a kept release, or build this one with its own commit's scripts/deploy.sh (docs/DEPLOYMENT.md § Rollback)"
 }
 
 build_release() {
@@ -375,15 +315,17 @@ build_release() {
   # release, left without REVISION, is rebuilt next time (CR 13).
   git -C "$SRC" archive "$sha" | tar -x -C "$release" ||
     die "git archive failed for $build; nothing switched"
-  wheelhouse
+  refuse_a_wheelhouse_lock
   # Built where it will run: a uv venv embeds its absolute path in its scripts.
   # Non-editable: sys.path, and so the child's Landlock allowlist, then holds the
   # stdlib and site-packages alone (#2). Copied, never hardlinked from ~/.cache/uv:
   # a hardlink is the same inode as the cache's and every dev venv's, so the chmod
   # below would reach them, and an edit to any of them would reach production
-  # (CR 11).
-  (cd "$release" && UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never uv sync --locked --no-dev --no-editable \
-    --compile-bytecode --python "$PYTHON" --quiet) ||
+  # (CR 11). Through the checkout's wrapper (#121): it mints the co-pypi reader's
+  # token for this uv alone, and --locked holds every file uv installs to the
+  # lock's sha256, the check #87's table made before.
+  (cd "$release" && UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never bash "$CO_PYPI" uv sync --locked \
+    --no-dev --no-editable --compile-bytecode --python "$PYTHON" --quiet) ||
     die "uv sync failed for $build; nothing switched"
   local home
   home="$(sed -n 's/^home *= *//p' "$release/.venv/pyvenv.cfg")"

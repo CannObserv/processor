@@ -14,7 +14,6 @@ restart`` (#93).
 """
 
 import fcntl
-import hashlib
 import json
 import os
 import re
@@ -37,19 +36,18 @@ DRIFT_UNITS = {
     for name in ("processor-drift.service", "processor-drift.timer")
 }
 
-# The world's wheelhouse (#87): the one file its uv.lock names, held to the sha256
-# its pyproject.toml pins, and a wheel no lock names.
-WHEEL = "co_core-0.19.7-py3-none-any.whl"
-WHEEL_BYTES = b"wheel"
-UNLOCKED = "co_core-0.1.0-py3-none-any.whl"
+# The world's lock (#121): co-core from the co-pypi index, with a sha256 per file,
+# which `uv sync --locked` holds each download to.
+INDEX = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/"
+WHEEL_URL = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core/co_core-0.38.0-py3-none-any.whl"
 UV_LOCK = f"""version = 1
 
 [[package]]
 name = "co-core"
-version = "0.19.7"
-source = {{ registry = ".wheelhouse" }}
+version = "0.38.0"
+source = {{ registry = "{INDEX}" }}
 wheels = [
-    {{ path = "{WHEEL}" }},
+    {{ url = "{WHEEL_URL}", hash = "sha256:00" }},
 ]
 
 [[package]]
@@ -58,25 +56,30 @@ version = "2.12.0"
 source = {{ registry = "https://pypi.org/simple" }}
 sdist = {{ url = "https://files.example/pydantic-2.12.0.tar.gz", hash = "sha256:00" }}
 """
-
-
-def sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def pyproject(digests: dict[str, str]) -> str:
-    rows = "".join(f'"{name}" = "{value}"\n' for name, value in digests.items())
-    return (
-        f'[project]\nname = "processor"\n\n[tool.processor.wheelhouse-sha256]\n{rows}\n[tool.uv]\n'
-    )
-
-
-PYPROJECT = pyproject({WHEEL: sha256(WHEEL_BYTES)})
+# A lock from before #121: co-core from ./.wheelhouse, which this deploy.sh no
+# longer builds.
+LEGACY_LOCK = UV_LOCK.replace(f'registry = "{INDEX}"', 'registry = ".wheelhouse"')
+PYPROJECT = (
+    '[project]\nname = "processor"\n\n[[tool.uv.index]]\nname = "co-pypi"\n'
+    f'url = "{INDEX}"\nexplicit = true\n'
+)
+# The checkout's scripts/co-pypi.sh: logs the call, then runs the wrapped uv with a
+# stand-in for the token pair, as the real one execs it. STUB_MINT_FAIL is a key
+# that doesn't mint.
+CO_PYPI = r"""#!/usr/bin/env bash
+echo "co-pypi${STUB_CO_PYPI_TAG:-} $*" >>"$STATE/calls.log"
+if [[ "${STUB_MINT_FAIL:-}" == 1 ]]; then
+  echo "error: could not mint a co-pypi access token" >&2
+  exit 1
+fi
+UV_INDEX_CO_PYPI_USERNAME=oauth2accesstoken UV_INDEX_CO_PYPI_PASSWORD=stand-in exec "$@"
+"""
 
 STUBS = {
     "uv": r"""#!/usr/bin/env bash
 echo "$PWD UV_LINK_MODE=${UV_LINK_MODE:-}" \
-  "UV_PYTHON_DOWNLOADS=${UV_PYTHON_DOWNLOADS:-} $*" >>"$STATE/uv.log"
+  "UV_PYTHON_DOWNLOADS=${UV_PYTHON_DOWNLOADS:-}" \
+  "pair=${UV_INDEX_CO_PYPI_USERNAME:+set} $*" >>"$STATE/uv.log"
 echo "uv $*" >>"$STATE/calls.log"
 [[ "${STUB_UV_FAIL:-}" == 1 ]] && exit 1
 mkdir -p .venv/bin
@@ -217,13 +220,11 @@ class Env:
         for name, body in DRIFT_UNITS.items():
             (self.checkout / "deploy" / name).write_text(body)
         (self.checkout / "scripts" / "smoke_scratch_bus.py").write_text("# stub\n")
-        wheelhouse = self.checkout / ".wheelhouse"
-        wheelhouse.mkdir()
-        (wheelhouse / WHEEL).write_bytes(WHEEL_BYTES)
-        (wheelhouse / UNLOCKED).write_bytes(b"other")
+        wrapper = self.checkout / "scripts" / "co-pypi.sh"
+        wrapper.write_text(CO_PYPI)
+        wrapper.chmod(0o755)
         (self.checkout / "uv.lock").write_text(UV_LOCK)
         (self.checkout / "pyproject.toml").write_text(PYPROJECT)
-        (self.checkout / ".gitignore").write_text(".wheelhouse/\n")
         self.commit("first")
         self.env = os.environ | {
             "PATH": f"{self.bin}:{os.environ['PATH']}",
@@ -317,7 +318,7 @@ def test_a_first_deploy_builds_switches_installs_and_verifies(w: Env) -> None:
     assert w.live() == f"releases/{build}"
     release = w.root / "releases" / build
     assert (release / "REVISION").read_text() == f"{build}\n"
-    assert (release / ".wheelhouse" / WHEEL).exists()
+    assert not (release / ".wheelhouse").exists()
     assert w.installed_unit.read_text() == UNIT
     assert "restart processor" in w.log("systemctl")
     assert f"live -> {build} (was nothing)" in w.log("logger")
@@ -429,108 +430,74 @@ def test_refuses_without_the_service_user(w: Env) -> None:
     assert not (w.root / "live").exists()
 
 
-@pytest.mark.parametrize(
-    ("break_it", "message"),
-    [("archive", "git archive failed for"), ("wheelhouse", f"copying {WHEEL} into")],
-)
-def test_a_failed_extract_or_copy_says_so(w: Env, break_it: str, message: str) -> None:
+def test_a_failed_extract_says_so(w: Env) -> None:
     # CR 13: under set -e alone, the deploy would exit with no message.
-    if break_it == "archive":
-        (w.bin / "tar").write_text("#!/usr/bin/env bash\ncat >/dev/null; exit 2\n")
-        (w.bin / "tar").chmod(0o755)
-    else:
-        (w.checkout / ".wheelhouse" / WHEEL).chmod(0)
+    (w.bin / "tar").write_text("#!/usr/bin/env bash\ncat >/dev/null; exit 2\n")
+    (w.bin / "tar").chmod(0o755)
     result = w.deploy()
     assert result.returncode == 1
-    assert f"deploy: {message}" in result.stderr and "nothing switched" in result.stderr
+    assert "deploy: git archive failed for" in result.stderr
+    assert "nothing switched" in result.stderr
     assert not (w.root / "live").exists()
 
 
-class TestTheWheelhouse:
-    """#87: a wheelhouse file uv.lock names is held to the release's pinned sha256
-    before uv sync. uv.lock records no digest for one, so `uv sync --locked` would
-    install any file of that name."""
+class TestTheIndex:
+    """#121: co-core comes from the co-pypi index, so the release's `uv sync` runs
+    through the checkout's scripts/co-pypi.sh, which hands the reader's token to
+    that one uv. The lock's sha256 per file is the content check #87's table was."""
 
-    def test_a_same_size_wheel_with_other_bytes_is_refused(self, w: Env) -> None:
-        """The swap a size-only sync kept: refused, journaled, nothing switched."""
-        planted = b"WHEEL"
-        assert len(planted) == len(WHEEL_BYTES)
-        (w.checkout / ".wheelhouse" / WHEEL).write_bytes(planted)
-        result = w.deploy()
-        assert result.returncode == 1
-        assert WHEEL in result.stderr and "nothing switched" in result.stderr
-        assert sha256(planted) in result.stderr and sha256(WHEEL_BYTES) in result.stderr
-        assert "Remove it" in result.stderr
-        assert not (w.root / "live").exists()
-        assert "uv sync" not in w.log("uv") and not w.log("uv"), "refused before uv sync"
-        journaled = [ln for ln in w.log("logger").splitlines() if WHEEL in ln]
-        assert [ln for ln in journaled if sha256(planted) in ln and "refused" in ln], journaled
-
-    def test_a_check_that_passes_is_journaled_with_what_it_checked(self, w: Env) -> None:
-        """Without it, a deploy that checked reads like one from a deploy.sh that
-        never did (broker#125 CR 6). Before the switch, so before `live ->`."""
+    def test_the_sync_runs_through_the_wrapper_in_the_release(self, w: Env) -> None:
         build = w.git("rev-parse", "--short=12", "HEAD")
         assert w.deploy().returncode == 0
-        logged = w.log("logger").splitlines()
-        line = f"-t processor-deploy wheelhouse for {build}: {WHEEL} match their pinned sha256"
-        assert line in logged, logged
-        assert logged.index(line) < logged.index(
-            f"-t processor-deploy live -> {build} (was nothing)"
-        )
+        release = w.root / "releases" / build
+        calls = w.calls()
+        (wrapped,) = [c for c in calls if c.startswith("co-pypi ")]
+        assert wrapped.startswith("co-pypi uv sync --locked --no-dev --no-editable")
+        assert calls.index(wrapped) + 1 == calls.index(wrapped.removeprefix("co-pypi "))
+        (synced,) = w.log("uv").splitlines()
+        assert synced.startswith(f"{release} UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never")
+        assert "pair=set sync --locked" in synced, "the token pair reached that uv"
 
-    def test_only_the_locked_files_reach_the_release(self, w: Env) -> None:
-        """Each copy is checked, so nothing unchecked rides along."""
+    def test_the_wrapper_is_the_checkouts_not_the_releases(self, w: Env) -> None:
+        """deploy.sh runs from the checkout, and so does the wrapper: its locked
+        group lives in the checkout's venv, never in a release being built."""
+        wrapper = w.checkout / "scripts" / "co-pypi.sh"
+        wrapper.write_text(CO_PYPI.replace("co-pypi${", "co-pypi-checkout${"))
         assert w.deploy().returncode == 0
-        release = w.root / "releases" / w.git("rev-parse", "--short=12", "HEAD")
-        assert sorted(p.name for p in (release / ".wheelhouse").iterdir()) == [WHEEL]
+        assert [c for c in w.calls() if c.startswith("co-pypi-checkout uv sync")]
 
-    @pytest.mark.parametrize("value", [None, "", "abc123", "A" * 64])
-    def test_a_locked_file_with_no_sha256_pinned_is_refused(self, w: Env, value) -> None:
-        """Absent, blank, short or uppercase: the regex is the deploy's only guard
-        against a row that reads as no check (CR 3)."""
-        (w.checkout / "pyproject.toml").write_text(
-            pyproject({} if value is None else {WHEEL: value})
-        )
-        w.commit("no pin")
-        result = w.deploy()
+    def test_a_key_that_mints_nothing_switches_nothing(self, w: Env) -> None:
+        result = w.deploy(STUB_MINT_FAIL="1")
         assert result.returncode == 1
-        assert WHEEL in result.stderr and "wheelhouse-sha256" in result.stderr
-        assert "nothing switched" in result.stderr
-        assert not (w.root / "live").exists()
-        assert not w.log("uv"), "refused before uv sync"
-        assert [ln for ln in w.log("logger").splitlines() if "refused" in ln and WHEEL in ln]
-
-    def test_a_locked_file_missing_from_the_wheelhouse_is_refused(self, w: Env) -> None:
-        (w.checkout / ".wheelhouse" / WHEEL).unlink()
-        result = w.deploy()
-        assert result.returncode == 1
-        assert WHEEL in result.stderr and "nothing switched" in result.stderr
+        assert "could not mint" in result.stderr
+        assert "uv sync failed" in result.stderr and "nothing switched" in result.stderr
+        assert not w.log("uv"), "no uv ran without the token"
         assert not (w.root / "live").exists()
 
-    def test_a_lock_naming_no_wheelhouse_file_is_refused(self, w: Env) -> None:
-        """An awk that no longer reads the lock would check nothing: say so."""
-        (w.checkout / "uv.lock").write_text(
-            UV_LOCK.replace('registry = ".wheelhouse"', 'registry = "x"')
-        )
-        w.commit("unreadable lock")
+    def test_a_checkout_without_the_wrapper_is_refused_before_anything(self, w: Env) -> None:
+        (w.checkout / "scripts" / "co-pypi.sh").unlink()
+        result = w.deploy()
+        assert result.returncode == 1 and "co-pypi.sh is missing" in result.stderr
+        assert not w.github_calls() and not (w.root / "live").exists()
+
+    def test_needs_no_wheelhouse(self, w: Env) -> None:
+        assert not (w.checkout / ".wheelhouse").exists()
+        assert w.deploy().returncode == 0
+
+    @pytest.mark.parametrize("spelling", [".wheelhouse", "./.wheelhouse"])
+    def test_a_lock_from_before_121_is_refused_with_the_way_back(self, w: Env, spelling) -> None:
+        """The kept releases are reused, never rebuilt; one no longer kept is built
+        by its own commit's deploy.sh (docs/DEPLOYMENT.md § Rollback)."""
+        (w.checkout / "uv.lock").write_text(LEGACY_LOCK.replace(".wheelhouse", spelling))
+        build = w.commit("a wheelhouse lock")
         result = w.deploy()
         assert result.returncode == 1
-        assert "names no wheelhouse file" in result.stderr
+        assert f"refused {build}" in result.stderr and "before #121" in result.stderr
+        assert "nothing switched" in result.stderr and "§ Rollback" in result.stderr
+        assert not w.log("uv") and not [c for c in w.calls() if c.startswith("co-pypi")]
         assert not (w.root / "live").exists()
         journaled = w.log("logger")
-        assert "refused" in journaled and "names no wheelhouse file" in journaled, "CR 7"
-
-    def test_the_digests_are_the_releases_own_not_the_checkouts(self, w: Env) -> None:
-        """A pin moves in the commit deployed: its pyproject.toml is what the release
-        is held to, whatever the checkout's working tree says."""
-        moved = b"wh33l"
-        (w.checkout / "pyproject.toml").write_text(pyproject({WHEEL: sha256(moved)}))
-        w.commit("moved pin")
-        (w.checkout / "pyproject.toml").write_text(PYPROJECT)  # the tree, not the commit
-        (w.checkout / ".wheelhouse" / WHEEL).write_bytes(moved)
-        assert w.deploy().returncode == 0
-        release = w.root / "releases" / w.git("rev-parse", "--short=12", "HEAD")
-        assert (release / ".wheelhouse" / WHEEL).read_bytes() == moved
+        assert f"refused {build}" in journaled and "before #121" in journaled
 
 
 def test_a_failed_build_switches_nothing(w: Env) -> None:
