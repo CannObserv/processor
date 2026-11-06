@@ -12,7 +12,7 @@
 #     GH_ENV_GH names the gh it checks (default gh; tests/test_gh_env.py).
 # Only GH_TOKEN: cross-repo GH_TOKEN_<REPO> stay per call. It never prints the
 # token and always exits 0. Other SessionStart hooks run in parallel and never
-# see this export: the refresh hook reads the token in its own registration.
+# see this export: the refresh hook finds its own (gregoryfoster/skills#576).
 set -uo pipefail
 trap 'exit 0' EXIT
 

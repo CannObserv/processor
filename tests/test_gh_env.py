@@ -1,12 +1,10 @@
 """``GH_TOKEN`` reaches ``gh`` from ``.env``, read as data (#115; gregoryfoster/skills#334).
 
 A local replica of upstream's planned ``using-github-cli`` until it ships, then
-replaced by it. Two consumers:
-
-- the agent's Bash calls, through ``.claude/hooks/gh-env.sh`` and ``$CLAUDE_ENV_FILE``;
-- the refresh hook, whose ``merge_mode pr`` path opens its PR with ``gh``. SessionStart
-  hooks run in parallel, so no export reaches it: its registration reads the token
-  itself, through ``scripts/env-value.sh``.
+replaced by it. Its consumer is the agent's Bash calls, through
+``.claude/hooks/gh-env.sh`` and ``$CLAUDE_ENV_FILE``. The refresh hook is not one:
+since gregoryfoster/skills#576 it reads ``.env`` as data itself, and its registration
+carries no token.
 
 ``.env`` is never executed (``set -a; . .env`` would run it), the token is never
 printed, and the hook always exits 0.
@@ -199,14 +197,22 @@ def test_gh_env_is_registered_once() -> None:
     assert ".claude/hooks/gh-env.sh" in entries[0]["command"]
 
 
-def test_the_refresh_registration_hands_its_hook_the_token(tmp_path: Path) -> None:
-    """The registered command, run as the harness runs it, against a stand-in hook."""
+def test_the_refresh_registration_hands_its_hook_no_token(tmp_path: Path) -> None:
+    """The registered command, run as the harness runs it, against a stand-in hook.
+
+    Since gregoryfoster/skills#576 the hook finds the token itself, and hands it to its
+    ``gh`` and git calls only. A registration that exported it would reach the bumped
+    pointer's own installer before anyone reviewed the bump.
+    """
     (entry,) = [h for h in _session_start() if "skills-submodule-update.sh" in h["command"]]
-    project = _project(tmp_path, f"GH_TOKEN={NASTY}\n")
+    assert "env-value.sh" not in entry["command"]
+    assert "GH_TOKEN" not in entry["command"]
+    project = _project(tmp_path, "GH_TOKEN=t\n")
     stand_in = project / ".claude" / "hooks" / "skills-submodule-update.sh"
-    stand_in.write_text('#!/usr/bin/env bash\nprintf %s "$GH_TOKEN" > "$CLAUDE_PROJECT_DIR/seen"\n')
+    stand_in.write_text(
+        '#!/usr/bin/env bash\nprintf %s "${GH_TOKEN-unset}" > "$CLAUDE_PROJECT_DIR/seen"\n'
+    )
     env = {k: v for k, v in os.environ.items() if k != "GH_TOKEN"}
     env["CLAUDE_PROJECT_DIR"] = str(project)
     subprocess.run(["bash", "-c", entry["command"]], env=env, cwd=project, check=True)
-    assert (project / "seen").read_text() == NASTY
-    assert not (project / "pwned").exists()
+    assert (project / "seen").read_text() == "unset"
