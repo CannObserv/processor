@@ -105,6 +105,23 @@ from processor.stores import build_stores
 s = build_stores(Settings()); s.input.preflight(); s.output.preflight(); print("both buckets reachable")' )
 ```
 
+**The co-pypi reader's key (#121).** Deploy-time only: `scripts/co-pypi.sh` mints the index's token from it for one `uv` command, as `exedev`. It's a key for `co-pypi-reader@co-gcs`, which already holds `roles/artifactregistry.reader` on `co-pypi` (CannObserv/cannobserv#554), never a grant to the writer: the runtime identity parses untrusted documents. It sits outside `/etc/processor/`, which is root 700 and the service's. Placed 2026-11-06 (key `57797cdb…`):
+
+```bash
+# on co-processor
+sudo install -d -o root -g exedev -m 750 /etc/processor-deploy
+# where gcloud is authenticated; the key is never left on disk there
+(
+  set -e; dir="$(mktemp -d)"; trap 'rm -rf "$dir"' EXIT
+  gcloud iam service-accounts keys create "$dir/key.json" \
+    --iam-account=co-pypi-reader@co-gcs.iam.gserviceaccount.com
+  ssh co-processor.exe.xyz \
+    'sudo install -o root -g exedev -m 640 /dev/stdin /etc/processor-deploy/co-pypi-reader.json' < "$dir/key.json"
+)
+```
+
+Check it by metadata alone (`ls -l /etc/processor-deploy`). Its first use mints a token: `bash scripts/co-pypi.sh uv lock --locked`. `PROCESSOR_CO_PYPI_KEY` points the wrapper at another key, for another machine. `tests/test_child.py` proves the contained child can't open it, without reading it.
+
 To verify the bucket's settings and grants (read-only):
 
 ```bash
@@ -156,8 +173,8 @@ processor_cli() {   # e.g. processor_cli dlq list; processor_cli ensure-group
 
 ```
 /srv/processor/                      exedev's, 755
-  releases/<build>/   git archive of one commit on origin/main, the wheelhouse files its
-                      uv.lock names (each held to its pinned sha256), its own .venv;
+  releases/<build>/   git archive of one commit on origin/main, its own .venv (co-core
+                      from the co-pypi index, each file held to the lock's sha256);
                       REVISION written last; a-w, go+rX
   live -> releases/<build>           processor.service, processor-drift.service
 ```
@@ -165,7 +182,7 @@ processor_cli() {   # e.g. processor_cli dlq list; processor_cli ensure-group
 - **`<build>` is the commit's 12-character short SHA.** `REVISION` holds it. A directory without `REVISION` is an interrupted build, and the next deploy rebuilds it. The `starting` record reports the build, from `REVISION` (`dev` outside a release).
 - **Nothing done in a checkout reaches the unit.** Branches, uncommitted edits, `uv sync` and the skills hook's commits all stay in the checkout. `~/processor` stays the operator's clone, and `scripts/deploy.sh` builds from it.
 - **The venv:**
-  - built with `uv sync --locked --no-dev --no-editable --compile-bytecode --python /usr/bin/python3.12`, inside the release, with `UV_LINK_MODE=copy`. uv's Linux default hardlinks from `~/.cache/uv`, which would make every release file the same inode as the cache's and each dev venv's. The release's `chmod` would then reach them, and an edit to any of them would reach production (CR 11);
+  - built with `uv sync --locked --no-dev --no-editable --compile-bytecode --python /usr/bin/python3.12`, inside the release, with `UV_LINK_MODE=copy`, through the checkout's `scripts/co-pypi.sh` (#121); uv's Linux default hardlinks from `~/.cache/uv`, which would make every release file the same inode as the cache's and each dev venv's. The release's `chmod` would then reach them, and an edit to any of them would reach production (CR 11);
   - never synced at start: the unit runs the venv's own `processor` entry point;
   - non-editable, so `sys.path`, and with it the child's allowlist, holds only the stdlib and `site-packages`;
   - on the system interpreter, because `processor` can't read anything under `/home` (`/home/exedev` is 0750, and the unit sets `ProtectHome=yes`).
@@ -181,14 +198,14 @@ Status's CI gate (status#11) is adopted as § The CI gate (#34), and its drift c
 
 ## Deploy a change: `scripts/deploy.sh`
 
-Run as `exedev`, from `~/processor`, after the PR merges. It needs `git`, `uv`, `jq`, `curl` and `flock` (util-linux) on the `PATH`, and HTTPS to `api.github.com`, plus `sudo` for `systemctl`, `systemd-run` and the unit file; `co-processor` has all of them. The script fetches `origin` itself:
+Run as `exedev`, from `~/processor`, after the PR merges. It needs `git`, `uv`, `jq`, `curl` and `flock` (util-linux) on the `PATH`, HTTPS to `api.github.com`, the co-pypi reader's key (§ GCP provisioning) for a build, plus `sudo` for `systemctl`, `systemd-run` and the unit file; `co-processor` has all of them. The script fetches `origin` itself:
 
 ```bash
 cd ~/processor && git pull --ff-only     # for the skills hook; the deploy fetches on its own
 scripts/deploy.sh                        # origin/main, once its CI passed
 scripts/deploy.sh <build>                # any commit on origin/main with green CI: a rollback
 scripts/deploy.sh --skip-ci [<build>]    # without asking CI: an emergency, logged
-journalctl -t processor-deploy -n 20     # "CI passed for …", "wheelhouse for <build>: … match their pinned sha256", "live -> <build> (was …)", then "live is on <build>: pid <N> …"
+journalctl -t processor-deploy -n 20     # "CI passed for …", "live -> <build> (was …)", then "live is on <build>: pid <N> …"
 ```
 
 **The journal holds the verdict** (`-t processor-deploy`, #93). A verified deploy ends with `live is on <build>: pid <N> logged starting (child_containment required), then consuming; the smoke run passed`: both proofs of step 4, `<N>` the new `MainPID`. A `live -> <build>` with no `live is on <build>` after it was never verified: a rollback (`live rolled back to …` / `… NOT answering`), an interrupt (below), or a SIGKILL, which leaves nothing. Before #93's deploy only the switch was journaled.
@@ -198,13 +215,9 @@ A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pypr
 **In order:**
 0. **Ask CI** whether the commit passed (§ The CI gate). A refusal builds nothing.
 1. **Build** `releases/<build>`, or reuse a complete one whose venv still imports `processor`, co-core and lxml. A release that `live` runs is never rebuilt in place. The service user must exist, or nothing switches.
-   - **The wheelhouse check** (#87, as broker#125):
-     - only the files the release's `uv.lock` names are copied from `~/processor/.wheelhouse`;
-     - each copy is held to the sha256 in the release's own `pyproject.toml` `[tool.processor.wheelhouse-sha256]`, before `uv sync`. uv records no digest for a find-links file, so `uv sync --locked` would install any file of that name.
-   - A pass is journaled: `wheelhouse for <build>: <files> match their pinned sha256`.
-   - A refusal is journaled too (`refused <build>: …; nothing switched`, exit 1). It fires on a file that misses its pin, one with no pin, one the wheelhouse lacks, or a lock that names no wheelhouse file at all.
-   - A mismatch says to remove the file, populate the wheelhouse again (AGENTS.md; a local build: § Bumping co-core) and deploy again. This deploy doesn't run the sync: it checks what the checkout holds.
-   - A reused release isn't checked again. Builds from before #87's deploy were never checked.
+   - **The index** (#121): the release's `uv sync --locked` runs through the checkout's `scripts/co-pypi.sh`, which mints the co-pypi reader's token for that one `uv`. `--locked` holds every file uv installs to the release's `uv.lock` sha256 and refuses a miss. That is the content check #87's wheelhouse check was, before #121 retired it with its digest table.
+   - A key that mints nothing, or an index that refuses, fails the sync: `uv sync failed for <build>; nothing switched`, exit 1.
+   - A lock from before #121 (co-core from `./.wheelhouse`) is refused and journaled (`refused <build>: … (before #121) …; nothing switched`), with the way back: § Rollback.
 2. **Switch** `live` (an atomic rename). Then install every `deploy/*.service` and `deploy/*.timer` from the release that differs from its installed copy (#35, as status#18), with one `daemon-reload`. A changed timer is `try-restart`ed so it re-arms. Each replaced copy is kept aside for step 5.
 3. **Restart.** `reset-failed` comes first, in case a crash loop hit the start limit. The restart lets the in-flight command finish (`KillMode=mixed`: SIGTERM reaches the consumer, not its extraction child), for up to `TimeoutStopSec=240`.
 4. **Verify,** within `PROCESSOR_DEPLOY_VERIFY_SECONDS` (300):
@@ -287,22 +300,25 @@ gh api repos/<owner>/<action>/git/ref/tags/<tag> --jq '.object.type + " " + .obj
 - `commit`: that SHA is the pin.
 - `tag`: an annotated tag, whose SHA names the tag object rather than a commit. The pin is the commit it points at: `gh api repos/<owner>/<action>/git/tags/<sha> --jq .object.sha`. setup-uv's old `v7` was one.
 
-**The cache.** `ci.yml` sets `prune-cache: true` on both setup-uv steps, because setup-uv v9 flipped the default to false. The repo is public, and a fork's PR can restore a cache saved on `main`. Unpruned, that cache holds co-core unpacked from the private wheelhouse. The prune drops downloaded wheels and keeps wheels built from source, so it covers co-core only while `uv.lock` locks co-core to a wheel. `tests/test_ci.py` checks both.
+**The cache.** `ci.yml` sets `prune-cache: true` on both setup-uv steps, because setup-uv v9 flipped the default to false. The repo is public, and a fork's PR can restore a cache saved on `main`. Unpruned, that cache holds co-core from the private co-pypi index. The prune drops downloaded wheels and keeps wheels built from source, so it covers co-core only while `uv.lock` locks each co-core to a wheel. `tests/test_ci.py` checks the prune, `tests/test_dependency_index.py` the wheels.
+
+**The index token** (#121). Each WIF step also mints an access token (`token_format: access_token`). The `uv sync` step alone takes it, as `UV_INDEX_CO_PYPI_USERNAME` / `_PASSWORD`, from the action's masked output. `uv lock --locked` resolves from the lock alone (measured offline from an empty cache), so it needs none. `tests/test_ci.py` holds it to that one step.
 
 **Dependabot** (`.github/dependabot.yml`) proposes action bumps only: `github-actions`, weekly, at most 10 open PRs, with `chore:` subjects.
 - **A 3-day cooldown, GitHub's default.** `dependabot.yml` sets no `cooldown`, so Dependabot skips a release less than 3 days old (`cooldown days 3` in its log). setup-uv v10.3.3, published 2026-10-28, was held back from the first run on 2026-10-30 ("Found acceptable version outside cooldown: 10.3.2"). It arrived as #110 on 2026-11-02.
-- **Never `uv` or `pip`.** Processor owns the exact co-core pin and holds the extraction stack ([§ Extraction dependencies](#extraction-dependencies)). The wheelhouse is private, so Dependabot's updater couldn't sync it anyway. `uv.lock` has its own signal ([§ The lock audit](#the-lock-audit)).
+- **No `uv` or `pip` version updates.** Processor owns the exact co-core pin and holds the extraction stack ([§ Extraction dependencies](#extraction-dependencies)). `uv.lock` has its own signal ([§ The lock audit](#the-lock-audit)).
 - **Settings → Code security** (operator reading, 2026-10-29, #80; security updates re-read 2026-11-03, #112):
   - Dependency graph: **on**. It is the `Graph Update: uv in /.` run on each push, and opens nothing.
   - Dependabot alerts: **on**. These are the operator's.
-  - Dependabot security updates: **on**, and left on (operator, 2026-11-03, #112). The 2026-10-29 reading said off. A security update ignores `dependabot.yml`: it is a `uv` job (`"command":"security"`) per advisory. Here every one fails before it opens anything: `PathDependenciesNotReachable: --find-links`, since the updater can't sync the private wheelhouse. The first two ran on the push of `312552a` (2026-11-03T01:27Z), for pyasn1 and pypdf. So a red security-update job is the signal, never a PR, and the fix goes through [§ The lock audit](#the-lock-audit)'s "Where a finding goes". If one ever opens a PR, don't land it: it moves `uv.lock` without the floor, and in the extraction stack without the generation.
+  - Dependabot security updates: **on**, and left on (operator, 2026-11-03, #112). The 2026-10-29 reading said off. A security update ignores `dependabot.yml`: it is a `uv` job (`"command":"security"`) per advisory. Until #121 every one failed before it opened anything (`PathDependenciesNotReachable: --find-links`; the first two on the push of `312552a`, 2026-11-03T01:27Z). Since #121, co-core resolves from the co-pypi index, which the updater reads over OIDC through the org registry `PYTHON_INDEX_OIDC_GCP` once this repository (ID `1396635239`) is admitted (cannobserv `docs/DEPENDABOT.md`, step 3).
+  - **A security PR lands by hand,** never as proposed. Add the `[tool.uv] constraint-dependencies` floor and its `tests/test_lock_floors.py` row in the same merge; in the extraction stack, bump `LOCAL_GENERATION` too ([§ The lock audit](#the-lock-audit)'s "Where a finding goes"). Then check the proposed `uv.lock`: every co-core `source` is still the index URL. Dependabot's lookup asks PyPI first, and the co-core names are unclaimed there (DEPENDABOT.md's accepted limit; CannObserv/replicator#169).
 
   No test can see these settings, and our token gets 403 on both APIs. Re-read them in the UI whenever the repo's security settings change.
 
 **A Dependabot run reads its own credential context.** GitHub runs it as if from a fork: a read-only `GITHUB_TOKEN`, and Dependabot secrets only.
 - `ci.yml` needs no secret. It needs `vars.GCP_WIF_PROVIDER` to resolve, plus the OIDC token that `id-token: write` asks for.
 - Both held on CannObserv/watcher's Dependabot PRs (same provider, same SA; watcher#356, watcher#364, per broker's `docs/CI.md`).
-- Confirmed here on the first Dependabot PR, #110 (setup-uv 10.3.2 → 10.3.3): run 41426874011, 2026-11-02, a `pull_request` run triggered by `dependabot[bot]`. **Authenticate to Google Cloud (WIF, read-only)** and **Sync cannobserv wheelhouse** passed in both `lint` and `test`.
+- Confirmed here on the first Dependabot PR, #110 (setup-uv 10.3.2 → 10.3.3): run 41426874011, 2026-11-02, a `pull_request` run triggered by `dependabot[bot]`. **Authenticate to Google Cloud (WIF, read-only)** and **Sync cannobserv wheelhouse** (retired by #121) passed in both `lint` and `test`.
 - On a red one, read **Authenticate to Google Cloud** first:
   - *"must specify exactly one of workload_identity_provider or credentials_json"*: the variable didn't reach the run.
   - *"did not inject $ACTIONS_ID_TOKEN_REQUEST_TOKEN"*: no OIDC token.
@@ -351,7 +367,7 @@ The hook is per clone, and `--no-verify` skips it, so CI is the enforcement.
 - `audit_lock.sh` reads it;
 - the release's `uv sync --no-dev` installs neither tool.
 
-They call `uv run --frozen --no-config --only-group lint`, without the project, so a clone needs no wheelhouse to commit. `--no-config` because `[tool.uv] find-links` is read even under `--only-group`, and a clone has no `./.wheelhouse` (as for the sync, #79).
+They call `uv run --frozen --only-group lint`, without the project, so a clone needs no co-pypi token to commit. `--no-config` stood in for `find-links` until #121, which measured the group from an empty cache with no token.
 
 **A bump** changes what the gate finds, so it lands with its fixes: `uv lock --upgrade-package shellcheck-py`, then `bash scripts/shellcheck.sh`, then this paragraph's version. Never `uv lock --upgrade` (the co-core rule). It moves `pyproject.toml` or `uv.lock`, so it is a deploy.
 
@@ -370,7 +386,7 @@ The script and its workflow:
 
 - **Report-only.** The script always exits 0. A finding (uv exit 1) is a `uv.lock advisories` warning, with the audit and where it goes in the job summary. Any other failure is a `uv audit did not run` warning, never a clean result. A red gate would turn `main` red on someone else's disclosure date.
 - **Outside the deploy gate.** The gate reads `ci.yml`'s push run alone (§ The CI gate); `tests/test_lock_audit.py` holds both workflows to that.
-- **No secret, no WIF.** `uv audit --frozen` reads the lock without the wheelhouse. OSV's text is echoed between `::stop-commands::` and a random token, so it can't issue workflow commands.
+- **No secret, no WIF.** `uv audit --frozen` reads the lock without fetching a package (measured with no co-pypi token, #121). OSV's text is echoed between `::stop-commands::` and a random token, so it can't issue workflow commands.
 - **By hand:** `bash scripts/audit_lock.sh` from any directory audits this checkout's lock.
 - **Where a finding goes:** every finding is `uv lock --upgrade-package <name>` plus a `[tool.uv] constraint-dependencies` floor with its check in `tests/test_lock_floors.py`, so a later re-lock can't undo it. A package in the extraction stack also bumps `LOCAL_GENERATION`, with the notice: § Extraction dependencies (#71 did both for pypdf). Re-locks touch `uv.lock`, so deploy after the merge.
 
@@ -551,6 +567,7 @@ Then run § Containment's checks, and wait for the next shadow command: `ack: co
 ## Rollback
 
 - **A failed deploy** switches back by itself (exit 1). `scripts/deploy.sh <old build>` rolls back on purpose; the old release still exists among the 5 kept, so nothing is rebuilt. It is gated on the old build's CI like any deploy; if GitHub can't answer, add `--skip-ci` (§ The CI gate).
+- **Past #121**, to a build no longer kept: this `deploy.sh` refuses its lock, which resolves co-core from `./.wheelhouse`. A kept release is reused and needs nothing. For one that isn't kept, run that commit's own `scripts/deploy.sh` from a worktree at it: `git worktree add ../processor-<build> <build>`, then `ln -s ~/processor/.wheelhouse ../processor-<build>/.wheelhouse`, then `../processor-<build>/scripts/deploy.sh <build>`. Its `deploy.sh` checks the wheelhouse against its own table. `~/processor/.wheelhouse/` stays on the host for this; `scripts/build_wheelhouse.sh` is in that commit. Documented, not exercised.
 - **Past #87**, to a build no longer kept: the rebuild is refused, since the old `pyproject.toml` pins no wheelhouse digest. Falling back to unchecked would undo the check. Roll back to a kept release instead.
 - **Past #35** (to `428af0e2a016` or older): the old release has no `processor-drift.*` units and no `processor drift`. A deploy never removes a unit, and it names each one the release lacks, so the timer keeps firing. Each run then exits 2 with a usage line and checks in nothing, and `co-processor-drift` goes `missing`. So when rolling back past #35, run `sudo systemctl disable --now processor-drift.timer`, and ask Status's operator to pause the monitor (`"enabled": false`). Rolling forward again doesn't re-enable a timer that is still installed: `sudo systemctl enable --now processor-drift.timer`.
 - **Past #39** (to a build before the liveness check-in): the old unit loads no Status key and the old build never checks in, so `co-processor-live` goes `missing` 20 min later. Ask Status's operator to pause it before rolling back.
@@ -594,11 +611,9 @@ On boot, the service preflights both buckets and exits non-zero if either is unr
 
 co-core is pinned `==`, and Processor owns the pin (spec D5, §5; amended 2026-10-10, #47). Until watcher#350 it was in lockstep with Watcher. A bump changes `processor_version` on every fact, and Watcher re-baselines on that:
 
-1. Rebuild the wheelhouse at the new tag, then update the pin in `pyproject.toml`, `EXPECTED` in `tests/test_pin.py` and the default tag in `scripts/build_wheelhouse.sh` (the pin test holds all three), and `uv lock`.
-   - **The wheelhouse digests move in the same diff** (#87). `[tool.processor.wheelhouse-sha256]` in `pyproject.toml` gets one row per file the new lock names: `sha256sum .wheelhouse/<file>`. Drop the old rows. `tests/test_pin.py` holds the names to `EXPECTED`, and `tests/test_sync_wheelhouse.py` holds them to the lock. Until then, every sync and deploy refuses.
-   - **Two sources, compared, never one picked.** With no co-pypi-reader key here, the rows come from `scripts/build_wheelhouse.sh`. CI's from-empty sync is the bucket's side: it refuses a download that misses a row, so a green PR is the comparison.
-   - **A local build matches the bucket's only on the same build backend.** cannobserv's `requires = ["hatchling"]` is unpinned. hatchling normalizes timestamps, but writes its version into `.dist-info/WHEEL` (`Generator:`). 0.38.0 built with 1.33.0 differs from the 1.32.4 build (measured 2026-10-28). `build_wheelhouse.sh` constrains hatchling to `HATCHLING` (the pin test holds it). Re-check it at each bump: `unzip -p <wheel> '*.dist-info/WHEEL'` names the generator.
-   - **CI red on a digest means the two sources disagree.** Stop and find out why (the `Generator:` line first), before pinning either. Each digest stops a later swap, not one made at pin time: that waits on cannobserv#591's `SHA256SUMS`.
+1. Update the pin in `pyproject.toml` (all three names) and `EXPECTED` in `tests/test_pin.py`, then `bash scripts/co-pypi.sh uv lock --upgrade-package co-core --upgrade-package co-core-aio --upgrade-package co-core-sync`, never `--upgrade`. Nothing else moves: no wheelhouse, no digest table (#121).
+   - **The lock carries the digests.** Each co-core file gets its sha256 from the index, and `uv sync --locked` refuses a miss. cannobserv's publish run fails unless the index lists every file under its local sha256 (from v0.41.0, CannObserv/cannobserv#554).
+   - **Check the diff:** each co-core `source` is the index URL, and nothing outside the bump moved. A moved extraction-stack package belongs to the bump (§ Extraction dependencies).
 2. A release that adds an essence or an extraction rule gets its cases in `tests/fixtures/parity/cases.json` first, so their goldens come from co-core. Then regenerate the goldens from co-core directly: `uv run python scripts/gen_parity_goldens.py tests/fixtures/parity`. It prints every digest that moved, and every case that started or stopped being refused. Paste that list into the bump note: each line is a deliberate re-baseline. Never regenerate to make a parity test pass outside a bump. A catch-up across releases reads each CHANGELOG's Downstream lines for the extract, bus and blob-store surfaces, and diffs those packages' code between the tags (#29 did 0.19.7 → 0.32.0).
 3. The real corpus (`tests/fixtures/parity/real/`) is never regenerated. It passes unchanged, or the bump note says which recorded fingerprints moved.
 4. **Notice to Watcher** before deploy: the new `processor_version`, and the moved digests. A change to the contract needs coordination with Watcher first, not just notice. The contract is the `content.process` / `content.derived` models and `canonical_text` semantics. A change to essence resolution is notice, not coordination (spec §5, #57).
@@ -844,7 +859,7 @@ The first unattended run reads in `journalctl -u apt-daily-upgrade` and `/var/lo
 
 **The record** goes on the issue (`records CannObserv/processor`), per run.md §7, and ends with the next window's date. **Its first line is `## Patch run record: co-processor`**, then anything (a date, the lane), posted by an `OWNER` or a `MEMBER` whose membership is public (§ The patch-due check): that line is what [§ The patch-due check](#the-patch-due-check) reads as this week's run, a nothing-pending run's included. A run that can't take its window still posts one, saying why, or the monitor stays `missed` until the next. What each run leaves pending, by class, comes from step 9 and includes:
 - **Ubuntu Pro / ESM:** Pro isn't attached, and 25 esm-apps updates were visible on 2026-10-26.
-- **Language:** `/srv/processor/live/uv.lock`, its OSV advisory count, owner `self`. Run.md §7 asks for the owning repo's update mechanism; here that is `audit.yml`, report-only ([§ The lock audit](#the-lock-audit)). Dependabot's version updates cover Actions only, never `uv.lock`, and its security updates fail on the private wheelhouse without opening anything ([§ CI pins and Dependabot](#ci-pins-and-dependabot)). A count above 0 goes to that section's "Where a finding goes" and is linked from the record. A tree listed as not audited, or the class in `not_read`, is recorded as no read, never as 0.
+- **Language:** `/srv/processor/live/uv.lock`, its OSV advisory count, owner `self`. Run.md §7 asks for the owning repo's update mechanism; here that is `audit.yml`, report-only ([§ The lock audit](#the-lock-audit)). Dependabot's version updates cover Actions only, never `uv.lock`, and its security updates, resolving through the co-pypi index since #121, are landed by hand ([§ CI pins and Dependabot](#ci-pins-and-dependabot)). A count above 0 goes to that section's "Where a finding goes" and is linked from the record. A tree listed as not audited, or the class in `not_read`, is recorded as no read, never as 0.
 
 ### The patch-due check
 

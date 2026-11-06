@@ -59,13 +59,13 @@ An override is a regular directory in `skills/` whose `SKILL.md` names `override
 
 ## Worktrees
 
-A new worktree has no venv (`worktree_venv` is `none`), no `.wheelhouse` (git-ignored; `uv.lock` records co-core as `registry = ".wheelhouse"`) and no submodules. `worktree-create.sh --new` also cuts from local `HEAD`, which lags `origin/main` between pulls. From this checkout:
+A new worktree has no venv (`worktree_venv` is `none`) and no submodules. co-core comes from the co-pypi index (#121): uv's cache is shared, so a sync usually needs no token, and when it needs to download, the wrapper mints one. `worktree-create.sh --new` also cuts from local `HEAD`, which lags `origin/main` between pulls. From this checkout:
 
 ```bash
 git fetch origin && git branch <n>-<slug> origin/main
 cd "$(bash skills/using-git-worktrees/scripts/worktree-create.sh <n>-<slug>)"
 bash .skills/doctor.sh                                   # initialises both submodules
-ln -s "$(git worktree list | head -1 | awk '{print $1}')/.wheelhouse" .wheelhouse && uv sync
+bash scripts/co-pypi.sh uv sync
 ```
 
 Destroying one needs `--force` once its submodules are initialised (git refuses otherwise); check `git status` is clean first.
@@ -79,7 +79,7 @@ One skill since #115, which detects the stack: `Detected: toolchain uv`, with no
 | `merge_mode` | `pr` | Work lands through a PR, never a local merge. Steps 2.5–8 take their `pr` lines, and `using-git-worktrees` Phase 4 is skipped |
 | `deploy_command` | `setsid -w scripts/deploy.sh` | The release deploy (#2). `-w` keeps the deploy's exit code (broker#123). The skill appends the pushed SHA |
 | `doc-sensitive-paths`, `doc-sections` | tailored | Committed together, or every hit says which half is the default. A dead entry, a missing doc or a missing heading fails `tests/test_shipping_knobs.py` |
-| `gate-stamp-inputs` | `.env`, `.wheelhouse/*` | Replaces the default, so `.env` is named again (`tests/test_child.py` probes it). The wheelhouse is untracked and decides which co-core installs |
+| `gate-stamp-inputs` | `.env` | Replaces the default, so `.env` is named again (`tests/test_child.py` probes it). `.wheelhouse/*` left with #121: no untracked file decides which co-core installs |
 | `import-targets`, `pre-ship-uv-args` | absent | The default `processor` is right, and CI's `uv run pytest` takes no group |
 
 ### Merging under `pr`

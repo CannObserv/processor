@@ -16,8 +16,8 @@ skills/
 .worktrees/
 .claude/worktrees/
 
-# The cannobserv wheelhouse (already git-ignored; built wheels, never source). No
-# trailing slash: a worktree links it, and a symlink is not a directory.
+# The retired cannobserv wheelhouse (#121; git-ignored, built wheels, never source).
+# No trailing slash: an older worktree may link it, and a symlink is not a directory.
 .wheelhouse
 
 # Dated prose. Searchable as the implementation-plans context artifact; out of the

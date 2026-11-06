@@ -110,5 +110,6 @@ def test_each_doc_section_names_tracked_docs_and_real_headings() -> None:
 
 def test_gate_stamp_inputs_cover_the_untracked_inputs() -> None:
     """The knob replaces the default ``.env``, so it names it again (test_child reads
-    ``REPO/.env``); ``.wheelhouse`` decides which co-core ``uv run`` installs."""
-    assert _lines("gate-stamp-inputs") == [".env", ".wheelhouse/*"]
+    ``REPO/.env``). ``.wheelhouse`` left it with #121: co-core comes from the index,
+    each file held to the lock's sha256, so no untracked file decides what installs."""
+    assert _lines("gate-stamp-inputs") == [".env"]

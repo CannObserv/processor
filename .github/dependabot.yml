@@ -5,11 +5,12 @@
 # context, so on a red one read the WIF step first. How one lands, fast-forwarded
 # onto main in the deploy checkout: docs/DEPLOYMENT.md § CI pins and Dependabot.
 #
-# github-actions only, never uv or pip: Processor owns the exact co-core pin and
-# holds the extraction stack (AGENTS.md, #71), and co-core resolves from the
-# private wheelhouse, which Dependabot's updater cannot sync. Security updates
-# would move uv.lock regardless of this file; they are off in Settings → Code
-# security (operator, 2026-10-29).
+# github-actions only, never uv or pip version updates: Processor owns the exact
+# co-core pin and holds the extraction stack (AGENTS.md, #71). Security updates
+# need no entry here and move uv.lock regardless: they are on in Settings → Code
+# security (operator, 2026-11-03, #112), and resolve co-core from the co-pypi
+# index over OIDC once the repository is admitted (#121). Each lands by hand
+# (docs/DEPLOYMENT.md § CI pins and Dependabot).
 # Guarded by tests/test_dependabot.py: a mistyped config stops producing PRs
 # without erroring anywhere a person looks.
 version: 2

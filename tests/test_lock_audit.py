@@ -105,8 +105,8 @@ def test_every_exit_is_zero(tmp_path: Path, uv_exit: int) -> None:
 
 
 def test_audits_the_lock_beside_it_without_relocking(tmp_path: Path) -> None:
-    """``--frozen`` reads ``uv.lock`` as committed: a relock would need the private
-    wheelhouse, which the job has no credential to fetch. It runs in the checkout
+    """``--frozen`` reads ``uv.lock`` as committed: a relock would need the co-pypi
+    index's token, which the job has no credential to mint (#121). It runs in the checkout
     the script sits in, whatever the caller's directory. ``uv audit`` is a preview
     command, so the flag goes first and a uv that knows it runs once."""
     _, calls, _ = _run(tmp_path, 0)

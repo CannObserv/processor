@@ -38,12 +38,12 @@
     {
       "name": "ci-workflow",
       "path": "./.github/workflows/ci.yml",
-      "description": "GitHub Actions: lint, then the full suite against redis 7.0.15 from mirror.gcr.io, with keyless WIF to co-pypi-reader for the cannobserv wheelhouse."
+      "description": "GitHub Actions: lint, then the full suite against redis 7.0.15 from mirror.gcr.io, with keyless WIF to co-pypi-reader, which mints the co-pypi index token for uv sync."
     },
     {
       "name": "project-config",
       "path": "./pyproject.toml",
-      "description": "Dependency and tool contract: Python 3.12, the exact co-core pin, the wheelhouse find-links, ruff rules and excludes, pytest config."
+      "description": "Dependency and tool contract: Python 3.12, the exact co-core pin from the explicit co-pypi index, ruff rules and excludes, pytest config."
     }
   ]
 }

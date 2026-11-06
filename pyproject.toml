@@ -44,8 +44,8 @@ dev = [
     "pyyaml>=6,<7",
 ]
 # The gate's tools (#81, as broker#112). .githooks/pre-commit and scripts/shellcheck.sh
-# run them as `uv run --frozen --no-config --only-group lint`: no project, so no
-# wheelhouse. shellcheck-py's wheel carries the shellcheck binary, so the lock
+# run them as `uv run --frozen --only-group lint`: no project, so nothing from the
+# co-pypi index and no token (#121). shellcheck-py's wheel carries the shellcheck binary, so the lock
 # hash-pins it: no root install on the node, one version everywhere. A bump moves the
 # gate: `uv lock --upgrade-package shellcheck-py`, then fix what it finds and the
 # version docs/DEPLOYMENT.md § Shell lint names, which tests/test_shellcheck.py holds.

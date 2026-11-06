@@ -7,12 +7,11 @@ release goes unannounced. A mistyped Dependabot config stops producing PRs witho
 erroring anywhere a person looks, so each property is pinned here.
 
 * **``github-actions`` only, never ``uv`` or ``pip``.** Processor owns the exact
-  co-core pin, the extraction stack is held with it (AGENTS.md, #71), and co-core
-  resolves from the private wheelhouse, which Dependabot's updater cannot sync.
+  co-core pin, and the extraction stack is held with it (AGENTS.md, #71).
   Dependabot *security updates* ignore this file. They are on in Settings → Code
-  security (operator, 2026-11-03, #112), which no test can read, and each one fails
-  on the wheelhouse before it opens a PR (docs/DEPLOYMENT.md § CI pins and
-  Dependabot).
+  security (operator, 2026-11-03, #112), which no test can read. Since #121 they
+  resolve co-core from the co-pypi index over OIDC, and each PR lands by hand
+  (docs/DEPLOYMENT.md § CI pins and Dependabot).
 * **Every workflow pins each action as ``@<sha> # vX.Y.Z``.** Dependabot proposes
   in the pin's own form, so a SHA and its comment move together.
 * **The open-PR limit outlasts a full batch**, derived from the workflows: past
@@ -68,7 +67,7 @@ def test_only_github_actions_is_configured() -> None:
     ecosystems = [u.get("package-ecosystem") for u in _updates()]
     assert ecosystems == ["github-actions"], (
         f"{ecosystems}: never uv or pip. Processor owns the co-core pin and holds the "
-        "extraction stack (AGENTS.md, #71), and the wheelhouse is private"
+        "extraction stack (AGENTS.md, #71)"
     )
 
 

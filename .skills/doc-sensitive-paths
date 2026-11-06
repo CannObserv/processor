@@ -8,7 +8,7 @@
 AGENTS.md
 CLAUDE.md
 
-# The co-core pin, the wheelhouse digests, the extraction stack (#71, #87).
+# The co-core pin, its index (co-pypi, #121), the extraction stack (#71).
 pyproject.toml
 uv.lock
 
@@ -16,7 +16,7 @@ uv.lock
 src/
 tests/fixtures/parity/
 
-# Deploy and operator surface: units, the release script, the wheelhouse tools.
+# Deploy and operator surface: units, the release script, the co-pypi wrapper.
 deploy/
 scripts/
 

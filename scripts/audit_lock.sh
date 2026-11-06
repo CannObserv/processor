@@ -13,8 +13,8 @@
 # stop-commands and a random resume token: it is OSV's text, and a line of it
 # starting `::` would otherwise be read as a workflow command.
 #
-# --frozen reads uv.lock as committed. A relock would need the private wheelhouse
-# (AGENTS.md, Environment & Tooling), which the job has no credential to fetch.
+# --frozen reads uv.lock as committed. A relock would need the co-pypi index's
+# token (AGENTS.md, Environment & Tooling), which the job has no credential to mint.
 # `uv audit` is a preview command, hence the flag. uv before 0.11.19
 # (astral-sh/uv#19645) has the command but not the name `audit-command`, and
 # rejects it with exit 2 and "Unknown feature flag", so that one rejection retries

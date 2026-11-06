@@ -131,6 +131,12 @@ on `co-processor`.
   measured move: the corpora can't show that no Watcher PDF moves.
 - pyasn1 0.6.4 → 0.6.5 (4 advisories) is a floor only: it isn't in the stack.
 
+**Amended 2026-11-06 (where co-core comes from, processor#121):**
+- co-core resolves from the `co-pypi` Artifact Registry index, not the
+  wheelhouse (Section 2). The versions stay `==0.38.0`, so `processor_version`
+  stays `0.38.0+3`. No behaviour changes: the same wheel bytes, which the lock
+  holds to their sha256.
+
 ---
 
 ## Why a new service
@@ -212,8 +218,8 @@ processor-version pin on the command; no job API — the bus is the interface.
 | Thing | Value |
 |---|---|
 | Repo | `CannObserv/processor` — Python 3.12, uv, hatchling src layout |
-| Dependencies | `co-core[extract]`, `co-core-aio[bus]`, `co-core-sync[gcs]`, all `==0.38.0` (Section 5), from the private CannObserv index |
-| CI | wheelhouse pulled through WIF as `co-pypi-reader` (org var `GCP_WIF_PROVIDER`), as in the other cohort repos |
+| Dependencies | `co-core[extract]`, `co-core-aio[bus]`, `co-core-sync[gcs]`, all `==0.38.0` (Section 5), from the private `co-pypi` Artifact Registry index (amended 2026-11-06, #121) |
+| CI | the index's token minted through WIF as `co-pypi-reader` (org var `GCP_WIF_PROVIDER`), as in the other cohort repos (amended 2026-11-06, #121) |
 | VM | exe.dev `co-processor`, 8 GB, default `exeuntu` image, tag `processor` |
 | Service | systemd unit `processor`: `MemoryMax` below VM RAM, `Restart=on-failure`, `OOMPolicy=continue` (Section 4). Runs as its own user `processor` (no sudo, not in `docker`, no home), from a read-only release at `/srv/processor/live` that `scripts/deploy.sh` builds from a commit on `origin/main` (amended 2026-10-06, #2: the cohort's release standard, broker#22 / status#9) |
 | Env | `/etc/processor/.env` (root 600, read by systemd before it switches users), `CO_PROCESSOR_*` via pydantic-settings — never `os.getenv`. The GCS key reaches the service by `LoadCredential=` (amended 2026-10-06, #2) |

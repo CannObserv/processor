@@ -5,8 +5,8 @@
 # or heading that no longer exists. Whether a line routes a path is prose.
 
 docs/specs/2026-09-29-processor-service-design.md: a behaviour change under src/ amends the spec (a dated Amended entry plus the sections it touches); tests/fixtures/parity/ moves only at a co-core bump, every moved digest in the bump note
-AGENTS.md: the co-core pin and the wheelhouse under Environment & Tooling (pyproject.toml, uv.lock); the Infrastructure table (deploy/, .github/, scripts/deploy.sh); the containment and parity paragraphs (src/processor/_child.py, _contain.py, tests/fixtures/parity/); Detail Docs when a doc is added or renamed
-docs/DEPLOYMENT.md "Bumping co-core", docs/DEPLOYMENT.md "Extraction dependencies": pyproject.toml, uv.lock, the wheelhouse digests, LOCAL_GENERATION
+AGENTS.md: the co-core pin and the co-pypi index under Environment & Tooling (pyproject.toml, uv.lock); the Infrastructure table (deploy/, .github/, scripts/deploy.sh); the containment and parity paragraphs (src/processor/_child.py, _contain.py, tests/fixtures/parity/); Detail Docs when a doc is added or renamed
+docs/DEPLOYMENT.md "Bumping co-core", docs/DEPLOYMENT.md "Extraction dependencies": pyproject.toml, uv.lock, the co-pypi index and scripts/co-pypi.sh, LOCAL_GENERATION
 docs/DEPLOYMENT.md "Deploy a change: `scripts/deploy.sh`", docs/DEPLOYMENT.md "The drift check", docs/DEPLOYMENT.md "Liveness": deploy/ units, scripts/deploy.sh, processor.drift.RUNTIME_*
 docs/DEPLOYMENT.md "CI pins and Dependabot", docs/DEPLOYMENT.md "Shell lint", docs/DEPLOYMENT.md "The lock audit": .github/, scripts/shellcheck.sh, scripts/audit_lock.sh, .githooks/
 docs/SKILLS.md: the inventory, the refresh hook, Merging under pr and the doc-check lists (skills/, .claude/, .gitmodules, the .skills/ knobs)

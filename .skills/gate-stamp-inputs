@@ -1,5 +1,5 @@
 # Untracked inputs whose content joins the ship gate's pass stamp. Replaces the
 # default (.env) wholesale, so .env is named again: tests/test_child.py probes it.
-# .wheelhouse is git-ignored and decides which co-core `uv run` installs (#87).
+# .wheelhouse/* left with #121: co-core comes from the co-pypi index, each file
+# held to the lock's sha256, so no untracked file decides what `uv run` installs.
 .env
-.wheelhouse/*

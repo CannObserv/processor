@@ -26,14 +26,7 @@ Python 3.12, uv, hatchling src layout, pytest, ruff.
 
 **co-core is pinned exactly (`==0.38.0`); Processor owns the pin** (spec D5, §5; since watcher#350 nothing else extracts). `processor_version` = `"<co-core version>+<LOCAL_GENERATION>"`; a pin test makes every bump a deliberate, test-failing act. Never let a dependency bot or `uv lock --upgrade` move co-core. A bump gives Watcher notice (it re-baselines on `processor_version`). It is coordinated with Watcher only if it changes the contract: the `content.process` / `content.derived` models or `canonical_text` semantics. Procedure: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#bumping-co-core). The extraction stack (co-core's `extract` extra, closure: pypdf, lxml, …) is held too: moving it outside a co-core bump bumps `LOCAL_GENERATION` (#71, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#extraction-dependencies)).
 
-**Cannobserv wheelhouse.** `co-core`, `co-core-aio`, `co-core-sync` resolve from `./.wheelhouse` (git-ignored) via `[tool.uv] find-links`. Populate it before any `uv` command:
-
-```bash
-uv run --frozen --no-config --only-group wheelhouse python scripts/sync_wheelhouse.py  # mirror gs://co-gcs-pypi (needs co-pypi-reader ADC)
-set -a; . ./.env; set +a; scripts/build_wheelhouse.sh                                     # or: build from the cannobserv tag
-```
-
-find-links locks by filename, not hash, so each locked file's sha256 is pinned in `pyproject.toml` (`[tool.processor.wheelhouse-sha256]`, #87): the sync and `scripts/deploy.sh` refuse a mismatch, and a co-core bump moves the digests ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#bumping-co-core)). After the first `uv sync` in a fresh checkout, `uv sync --reinstall-package processor` if `import processor` fails.
+**The co-pypi index.** `co-core`, `co-core-aio`, `co-core-sync` resolve only from the explicit `co-pypi` Artifact Registry index (`pyproject.toml`, #121). The lock holds each file's sha256, and `uv sync --locked` refuses a miss. `uv lock`, and a `uv sync` that downloads, need the reader's token: `bash scripts/co-pypi.sh uv …` mints it for that one `uv`, and never prints it. After the first `uv sync` in a fresh checkout, `uv sync --reinstall-package processor` if `import processor` fails.
 
 ## Infrastructure
 
@@ -45,7 +38,7 @@ find-links locks by filename, not hash, so each locked file's sha256 is pinned i
 | Input | `gs://co-gcs-blobs` (Replicator's raw blobs), read-only |
 | Output | `gs://co-gcs-processor/blobs/<sha256>.bin`, write-if-absent, **never deleted** |
 | Node.js | 24 LTS from NodeSource apt, agent tooling only (mayfly, SocratiCode): `deploy/nodesource.sh install\|check`, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#nodejs-agent-tooling-only) |
-| CI | GitHub Actions [.github/workflows/ci.yml](.github/workflows/ci.yml) on `ubuntu-24.04`, the node's image: lint (ruff, shellcheck), then the full suite against `redis:7.0.15` (the broker's, not 7.2: CLIENT SETINFO; upstream EOL, the next is broker#85's call), pulled from `mirror.gcr.io`, never anonymously from Docker Hub (#43). Keyless WIF to `co-pypi-reader` needs the org variable `GCP_WIF_PROVIDER` shared with this repo and a `roles/iam.workloadIdentityUser` binding for `principalSet://…/attribute.repository/CannObserv/processor`. Actions SHA-pinned; Dependabot `github-actions` only ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#ci-pins-and-dependabot), #80). Shell lint, with an opt-in pre-commit hook: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#shell-lint) (#81) |
+| CI | GitHub Actions [.github/workflows/ci.yml](.github/workflows/ci.yml) on `ubuntu-24.04`, the node's image: lint (ruff, shellcheck), then the full suite against `redis:7.0.15` (the broker's, not 7.2: CLIENT SETINFO; upstream EOL, the next is broker#85's call), pulled from `mirror.gcr.io`, never anonymously from Docker Hub (#43). Keyless WIF to `co-pypi-reader`, whose token only `uv sync` gets (#121), needs the org variable `GCP_WIF_PROVIDER` shared with this repo and a `roles/iam.workloadIdentityUser` binding for `principalSet://…/attribute.repository/CannObserv/processor`. Actions SHA-pinned; Dependabot version updates `github-actions` only, `uv` security updates landed by hand ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#ci-pins-and-dependabot), #80). Shell lint, with an opt-in pre-commit hook: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#shell-lint) (#81) |
 | Lock audit | [.github/workflows/audit.yml](.github/workflows/audit.yml): `uv audit --frozen`, report-only, outside the deploy gate (#73). The weekly patch window reads the live lock (#75): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#the-lock-audit) |
 | Drift check | `processor-drift.timer`, hourly: does live lag `origin/main` in code that runs (`processor.drift.RUNTIME_*`)? Checks in to Status's `co-processor-drift` (`http://status:9000`, status#24); `alert` past 8 h. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#the-drift-check) (#35) |
 | Patching | `automatic` (knob `.skills/patching-hosts`, #113): `-security` daily by unattended-upgrades (13:00 UTC, no restart, no reboot); the rest in one approved run a week, `Tue 05:00–10:00` UTC (Monday night Pacific), as the broker's window closes; `processor-patching.timer` asks for it through Status. Never a bare `apt-get upgrade`. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#patching) (#77) |
@@ -70,7 +63,8 @@ find-links locks by filename, not hash, so each locked file's sha256 is pinned i
 ## Environment Files
 
 1. `/etc/processor/` (root, dir 700, files 600) — production: `.env` (`CO_PROCESSOR_*`, the broker credential), read by systemd, never by the service user; the GCS key and the Status key, handed over by `LoadCredential=` (#2, #35, #39). Managed by the operator. Commands needing it run as the service: `processor_cli` in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
-2. `.env` (repo root, git-ignored) — dev/agent secrets: `GH_TOKEN` (this repo; `.claude/hooks/gh-env.sh` exports it), `GH_TOKEN_<REPO>` (sibling repos, read). **Never commit, never print values.**
+2. `/etc/processor-deploy/co-pypi-reader.json` (`root:exedev 640`, dir 750) — the index reader's key, read by `scripts/co-pypi.sh` alone (#121).
+3. `.env` (repo root, git-ignored) — dev/agent secrets: `GH_TOKEN` (this repo; `.claude/hooks/gh-env.sh` exports it), `GH_TOKEN_<REPO>` (sibling repos, read). **Never commit, never print values.**
 
 Settings via pydantic-settings, prefix `CO_PROCESSOR_` — **never `os.getenv`**. Anything naming a shared external resource takes a service-prefixed name.
 
@@ -81,7 +75,7 @@ Never edit sibling repos (`cannobserv`, `broker`, `watcher`, `replicator`, `arch
 ## Common Commands
 
 ```bash
-uv sync                                  # install deps (wheelhouse first)
+bash scripts/co-pypi.sh uv sync          # install deps (co-core from the co-pypi index)
 uv run pytest                            # tests
 uv run pytest -m integration             # bus tests against the scratch redis-server
 uv run ruff check . && uv run ruff format --check .
@@ -93,7 +87,7 @@ scripts/deploy.sh [<build>]              # ship: CI green, then build a release 
 
 **Commit messages:** `#<number> <type>: <description>` (or `<type>: <description>` without an issue). Types: feat, fix, refactor, docs, test, chore. **Ship** with `shipping-work`: `merge_mode` `pr`, and its deploy is `scripts/deploy.sh` (`deploy_command`). What runs is `/srv/processor/live/REVISION`.
 
-**Workflow:** every change is issue → branch → PR; never commit to `main` directly. Branch in a worktree (`using-git-worktrees`), not by switching this checkout: `scripts/deploy.sh` and the skills hook both run from it. Provisioning a worktree (venv, wheelhouse, submodules): [docs/SKILLS.md](docs/SKILLS.md#worktrees). Merge by fast-forward push from this checkout ([docs/SKILLS.md](docs/SKILLS.md#merging-under-pr)); deploy only if the merge touched `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml`, `uv.lock` or `.skills/patching-hosts` (the drift check alerts 8 h after such a push).
+**Workflow:** every change is issue → branch → PR; never commit to `main` directly. Branch in a worktree (`using-git-worktrees`), not by switching this checkout: `scripts/deploy.sh` and the skills hook both run from it. Provisioning a worktree (venv, submodules): [docs/SKILLS.md](docs/SKILLS.md#worktrees). Merge by fast-forward push from this checkout ([docs/SKILLS.md](docs/SKILLS.md#merging-under-pr)); deploy only if the merge touched `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml`, `uv.lock` or `.skills/patching-hosts` (the drift check alerts 8 h after such a push).
 
 **Logging:** structured JSON, one record per line, cohort four-key floor: `timestamp` (ISO 8601 UTC), `level`, `logger`, `message`. Every command outcome logs `command_id`, `info_source_id`, reason, timings and the command's digests (fields: spec §4).
 

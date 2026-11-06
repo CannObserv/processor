@@ -2,8 +2,9 @@
 .env
 .env.*
 
-# cannobserv wheelhouse: mirrored from the private index, or built locally. No trailing
-# slash: a worktree links it (docs/SKILLS.md), and a symlink is not a directory.
+# The retired cannobserv wheelhouse (#121): nothing reads it, but the deploy checkout
+# keeps its files for a rollback past #121 (docs/DEPLOYMENT.md § Rollback). No
+# trailing slash: an older worktree may link it, and a symlink is not a directory.
 .wheelhouse
 
 # Python / uv
