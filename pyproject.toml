@@ -11,7 +11,8 @@ dependencies = [
     "co-core[extract]==0.38.0",
     "co-core-aio[bus]==0.38.0",
     "co-core-sync[gcs]==0.38.0",
-    # The locked files' digests move with it: [tool.processor.wheelhouse-sha256].
+    # All three come from the co-pypi index alone ([tool.uv.sources]), each declared
+    # here: uv binds a source to a direct dependency only (#121).
     "pydantic>=2.12,<3",
     "pydantic-settings>=2.6,<3",
     # Imported directly: the consumer classifies redis-py's ResponseError /
@@ -49,10 +50,10 @@ dev = [
 # gate: `uv lock --upgrade-package shellcheck-py`, then fix what it finds and the
 # version docs/DEPLOYMENT.md § Shell lint names, which tests/test_shellcheck.py holds.
 lint = ["ruff>=0.16.8,<0.17", "shellcheck-py>=0.11.0.1,<0.12"]
-# scripts/sync_wheelhouse.py's own deps, locked (#79, as broker#113): `uv run
-# --frozen --no-config --only-group wheelhouse` installs them without the
-# project, whose co-core is what the sync fetches. The project's own spec.
-wheelhouse = ["google-cloud-storage>=3,<4"]
+# scripts/co_pypi_token.py's own dep, locked (#79's rule, #121): scripts/co-pypi.sh
+# runs it `--frozen --only-group co-pypi`, before any co-core file is fetched, and
+# nothing in the process that holds the key is resolved at run time.
+co-pypi = ["google-auth[requests]>=2,<3"]
 
 # The sha256 of each wheelhouse file uv.lock names (#87, as broker#125). uv records
 # none for a find-links path, and a hand-added one is gone at the next `uv lock`.
@@ -107,12 +108,25 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/processor"]
 
+# co-core, co-core-aio and co-core-sync: the co-pypi Artifact Registry index alone
+# (#121; cannobserv's RELEASING.md → Path C). The URL is the org registry's byte for
+# byte, so Dependabot's updater authenticates it over OIDC. `explicit`: the index
+# serves only the names [tool.uv.sources] pins to it, so co-core never comes from
+# PyPI, where the names are unclaimed, and nothing else comes from here. The lock
+# records each file's sha256 and `uv sync --locked` refuses a miss: that replaced
+# #87's digest table. Every `uv lock`, and a `uv sync` that downloads, needs the
+# reader's token: `bash scripts/co-pypi.sh uv …`. tests/test_dependency_index.py.
+[[tool.uv.index]]
+name = "co-pypi"
+url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/"
+explicit = true
+
+[tool.uv.sources]
+co-core = { index = "co-pypi" }
+co-core-aio = { index = "co-pypi" }
+co-core-sync = { index = "co-pypi" }
+
 [tool.uv]
-# co-core, co-core-aio and co-core-sync resolve from ./.wheelhouse (git-ignored):
-# mirrored from gs://co-gcs-pypi by scripts/sync_wheelhouse.py, or built from the
-# cannobserv release tag by scripts/build_wheelhouse.sh. find-links locks by
-# filename, not hash: the content check is [tool.processor.wheelhouse-sha256] (#87).
-find-links = ["./.wheelhouse"]
 # certifi is transitive (requests, httpx), and its bundle is the services' TLS trust,
 # not the system store. 2026.10.19 drops emSign ECC Root CA - G3, the root of the
 # eMudhra-compromised chains (https://exe.dev/security/emudhra-compromise, #66); the

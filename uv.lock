@@ -277,13 +277,14 @@ wheels = [
 [[package]]
 name = "co-core"
 version = "0.38.0"
-source = { registry = ".wheelhouse" }
+source = { registry = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" }
 dependencies = [
     { name = "dateparser" },
     { name = "pydantic" },
 ]
+sdist = { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core/co_core-0.38.0.tar.gz", hash = "sha256:2ec3cbc6f020792d24b3baff92724567c4eb74102b80e3ed47b54dc3ec39cf29" }
 wheels = [
-    { path = "co_core-0.38.0-py3-none-any.whl" },
+    { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core/co_core-0.38.0-py3-none-any.whl", hash = "sha256:44a62404f645de685c6260e087311d3e2cf0cf6074e9a9cfc2d6cf35b3c566f9" },
 ]
 
 [package.optional-dependencies]
@@ -300,13 +301,14 @@ extract = [
 [[package]]
 name = "co-core-aio"
 version = "0.38.0"
-source = { registry = ".wheelhouse" }
+source = { registry = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" }
 dependencies = [
     { name = "co-core" },
     { name = "httpx" },
 ]
+sdist = { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core-aio/co_core_aio-0.38.0.tar.gz", hash = "sha256:682de39ea8df87d24e1d02c330375c8bf7e9785ea6bd931964bd4e2ef26c82b1" }
 wheels = [
-    { path = "co_core_aio-0.38.0-py3-none-any.whl" },
+    { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core-aio/co_core_aio-0.38.0-py3-none-any.whl", hash = "sha256:aac71c6f5e8d34e5a9aff856ce0f1c40898b41561ad399df908896ece718aef1" },
 ]
 
 [package.optional-dependencies]
@@ -317,14 +319,15 @@ bus = [
 [[package]]
 name = "co-core-sync"
 version = "0.38.0"
-source = { registry = ".wheelhouse" }
+source = { registry = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" }
 dependencies = [
     { name = "co-core" },
     { name = "requests" },
     { name = "urllib3" },
 ]
+sdist = { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core-sync/co_core_sync-0.38.0.tar.gz", hash = "sha256:0cfb6c4b1ae16c0217c42de6f070dbea79b2ce9a20140d251fd6b3a73c7c7e14" }
 wheels = [
-    { path = "co_core_sync-0.38.0-py3-none-any.whl" },
+    { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core-sync/co_core_sync-0.38.0-py3-none-any.whl", hash = "sha256:f69d84215d6df4d92b261eed5b11d69a9d4c95a1ce659d362b825d094f5072f4" },
 ]
 
 [package.optional-dependencies]
@@ -543,6 +546,11 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3b/0b/9b4e806ebcd29701b5193a162dd9906c4c5a16cbde8476461622d2bfa70e/google_auth-2.59.0.tar.gz", hash = "sha256:eb32f44f89f6b577947ebee5887c1db46e6b1a278889ba369a88179643f32240", size = 381025, upload-time = "2026-09-28T21:49:59.047Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7d/fd/4208e3ac1d7df39f4e8b044a3943eb8a5a99aaf8699285bf780f614a0b30/google_auth-2.59.0-py3-none-any.whl", hash = "sha256:43e47b1d3067fb90d77bd9ba21f139bb0577b3f2b9f3e2516fc00f37435efcad", size = 262487, upload-time = "2026-09-28T21:49:57.428Z" },
+]
+
+[package.optional-dependencies]
+requests = [
+    { name = "requests" },
 ]
 
 [[package]]
@@ -865,6 +873,9 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+co-pypi = [
+    { name = "google-auth", extra = ["requests"] },
+]
 dev = [
     { name = "openpyxl" },
     { name = "pypdf" },
@@ -879,15 +890,12 @@ lint = [
     { name = "ruff" },
     { name = "shellcheck-py" },
 ]
-wheelhouse = [
-    { name = "google-cloud-storage" },
-]
 
 [package.metadata]
 requires-dist = [
-    { name = "co-core", extras = ["extract"], specifier = "==0.38.0" },
-    { name = "co-core-aio", extras = ["bus"], specifier = "==0.38.0" },
-    { name = "co-core-sync", extras = ["gcs"], specifier = "==0.38.0" },
+    { name = "co-core", extras = ["extract"], specifier = "==0.38.0", index = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" },
+    { name = "co-core-aio", extras = ["bus"], specifier = "==0.38.0", index = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" },
+    { name = "co-core-sync", extras = ["gcs"], specifier = "==0.38.0", index = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" },
     { name = "google-api-core", specifier = ">=2.27,<3" },
     { name = "google-auth", specifier = ">=2,<3" },
     { name = "google-cloud-storage", specifier = ">=3,<4" },
@@ -898,6 +906,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+co-pypi = [{ name = "google-auth", extras = ["requests"], specifier = ">=2,<3" }]
 dev = [
     { name = "openpyxl", specifier = ">=3.1.0,<4" },
     { name = "pypdf", specifier = ">=5.0,<7" },
@@ -912,7 +921,6 @@ lint = [
     { name = "ruff", specifier = ">=0.16.8,<0.17" },
     { name = "shellcheck-py", specifier = ">=0.11.0.1,<0.12" },
 ]
-wheelhouse = [{ name = "google-cloud-storage", specifier = ">=3,<4" }]
 
 [[package]]
 name = "proto-plus"

@@ -3,7 +3,6 @@
 import re
 import socket
 import subprocess
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -109,36 +108,6 @@ def test_ci_prunes_the_cache_it_saves(ci: dict, name: str) -> None:
     ]
     assert setup["with"]["enable-cache"] is True
     assert setup["with"]["prune-cache"] is True
-
-
-def _wheelhouse_packages_without_a_wheel(lock: Path) -> list[str]:
-    packages = tomllib.loads(lock.read_text())["package"]
-    return [
-        p["name"]
-        for p in packages
-        if p.get("source", {}).get("registry") == ".wheelhouse" and not p.get("wheels")
-    ]
-
-
-def test_every_wheelhouse_package_is_locked_to_a_wheel() -> None:
-    """The prune's premise: `uv cache prune --ci` drops a wheel it downloaded and
-    keeps one it built from source. Locked sdist-only, co-core would be built and
-    kept in the saved cache (broker#88, measured on uv 0.13.0)."""
-    lock = WORKFLOW.parent.parent.parent / "uv.lock"
-    packages = tomllib.loads(lock.read_text())["package"]
-    from_wheelhouse = {p["name"] for p in packages if p["source"].get("registry") == ".wheelhouse"}
-    assert "co-core" in from_wheelhouse, "the check found no wheelhouse package to hold"
-    assert _wheelhouse_packages_without_a_wheel(lock) == []
-
-
-def test_wheel_check_fails_on_an_sdist_only_lock(tmp_path: Path) -> None:
-    lock = tmp_path / "uv.lock"
-    lock.write_text(
-        '[[package]]\nname = "co-core"\nversion = "9.9.9"\n'
-        'source = { registry = ".wheelhouse" }\n'
-        'sdist = { path = "co_core-9.9.9.tar.gz" }\n'
-    )
-    assert _wheelhouse_packages_without_a_wheel(lock) == ["co-core"]
 
 
 @pytest.mark.parametrize("name", ["lint", "test"])
@@ -315,32 +284,3 @@ def test_every_spelling_of_the_sync_runs_from_the_lock() -> None:
             spellings.setdefault(name, set()).add(flags)
     assert set(spellings) >= {".github/workflows/ci.yml", "scripts/sync_wheelhouse.py", "AGENTS.md"}
     assert {n: s for n, s in spellings.items() if s != {LOCKED_SYNC}} == {}
-
-
-def test_the_wheelhouse_group_is_locked_and_needs_no_wheelhouse() -> None:
-    """The group installs before .wheelhouse exists: nothing in it may come from there."""
-    root = WORKFLOW.parent.parent.parent
-    pyproject = tomllib.loads((root / "pyproject.toml").read_text())
-    deps = pyproject["project"]["dependencies"]
-    (own,) = [d for d in deps if d.startswith("google-cloud-storage")]
-    # The project's own spec, so the group locks the version the service runs (CR 1).
-    assert pyproject["dependency-groups"]["wheelhouse"] == [own]
-    lock = tomllib.loads((root / "uv.lock").read_text())
-    (project,) = [p for p in lock["package"] if p["name"] == "processor"]
-    assert [d["name"] for d in project["dev-dependencies"]["wheelhouse"]] == [
-        "google-cloud-storage"
-    ]
-    from_wheelhouse = {
-        p["name"] for p in lock["package"] if "wheelhouse" in p["source"].get("registry", "")
-    }
-    # A list per name: a forked lock can hold two versions of one (CR 5).
-    by_name: dict[str, list[dict]] = {}
-    for package in lock["package"]:
-        by_name.setdefault(package["name"], []).append(package)
-    closure, todo = set(), ["google-cloud-storage"]
-    while todo:
-        name = todo.pop()
-        if name not in closure:
-            closure.add(name)
-            todo += [d["name"] for p in by_name[name] for d in p.get("dependencies", [])]
-    assert from_wheelhouse and not closure & from_wheelhouse

@@ -253,16 +253,6 @@ def real_pins() -> dict[str, str]:
 
 
 class TestTheRealPin:
-    def test_the_lock_names_the_three_cannobserv_wheels(self) -> None:
-        assert {n.split("-")[0] for n in real_locked_files()} == {
-            "co_core",
-            "co_core_aio",
-            "co_core_sync",
-        }
-
-    def test_every_locked_wheelhouse_file_has_a_digest_and_no_digest_outlives_one(self) -> None:
-        assert set(real_pins()) == real_locked_files()
-
     def test_the_table_is_in_the_form_deploy_sh_reads(self) -> None:
         """deploy.sh reads the table with awk, a line at a time: one quoted name, one
         quoted digest. tomllib takes more, so the form is held here."""
