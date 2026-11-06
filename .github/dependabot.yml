@@ -8,8 +8,9 @@
 # github-actions only, never uv or pip version updates: Processor owns the exact
 # co-core pin and holds the extraction stack (AGENTS.md, #71). Security updates
 # need no entry here and move uv.lock regardless: they are on in Settings → Code
-# security (operator, 2026-11-03, #112), and resolve co-core from the co-pypi
-# index over OIDC once the repository is admitted (#121). Each lands by hand
+# security (operator, 2026-11-03, #112). Once the repository is admitted they
+# should resolve co-core from the co-pypi index over OIDC (#121; stated by
+# cannobserv's DEPENDABOT.md, proven here only by a job log). Each lands by hand
 # (docs/DEPLOYMENT.md § CI pins and Dependabot).
 # Guarded by tests/test_dependabot.py: a mistyped config stops producing PRs
 # without erroring anywhere a person looks.
