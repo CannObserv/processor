@@ -23,7 +23,9 @@ the reader's. A dated line is a one-off (a bulletin's) and opens no due period.
 **The record** is the one artifact every run leaves, a nothing-pending run's too
 (run.md §7): an issue comment in this repo whose first line is
 :data:`RECORD_HEADING`. The repo is public, so anyone can comment: only an ``OWNER``'s
-or a ``MEMBER``'s counts. Read unauthenticated, newest first, since the opening: one
+or a ``MEMBER``'s counts, and the read is anonymous, so a member counts only while
+their org membership is public: a private member reads as ``CONTRIBUTOR``, which never
+counts (a false alert, never a false ok). Read unauthenticated, newest first, since the opening: one
 request an hour within the 60/h an address gets, shared with the drift check and the
 deploy gate.
 """
