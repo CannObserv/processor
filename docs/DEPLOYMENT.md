@@ -120,7 +120,7 @@ sudo install -d -o root -g exedev -m 750 /etc/processor-deploy
 )
 ```
 
-Check it by metadata alone (`ls -l /etc/processor-deploy`). Its first use mints a token: `bash scripts/co-pypi.sh uv lock --locked`. `PROCESSOR_CO_PYPI_KEY` points the wrapper at another key, for another machine. `tests/test_child.py` proves the contained child can't open it, without reading it.
+Check it by metadata alone (`ls -l /etc/processor-deploy`), then by use: `bash scripts/co-pypi.sh uv lock --locked --refresh-package co-core`. The refresh makes uv ask the index, so a token that can't read it fails: with no token that command gets a 401. A plain `uv lock --locked` resolves from the lock alone and proves only the mint. `PROCESSOR_CO_PYPI_KEY` points the wrapper at another key, for another machine. `tests/test_child.py` proves the contained child can't open it, without reading it.
 
 To verify the bucket's settings and grants (read-only):
 
