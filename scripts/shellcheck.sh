@@ -10,8 +10,8 @@
 # doctor.sh there, with no review. A finding in either is an issue on
 # gregoryfoster/skills. tests/test_shellcheck.py pins it.
 #
-# --no-config: [tool.uv] find-links is read even under --only-group, and a clone
-# has no ./.wheelhouse (#79's stand-in for broker's tracked .wheelhouse/.gitkeep).
+# --only-group lint: no project, so nothing from the private co-pypi index and no
+# token. No --no-config since #121: it stood in for find-links.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -36,4 +36,4 @@ while IFS= read -r -d '' f; do
 done < <("${list[@]}")
 
 [ ${#files[@]} -gt 0 ] || exit 0
-exec uv run --frozen --no-config --only-group lint shellcheck -- "${files[@]}"
+exec uv run --frozen --only-group lint shellcheck -- "${files[@]}"

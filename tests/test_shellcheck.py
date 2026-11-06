@@ -17,10 +17,10 @@ over the tree. The hook is per clone and ``--no-verify`` skips it, so CI is the
 enforcement, and a step in ``lint`` keeps ``scripts/deploy.sh``'s ``CI_JOBS``
 gate whole.
 
-**No wheelhouse.** Both call ``uv run --frozen --no-config --only-group lint``:
-no project, so no co-core, and ``--no-config`` because ``[tool.uv] find-links``
-is read even then, and a clone has no ``./.wheelhouse`` (#79's stand-in for
-broker's tracked ``.wheelhouse/.gitkeep``).
+**No co-core.** Both call ``uv run --frozen --only-group lint``: no project, so
+nothing from the private co-pypi index and no token. ``--no-config`` stood in for
+``find-links`` until #121, which measured the group from an empty cache with no
+token: clean without it.
 
 The hook runs here in a scratch repository under a fake ``uv`` that hands each
 tool to this venv's own copy, so nothing is resolved or fetched.
@@ -46,7 +46,7 @@ DOC = ROOT / "docs" / "DEPLOYMENT.md"
 VENV_BIN = Path(sys.executable).parent
 
 #: How both callers reach the locked tools: no project, no config, the lock as committed.
-UV_RUN = ["run", "--frozen", "--no-config", "--only-group", "lint"]
+UV_RUN = ["run", "--frozen", "--only-group", "lint"]
 #: A finding shellcheck reports at its default severity.
 BAD = '#!/usr/bin/env bash\ncd "$1"\n'
 
