@@ -22,7 +22,10 @@ this runs under, is dropped, so the wrapped ``uv`` finds its own project's
 ``.venv``. **Accepted limit:** whatever that ``uv`` spawns inherits its
 environment, the pair included: the PEP 517 build backend for the project
 itself. uv has no per-index credential scoping short of a keyring or netrc
-file; the bound is the identity's read-only role and the token's hour.
+file; the bound is the identity's read-only role and the token's hour. It also
+inherits the ``PATH`` that ``uv run`` sets, the wrapper's checkout's ``.venv/bin``
+first: ``scripts/deploy.sh`` names ``--python`` explicitly, and a release venv
+built through here runs ``/usr/bin/python3.12`` (measured, #121).
 
 Its own dependency (google-auth) is uv.lock's ``co-pypi`` group, run
 ``--frozen`` in this script's checkout (#79's rule; ``scripts/co-pypi.sh``), so
