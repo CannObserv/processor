@@ -305,7 +305,6 @@ gh api repos/<owner>/<action>/git/ref/tags/<tag> --jq '.object.type + " " + .obj
 **The index token** (#121). Each WIF step also mints an access token (`token_format: access_token`). The `uv sync` step alone takes it, as `UV_INDEX_CO_PYPI_USERNAME` / `_PASSWORD`, from the action's masked output. `uv lock --locked` resolves from the lock alone (measured offline from an empty cache), so it needs none. `tests/test_ci.py` holds it to that one step.
 
 **Dependabot** (`.github/dependabot.yml`) proposes action bumps only: `github-actions`, weekly, at most 10 open PRs, with `chore:` subjects.
-- **Temporarily, a `uv` entry for co-core alone** (#121's proof): its first run's log shows whether the updater reads the co-pypi index over OIDC; its PR is closed unmerged, and the entry is removed in the next PR.
 - **A 3-day cooldown, GitHub's default.** `dependabot.yml` sets no `cooldown`, so Dependabot skips a release less than 3 days old (`cooldown days 3` in its log). setup-uv v10.3.3, published 2026-10-28, was held back from the first run on 2026-10-30 ("Found acceptable version outside cooldown: 10.3.2"). It arrived as #110 on 2026-11-02.
 - **No `uv` or `pip` version updates.** Processor owns the exact co-core pin and holds the extraction stack ([§ Extraction dependencies](#extraction-dependencies)). `uv.lock` has its own signal ([§ The lock audit](#the-lock-audit)).
 - **Settings → Code security** (operator reading, 2026-10-29, #80; security updates re-read 2026-11-03, #112):

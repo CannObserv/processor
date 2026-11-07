@@ -12,12 +12,6 @@
 # should resolve co-core from the co-pypi index over OIDC (#121; stated by
 # cannobserv's DEPENDABOT.md, proven here only by a job log). Each lands by hand
 # (docs/DEPLOYMENT.md § CI pins and Dependabot).
-#
-# TEMPORARY (#121's proof, operator 2026-11-06): one `uv` entry, co-core alone.
-# Its first run shows the updater reading the co-pypi index over OIDC
-# (cannobserv docs/DEPENDABOT.md, step 4). The PR it proposes is closed
-# unmerged, and the entry is removed in the next PR. No `registries:` key: the
-# org registry reaches an admitted repository's jobs by itself.
 # Guarded by tests/test_dependabot.py: a mistyped config stops producing PRs
 # without erroring anywhere a person looks.
 version: 2
@@ -30,13 +24,5 @@ updates:
     # nowhere. One PR per action; the test derives the bound.
     open-pull-requests-limit: 10
     # The PR's commit lands on main as-is: "chore: bump actions/checkout ...".
-    commit-message:
-      prefix: "chore"
-  - package-ecosystem: "uv"
-    directory: "/"
-    schedule:
-      interval: "daily"
-    allow:
-      - dependency-name: "co-core"
     commit-message:
       prefix: "chore"
