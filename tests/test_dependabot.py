@@ -20,6 +20,12 @@ erroring anywhere a person looks, so each property is pinned here.
   by fast-forwarding its commit onto ``main``.
 
 No ``exclude-paths``: unlike broker, no workflow here is generated.
+
+**Temporarily, one ``uv`` entry: co-core alone** (#121's proof, operator's decision
+2026-11-06). Its first run shows whether the updater reads the co-pypi index over
+OIDC (cannobserv ``docs/DEPENDABOT.md``, step 4); the PR it proposes is closed
+unmerged, and the entry is removed in the next PR. ``allow`` names co-core and
+nothing else, so it can propose nothing in the extraction stack.
 """
 
 import re
@@ -46,6 +52,16 @@ def _updates() -> list[dict]:
     return _config().get("updates") or []
 
 
+def _actions() -> dict:
+    (update,) = [u for u in _updates() if u.get("package-ecosystem") == "github-actions"]
+    return update
+
+
+def _uv() -> dict:
+    (update,) = [u for u in _updates() if u.get("package-ecosystem") == "uv"]
+    return update
+
+
 def _workflows() -> list[Path]:
     return sorted(WORKFLOWS.glob("*.y*ml"))
 
@@ -63,23 +79,37 @@ def test_config_is_version_2() -> None:
     assert _config().get("version") == 2
 
 
-def test_only_github_actions_is_configured() -> None:
+def test_github_actions_plus_the_temporary_co_core_proof() -> None:
     ecosystems = [u.get("package-ecosystem") for u in _updates()]
-    assert ecosystems == ["github-actions"], (
-        f"{ecosystems}: never uv or pip. Processor owns the co-core pin and holds the "
-        "extraction stack (AGENTS.md, #71)"
+    assert ecosystems == ["github-actions", "uv"], (
+        f"{ecosystems}: never pip, and uv only as #121's co-core proof. Processor owns "
+        "the co-core pin and holds the extraction stack (AGENTS.md, #71)"
     )
+
+
+def test_the_uv_entry_allows_co_core_alone() -> None:
+    """Without ``allow`` it would propose the extraction stack too (#71)."""
+    uv = _uv()
+    assert uv.get("allow") == [{"dependency-name": "co-core"}]
+    assert uv.get("directory") == "/"
+    assert uv["schedule"]["interval"] == "daily"
+
+
+def test_no_registries_key() -> None:
+    """The org registry reaches an admitted repository's jobs by itself (DEPENDABOT.md)."""
+    assert "registries" not in _config()
+    assert all("registries" not in u for u in _updates())
 
 
 def test_it_scans_the_workflows_directory() -> None:
     """``/`` is the spelling that reads ``.github/workflows/``; any other is silence."""
-    (update,) = _updates()
+    update = _actions()
     assert update.get("directory") == "/"
     assert "directories" not in update
 
 
 def test_it_runs_weekly() -> None:
-    (update,) = _updates()
+    update = _actions()
     assert update["schedule"]["interval"] == "weekly"
 
 
@@ -117,8 +147,7 @@ def test_open_pr_limit_outlasts_a_full_batch() -> None:
     """One PR per action. The default is 5."""
     actions = {ref.split("@")[0] for p in _workflows() for ref, _ in _uses(p.read_text())}
     assert actions, "found no `uses:`: the derivation broke"
-    (update,) = _updates()
-    limit = update.get("open-pull-requests-limit", 5)
+    limit = _actions().get("open-pull-requests-limit", 5)
     assert limit > len(actions), f"limit {limit}, actions {sorted(actions)}"
 
 
@@ -126,5 +155,5 @@ def test_the_commit_prefix_is_one_of_agents_md_types() -> None:
     # Mid-paragraph in AGENTS.md's Conventions, unlike broker's own line.
     types = re.search(r"Types: ([a-z, ]+)\.", AGENTS.read_text())
     assert types, "AGENTS.md lost its `Types:` list"
-    (update,) = _updates()
-    assert update["commit-message"]["prefix"] in types.group(1).split(", ")
+    for update in _updates():
+        assert update["commit-message"]["prefix"] in types.group(1).split(", "), update
