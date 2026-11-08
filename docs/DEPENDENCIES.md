@@ -23,6 +23,8 @@ Ported from broker#88 and broker#90 (#80).
 
 These are broker's majors (operator, 2026-10-29). `tests/test_dependabot.py` holds the form. `tests/test_ci.py` holds each major to a floor, so a Dependabot major passes and a downgrade fails. `tests/test_lock_audit.py` holds `audit.yml`'s pins equal to `ci.yml`'s.
 
+The generated `context-cadence.yml` pins `actions/checkout` the same way, by hand; its installer keeps the pin on a re-render ([SKILLS.md § Context budget](SKILLS.md#context-budget)). `tests/test_dependabot.py` reads every workflow.
+
 That a SHA *is* its tag needs the network, so it is checked by hand whenever a pin moves:
 
 ```bash

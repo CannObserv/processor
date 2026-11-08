@@ -53,6 +53,7 @@ docs/SKILLS.md :: **gregoryfoster-skills (16):** `auditing-ci-cost` (CI since #1
 docs/SKILLS.md :: - **Superpowers' `using-git-worktrees` and `writing-plans` are not linked**: gregoryfoster's own, same-named, win. So br
 docs/SKILLS.md :: None since #62. `brainstorming` was one, synced from v6.4.2 to move the design doc to `docs/specs/`, until v7 deferred t
 docs/SKILLS.md :: The post-merge pass runs as written. Its `git pull --ff-only` is a no-op after the push. Step 8 then offers `run-deploy-
+docs/SKILLS.md :: `curating-context` holds `AGENTS.md` to 6,000 tokens and each live doc under `docs/` (not `plans/`, `specs/`) to 10,000
 tests/test_apt_automatic.py :: Tracked in ``deploy/``, installed by hand (docs/DEPLOYMENT.md § Patching) as:
 tests/test_apt_automatic.py :: pytest.fail(f"{installed} is not installed on {NODE} (docs/DEPLOYMENT.md § Patching)")
 tests/test_deploy.py :: by its own commit's deploy.sh (docs/DEPLOYMENT.md § Rollback)."""

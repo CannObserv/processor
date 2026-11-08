@@ -13,6 +13,7 @@ Vendored by [`managing-skills`](../skills/managing-skills/SKILL.md): one git sub
 | `.skills/doctor.sh` | A real file, not a symlink (it would dangle exactly when needed). Re-links dangling vendor symlinks by initialising the submodules; `reviewing-*` / `shipping-*` run it as preflight |
 | `.skills/merge_mode`, `deploy_command`, `doc-sensitive-paths`, `doc-sections`, `gate-stamp-inputs` | `shipping-work`'s knobs (#115): [§ Shipping](#shipping-shipping-work). [tests/test_shipping_knobs.py](../tests/test_shipping_knobs.py) reads the first two through the skill's own readers |
 | `.claude/hooks/gh-env.sh`, `scripts/env-value.sh` | Ours, not vendored: `GH_TOKEN` from `.env`, as data, for the session's `gh` calls (the refresh hook finds its own: [§ Refresh](#refresh)). A replica of [gregoryfoster/skills#334](https://github.com/gregoryfoster/skills/issues/334)'s `using-github-cli`; adopt that once it ships, and the hook becomes its vendor symlink |
+| `.claude/hooks/context-budget-guard.sh`, `.github/workflows/context-cadence.yml`, `.gitattributes`, `.skills/context-*` | `curating-context`'s write guard, weekly measurement and ledger (#126): [§ Context budget](#context-budget) |
 | `.skills/worktree_venv` | `none`: each worktree provisions its own `.venv` (`using-git-worktrees` → *Venv linking*). Set when this checkout was the unit's `WorkingDirectory=`; since #2 the unit runs a release, and the knob stays only so worktrees never share the checkout's venv |
 
 Every vendor symlink dangles until the submodules are initialised: a clone without `--recurse-submodules`, a fresh `git worktree add`. Run `bash .skills/doctor.sh`. Adding a skill means both entries. [tests/test_skills.py](../tests/test_skills.py) pins the chain, the override frontmatter and both hook halves.
@@ -88,6 +89,24 @@ The PR pass (Steps 1–7) ends with the PR open. `Closes #<n>` goes in the PR bo
 
 The post-merge pass runs as written. Its `git pull --ff-only` is a no-op after the push. Step 8 then offers `run-deploy-command.sh`, which runs only on `main` equal to `origin/main`. **It offers after every merge, whatever it touched.** Decline unless the merge touched a `processor.drift.RUNTIME_*` path (AGENTS.md → Workflow). A needless deploy is safe, but it restarts `processor`. The deploy can outlast a 10-minute tool call (it waits up to 600 s on CI), so run it in the background and read `journalctl -t processor-deploy` for the verdict. `scripts/deploy.sh` uses a bare `sudo`: exedev's is passwordless, and under `setsid` with no tty it fails rather than prompts. `worktree-destroy.sh` accepts the fast-forward by ancestry.
 
+## Context budget
+
+`curating-context` holds `AGENTS.md` to 6,000 tokens and each live doc under `docs/` (not `plans/`, `specs/`) to 10,000 (`.skills/context-budget`, `.skills/context-doc-budget`). Two surfaces keep a curation's ground, installed by #126 (operator, 2026-11-08):
+
+- **The write guard.** A `PostToolUse` hook on `Edit|Write|MultiEdit`, symlinked into the vendored skill. It never blocks. It speaks only when an edit grows a file past its budget (`WARN`), or into its last 10% (`NEAR`). Every decision goes to `$(git rev-parse --absolute-git-dir)/context-budget.log`, one per worktree. A shell redirect (`cat >>`, `sed -i`) escapes it; `reviewing-code*`'s `context-delta.sh` sees the branch whole.
+- **The weekly measurement.** `context-cadence.yml`, Tuesdays 16:14 UTC and on dispatch. It measures and never curates. It records one `baseline:scheduled` row in `.skills/context-metrics.jsonl`, and warns (`::warning::`) when a file is over budget, or seams or counts accrued. Under `merge_mode pr` it pushes `context/weekly-measurement` and keeps one standing PR open, merged like any other ([§ Merging under `pr`](#merging-under-pr)). A PR opened with `GITHUB_TOKEN` starts no CI: close and reopen it to run the checks. It needs the `ANTHROPIC_API_KEY` repository secret, and *Allow GitHub Actions to create and approve pull requests* (Settings → Actions → General). Without the secret it fails at its first step and records nothing.
+
+The workflow is generated: re-run `install-cadence.sh`, don't edit it. A re-render keeps the `actions/checkout` SHA pin ([DEPENDENCIES.md § CI pins and Dependabot](DEPENDENCIES.md#ci-pins-and-dependabot)), and Dependabot moves it. Its `runs-on: ubuntu-latest` is the template's, and a re-render writes it back. The job reads Markdown with bash, curl and python3 and builds nothing, so the node's image doesn't apply.
+
+`.gitattributes` merges the ledger by `union`, the ratio file by `ours`, and the counts file by `context-counts` (newest row wins). The last two name drivers in git config, which doesn't travel with a clone: the installer sets them, from the main checkout only (worktrees share its config).
+
+| To | Run |
+|---|---|
+| Check the guard / the cadence | `bash skills/curating-context/scripts/install-guard.sh --check` / `install-cadence.sh --check` |
+| Measure by hand | `bash skills/curating-context/scripts/measure-context.sh --exact --no-write` |
+| Run the week's job now | `gh workflow run context-cadence.yml` |
+| Remove either | `--uninstall` on its installer; the ledger stays |
+
 ## Not installed
 
-Separate decisions, as in broker#15: `curating-context`'s weekly cadence workflow and `PostToolUse` write guard, SocratiCode indexing and its two hooks (#5), and processor's row on upstream's `.skills/cohort` roster ([gregoryfoster/skills#343](https://github.com/gregoryfoster/skills/issues/343)). The tailored doc-check lists were one until #115.
+Separate decisions, as in broker#15: SocratiCode indexing and its two hooks (#5), and processor's row on upstream's `.skills/cohort` roster ([gregoryfoster/skills#343](https://github.com/gregoryfoster/skills/issues/343)). The tailored doc-check lists were one until #115.
