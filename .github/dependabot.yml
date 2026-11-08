@@ -3,14 +3,14 @@
 # comment, and setup-uv publishes no floating major to follow. Each PR is gated
 # by ci.yml (audit.yml reports). A Dependabot run reads its own credential
 # context, so on a red one read the WIF step first. How one lands, fast-forwarded
-# onto main in the deploy checkout: docs/DEPLOYMENT.md § CI pins and Dependabot.
+# onto main in the deploy checkout: docs/DEPENDENCIES.md § CI pins and Dependabot.
 #
 # github-actions only, never uv or pip version updates: Processor owns the exact
 # co-core pin and holds the extraction stack (AGENTS.md, #71). Security updates
 # need no entry here and move uv.lock regardless: they are on in Settings → Code
 # security (operator, 2026-11-03, #112). They resolve co-core from the co-pypi
 # index over OIDC: the repository is admitted, and run 42338249411 logged it
-# (#121). Each lands by hand (docs/DEPLOYMENT.md § CI pins and Dependabot).
+# (#121). Each lands by hand (docs/DEPENDENCIES.md § CI pins and Dependabot).
 # Guarded by tests/test_dependabot.py: a mistyped config stops producing PRs
 # without erroring anywhere a person looks.
 version: 2

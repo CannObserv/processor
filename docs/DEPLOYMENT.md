@@ -1,171 +1,8 @@
 # Deployment
 
-Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`, as its own user `processor`, from a release that [`scripts/deploy.sh`](#deploy-a-change-scriptsdeploysh) builds from a commit on `origin/main` (#2). What runs is `/srv/processor/live/REVISION`. An hourly timer, `processor-drift.timer`, reports through Status when that lags `origin/main` ([The drift check](#the-drift-check), #35). `processor run` itself checks in to Status every 5 min while it is consuming ([Liveness](#liveness), #39). Design: [the spec](specs/2026-09-29-processor-service-design.md) §2 (identities, grants), §4 (failure handling), §6 (cutover).
+Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`, as its own user `processor`, from a release that [`scripts/deploy.sh`](#deploy-a-change-scriptsdeploysh) builds from a commit on `origin/main` (#2). What runs is `/srv/processor/live/REVISION`. An hourly timer, `processor-drift.timer`, reports through Status when that lags `origin/main` ([The drift check](MONITORING.md#the-drift-check), #35). `processor run` itself checks in to Status every 5 min while it is consuming ([Liveness](MONITORING.md#liveness), #39). Design: [the spec](specs/2026-09-29-processor-service-design.md) §2 (identities, grants), §4 (failure handling), §6 (cutover).
 
-## Prerequisites (operator)
-
-| What | Where | Tracked |
-|---|---|---|
-| Broker ACL user `processor` | `co-broker` | broker#75; live 2026-10-01 (`observo` deleted) |
-| Broker credential | `/etc/processor/.env` as `CO_PROCESSOR_BUS_URL` | broker#75 item 5; minted 2026-10-01, `PING broker` as `processor` → `PONG` 22:09:36Z |
-| Tailnet `tag:processor` → `tag:broker` on 6379 | tailnet policy | done 2026-09-29 |
-| `processor.process` on `content.process` (the hard ordering) | broker | done 2026-10-01 22:09:41Z by `processor ensure-group`: stream empty, group at `0-0`, lag 0 |
-| Tailscale `--accept-dns=true`, and tailscaled's OOM drop-in | this VM | done 2026-10-01, [Tailscale DNS](#tailscale-dns) (#8) |
-| A direct tailnet path to the broker. On 2026-10-02 it formed under traffic (1 ms, a hairpin through the NAT both VMs share) and fell back to DERP `sea` (16–18 ms) after 150 s idle; on 2026-09-30 it never formed. Not a go-live blocker: only slower over DERP | tailnet / broker side | #15, done for this node: holds under the running service (direct, 1 ms, through 5 min with no pings, 2026-10-02 23:35Z), and through a reboot of `co-processor` (2026-10-03 16:53Z: direct on the first ping, still direct after 5 idle minutes). A broker reboot is the broker's to schedule and is untested |
-| Bucket `gs://co-gcs-processor`, UBLA, public access prevention, no lifecycle | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
-| SA `co-gcs-processor-writer`: `objectCreator` + `objectViewer` on `co-gcs-processor` (**no delete**), `objectViewer` on `co-gcs-blobs` | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
-| SA key at `/etc/processor/co-gcs-processor-writer.json` (root 600 since #2; the unit's `LoadCredential=`) | this VM | done 2026-10-02; the writer's preflight reached both buckets |
-| User `processor` (system, no home, no sudo, not in `docker`); `/srv/processor` (`exedev`, 755); `/etc/processor` root-only | this VM | #2, [Install](#install-once-2s-stage-b) |
-| `docker.socket` disabled | this VM | done 2026-10-05 (operator, #2 gate 1); `disabled` and `inactive` on 2026-10-06 |
-| Landlock ABI ≥ 6 | kernel | 6 on 2026-10-06 (6.12.93); [Containment](#containment) |
-| Tailnet `tag:processor` → `tag:status:9000` | tailnet policy | #35 gate 2, done 2026-10-07: `http://status:9000/health` answered `production` from `co-processor` at 14:03Z |
-| Status tenant `co-processor`, its production key, and the monitor `co-processor-drift` (`01M4BHMGGTXWQ16J3G5WWDQRYQ`) | `co-status` | CannObserv/status#24 (#35 gate 1), done 2026-10-07 16:02Z |
-| Status key at `/etc/processor/status-checkin.key` (root 600; `processor-drift.service`'s `LoadCredential=`) | this VM | #35 gate 3, [The drift check](#the-drift-check) |
-| Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level, for `co-gcs-blob-reader`, the identity Watcher already reads `gs://` blobs with | GCP | done 2026-10-02 (in the bucket's IAM policy); Watcher confirmed that identity on watcher#325 the same day ([its answers](https://github.com/CannObserv/watcher/issues/325#issuecomment-5958475061)) |
-
-### Broker credential handoff (hash-only, broker#75 as of 2026-09-30)
-
-The broker node never holds `processor`'s plaintext; since broker#72 its hourly backup refuses a plaintext line. This follows the shape of archiver#251:
-
-1. **On `co-processor`,** mint the password into `/etc/processor/.env` and the password manager. It stays out of argv and shell history, because `printf` is a shell builtin:
-
-   ```bash
-   pw="$(set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 40)"; [ "${#pw}" -eq 40 ]
-   ( umask 077; printf 'CO_PROCESSOR_BUS_URL=redis://processor:%s@broker:6379/0\n' "$pw" >> /etc/processor/.env )
-   printf %s "$pw" | sha256sum | cut -d' ' -f1   # post THIS digest on broker#75; it is not the credential
-   # copy "$pw" into the password manager, then:
-   unset pw
-   ```
-
-   **Since #2 the file is root's.** For a rotation, write the line with `printf … "$pw" | sudo tee -a /etc/processor/.env >/dev/null`. `printf` is a builtin, so the password stays out of every argv.
-2. **On the broker,** once the digest is posted, the broker's owner runs `ACL SETUSER processor on "#<digest>" …`, `ACL DELUSER observo` and `ACL SAVE`, and records the digest line.
-3. **From `co-processor`,** `PING` as `processor`. This is the only verification possible. The password travels in `REDISCLI_AUTH`, never argv:
-
-   ```bash
-   REDISCLI_AUTH="$(sed -n 's|^CO_PROCESSOR_BUS_URL=redis://processor:\([^@]*\)@.*|\1|p' /etc/processor/.env)" \
-     redis-cli -h broker --user processor PING   # PONG
-   ```
-4. Then create the group right away (below).
-
-The URL names the broker, never its address: see [Tailscale DNS](#tailscale-dns).
-
-### GCP provisioning
-
-The operator ran this on 2026-10-02 where `gcloud` is authenticated to project `co-gcs`, and the preflight below passed on `co-processor`. It stays here as the record and for re-provisioning; nothing in this repo runs it. It mirrors the cohort's other buckets (Replicator's `docs/INFRASTRUCTURE.md`): `US-WEST1`, `STANDARD`, uniform bucket-level access, and public access prevented. It sets no lifecycle rule, since the output is never deleted (spec D4), and keeps GCS's default 7-day soft delete, as on `co-gcs-replicator`. The writer holds no delete permission, so soft delete only guards against an admin's mistake.
-
-```bash
-PROJECT=co-gcs
-SA="co-gcs-processor-writer@${PROJECT}.iam.gserviceaccount.com"
-
-# 1. The bucket: derived text, append-only (spec §2, D4).
-gcloud storage buckets create gs://co-gcs-processor --project="$PROJECT" \
-  --location=US-WEST1 --default-storage-class=STANDARD \
-  --uniform-bucket-level-access --public-access-prevention
-
-# 2. The writer identity.
-gcloud iam service-accounts create co-gcs-processor-writer --project="$PROJECT" \
-  --display-name="processor: derived-text writer (CannObserv/processor)"
-
-# 3. Grants (spec §2). No delete anywhere.
-gcloud storage buckets add-iam-policy-binding gs://co-gcs-processor \
-  --member="serviceAccount:${SA}" --role=roles/storage.objectCreator
-gcloud storage buckets add-iam-policy-binding gs://co-gcs-processor \
-  --member="serviceAccount:${SA}" --role=roles/storage.objectViewer
-gcloud storage buckets add-iam-policy-binding gs://co-gcs-blobs \
-  --member="serviceAccount:${SA}" --role=roles/storage.objectViewer
-
-# 4. Watcher's reader. Proposed: co-gcs-blob-reader, which Watcher already reads
-#    gs:// blobs with (GCS_BLOB_CREDENTIALS). It gains nothing new, since the text
-#    is derived from blobs that identity can read. Run 2026-10-02, ahead of
-#    watcher#325's answer; if Watcher names another identity, grant that one too.
-gcloud storage buckets add-iam-policy-binding gs://co-gcs-processor \
-  --member="serviceAccount:co-gcs-blob-reader@${PROJECT}.iam.gserviceaccount.com" \
-  --role=roles/storage.objectViewer
-
-# 5. The key, straight onto co-processor over SSH stdin, never left on disk here.
-(
-  set -e; dir="$(mktemp -d)"; trap 'rm -rf "$dir"' EXIT   # mktemp -d is 700
-  gcloud iam service-accounts keys create "$dir/key.json" --iam-account="$SA"
-  ssh co-processor.exe.xyz \
-    'umask 077; sudo tee /etc/processor/co-gcs-processor-writer.json >/dev/null' < "$dir/key.json"   # since #2: root's
-)
-```
-
-Then, **on `co-processor`**, as it was done on 2026-10-02. **Since #2:**
-- the key is root 600, written with `sudo`;
-- the unit sets `GOOGLE_APPLICATION_CREDENTIALS` itself, so there is no line in `.env`;
-- the deploy's smoke run is the preflight that counts. It writes, as the service, through the credential.
-
-```bash
-printf 'GOOGLE_APPLICATION_CREDENTIALS=/etc/processor/co-gcs-processor-writer.json\n' >> /etc/processor/.env
-# Preflight both buckets as the writer: a one-object listing each, nothing written.
-( cd ~/processor && set -a && . /etc/processor/.env && set +a
-  .venv/bin/python -c 'from processor.settings import Settings
-from processor.stores import build_stores
-s = build_stores(Settings()); s.input.preflight(); s.output.preflight(); print("both buckets reachable")' )
-```
-
-**The co-pypi reader's key (#121).** Deploy-time only: `scripts/co-pypi.sh` mints the index's token from it for one `uv` command, as `exedev`. It's a key for `co-pypi-reader@co-gcs`, which already holds `roles/artifactregistry.reader` on `co-pypi` (CannObserv/cannobserv#554), never a grant to the writer: the runtime identity parses untrusted documents. It sits outside `/etc/processor/`, which is root 700 and the service's. Placed 2026-11-06 (key `57797cdb…`):
-
-```bash
-# on co-processor
-sudo install -d -o root -g exedev -m 750 /etc/processor-deploy
-# where gcloud is authenticated; the key is never left on disk there
-(
-  set -e; dir="$(mktemp -d)"; trap 'rm -rf "$dir"' EXIT
-  gcloud iam service-accounts keys create "$dir/key.json" \
-    --iam-account=co-pypi-reader@co-gcs.iam.gserviceaccount.com
-  ssh co-processor.exe.xyz \
-    'sudo install -o root -g exedev -m 640 /dev/stdin /etc/processor-deploy/co-pypi-reader.json' < "$dir/key.json"
-)
-```
-
-Check it by metadata alone (`ls -l /etc/processor-deploy`), then by use: `bash scripts/co-pypi.sh uv lock --locked --refresh-package co-core`. The refresh makes uv ask the index, so a token that can't read it fails: with no token that command gets a 401. A plain `uv lock --locked` resolves from the lock alone and proves only the mint. `PROCESSOR_CO_PYPI_KEY` points the wrapper at another key, for another machine. `tests/test_child.py` proves the contained child can't open it, without reading it.
-
-To verify the bucket's settings and grants (read-only):
-
-```bash
-gcloud storage buckets describe gs://co-gcs-processor \
-  --format="default(location, uniform_bucket_level_access, public_access_prevention, soft_delete_policy, lifecycle_config)"
-gcloud storage buckets get-iam-policy gs://co-gcs-processor
-```
-
-## `/etc/processor/`
-
-`root:root`, mode 700; each file in it is root 600 (#2). systemd reads the env file before it switches to the service user, and hands the key over as a credential, so `processor` can read neither file. Never source the env file into a login shell.
-
-```bash
-# /etc/processor/.env
-CO_PROCESSOR_BUS_URL=redis://processor:<password>@broker:6379/0
-# Optional overrides; defaults in src/processor/settings.py:
-# CO_PROCESSOR_CHILD_CONTAINMENT=required    # off: Rollback A only (§ Containment)
-# CO_PROCESSOR_EXTRACTION_TIMEOUT_S=120
-# CO_PROCESSOR_RLIMIT_AS_BYTES=3221225472
-# CO_PROCESSOR_RECLAIM_MIN_IDLE_MS=600000    # must exceed timeout + 60 s
-# CO_PROCESSOR_RECLAIM_INTERVAL_S=60
-# CO_PROCESSOR_MAX_ATTEMPTS=3
-# CO_PROCESSOR_CONSUMER_NAME=co-processor
-# CO_PROCESSOR_LIVE_INTERVAL_S=300           # change co-processor-live's interval with it (§ Liveness)
-# CO_PROCESSOR_LIVE_CHECKIN_TIMEOUT_S=10     # below the interval
-```
-
-- **The GCS key** is `/etc/processor/co-gcs-processor-writer.json`. The unit loads it with `LoadCredential=gcs-writer-key:…` and sets `GOOGLE_APPLICATION_CREDENTIALS=%d/gcs-writer-key`, which is `/run/credentials/processor.service/gcs-writer-key`.
-- **Keep `GOOGLE_APPLICATION_CREDENTIALS` out of `.env`.** `EnvironmentFile=` overrides `Environment=`, so a leftover line would point the service back at the root-only key path, and the preflight would fail.
-- **The service user can read the credentials directory, and so can the child.** Landlock refuses it to the child (§ Containment).
-- **The Status key** is `/etc/processor/status-checkin.key`. Each unit that checks in loads it as `LoadCredential=status-checkin-key:…`:
-  - `processor-drift.service`, which reads no `.env`, so the drift check never holds the broker credential (§ The drift check);
-  - `processor.service`, since #39, for the liveness check-in (§ Liveness). Landlock refuses it to the child, as it refuses the GCS key;
-  - `processor-patching.service`, since #113, which reads no `.env` either (§ The patch-due check).
-
-A command that needs the service's settings runs as the service, through systemd. Don't load the file into a shell:
-
-```bash
-processor_cli() {   # e.g. processor_cli dlq list; processor_cli ensure-group
-  sudo systemd-run --quiet --pipe --wait --collect -p User=processor -p Group=processor \
-    -p EnvironmentFile=/etc/processor/.env -p WorkingDirectory=/srv/processor/live \
-    /srv/processor/live/.venv/bin/processor "$@"
-}
-```
+The rest of the runbook, by topic (#126): [PROVISIONING.md](PROVISIONING.md) (prerequisites, `/etc/processor/` and `processor_cli`, containment, the install), [DEPENDENCIES.md](DEPENDENCIES.md) (CI pins and Dependabot, shell lint, the lock audit, co-core and extraction bumps, TLS trust), [MONITORING.md](MONITORING.md) (the drift check, liveness, disk GC, memory), [NETWORK.md](NETWORK.md) (Tailscale DNS, tailnet flaps).
 
 ## Releases, not a checkout
 
@@ -277,293 +114,6 @@ A stop mid-reclaim finishes the command in hand and leaves the rest pending. A c
 - **The lock audit is not in the gate.** `audit.yml` is its own workflow, so its run never counts, and a finding never blocks a deploy (§ The lock audit).
 - **`--skip-ci`** deploys without asking GitHub at all: for a fix that can't wait for CI, or when GitHub can't answer. It is logged before anything is built, as `CI not checked for <build> (--skip-ci)`. A gate that passes is logged too, as `CI passed for <build>: <run>`.
 
-## CI pins and Dependabot
-
-Ported from broker#88 and broker#90 (#80).
-
-**Pins.** Every `uses:` in `ci.yml` and `audit.yml` takes the form `owner/action@<40-hex sha> # vX.Y.Z`. A tag can be moved, and setup-uv publishes no floating major since v8. As of #80, with setup-uv moved by #110 (Dependabot's first PR here):
-
-| Action | Pin |
-|---|---|
-| `actions/checkout` | v7.0.1 |
-| `astral-sh/setup-uv` | v10.3.3 |
-| `google-github-actions/auth` | v3.0.0 |
-
-These are broker's majors (operator, 2026-10-29). `tests/test_dependabot.py` holds the form. `tests/test_ci.py` holds each major to a floor, so a Dependabot major passes and a downgrade fails. `tests/test_lock_audit.py` holds `audit.yml`'s pins equal to `ci.yml`'s.
-
-That a SHA *is* its tag needs the network, so it is checked by hand whenever a pin moves:
-
-```bash
-gh api repos/<owner>/<action>/git/ref/tags/<tag> --jq '.object.type + " " + .object.sha'
-```
-
-- `commit`: that SHA is the pin.
-- `tag`: an annotated tag, whose SHA names the tag object rather than a commit. The pin is the commit it points at: `gh api repos/<owner>/<action>/git/tags/<sha> --jq .object.sha`. setup-uv's old `v7` was one.
-
-**The cache.** `ci.yml` sets `prune-cache: true` on both setup-uv steps, because setup-uv v9 flipped the default to false. The repo is public, and a fork's PR can restore a cache saved on `main`. Unpruned, that cache holds co-core from the private co-pypi index. The prune drops downloaded wheels and keeps wheels built from source, so it covers co-core only while `uv.lock` locks each co-core to a wheel. `tests/test_ci.py` checks the prune, `tests/test_dependency_index.py` the wheels.
-
-**The index token** (#121). Each WIF step also mints an access token (`token_format: access_token`). The `uv sync` step alone takes it, as `UV_INDEX_CO_PYPI_USERNAME` / `_PASSWORD`, from the action's masked output. `uv lock --locked` resolves from the lock alone (measured offline from an empty cache), so it needs none. `tests/test_ci.py` holds it to that one step.
-
-**Dependabot** (`.github/dependabot.yml`) proposes action bumps only: `github-actions`, weekly, at most 10 open PRs, with `chore:` subjects.
-- **A 3-day cooldown, GitHub's default.** `dependabot.yml` sets no `cooldown`, so Dependabot skips a release less than 3 days old (`cooldown days 3` in its log). setup-uv v10.3.3, published 2026-10-28, was held back from the first run on 2026-10-30 ("Found acceptable version outside cooldown: 10.3.2"). It arrived as #110 on 2026-11-02.
-- **No `uv` or `pip` version updates.** Processor owns the exact co-core pin and holds the extraction stack ([§ Extraction dependencies](#extraction-dependencies)). `uv.lock` has its own signal ([§ The lock audit](#the-lock-audit)).
-- **Settings → Code security** (operator reading, 2026-10-29, #80; security updates re-read 2026-11-03, #112):
-  - Dependency graph: **on**. It is the `Graph Update: uv in /.` run on each push, and opens nothing.
-  - Dependabot alerts: **on**. These are the operator's.
-  - Dependabot security updates: **on**, and left on (operator, 2026-11-03, #112). The 2026-10-29 reading said off. A security update ignores `dependabot.yml`: it is a `uv` job (`"command":"security"`) per advisory. Until #121 every one failed before it opened anything (`PathDependenciesNotReachable: --find-links`; the first two on the push of `312552a`, 2026-11-03T01:27Z). Since #121, co-core resolves from the co-pypi index, which the updater should read over OIDC through the org registry `PYTHON_INDEX_OIDC_GCP` once this repository (ID `1396635239`) is admitted (cannobserv `docs/DEPENDABOT.md`, step 3). Proven 2026-11-07, after admission: a temporary `uv` version entry allowing co-core alone, run [42338249411](https://github.com/CannObserv/processor/actions/runs/42338249411), logged `registered gcp OIDC credentials for python index`, PyPI's 404, `authenticating request with OIDC token (host: us-west1-python.pkg.dev)`, `200` and `Latest version is 0.41.0`; its `uv lock` fetched all three co-core wheels the same way. It opened nothing: `co-core-aio==0.38.0 depends on co-core>=0.38,<0.39`, so a proposal must move the three names together (#121). The entry was then removed.
-  - **A security PR lands by hand,** never as proposed. Add the `[tool.uv] constraint-dependencies` floor and its `tests/test_lock_floors.py` row in the same merge; in the extraction stack, bump `LOCAL_GENERATION` too ([§ The lock audit](#the-lock-audit)'s "Where a finding goes"). Then check the proposed `uv.lock`: every co-core `source` is still the index URL. Dependabot's lookup asks PyPI first, and the co-core names are unclaimed there (DEPENDABOT.md's accepted limit; CannObserv/replicator#169).
-
-  No test can see these settings, and our token gets 403 on both APIs. Re-read them in the UI whenever the repo's security settings change.
-
-**A Dependabot run reads its own credential context.** GitHub runs it as if from a fork: a read-only `GITHUB_TOKEN`, and Dependabot secrets only.
-- `ci.yml` needs no secret. It needs `vars.GCP_WIF_PROVIDER` to resolve, plus the OIDC token that `id-token: write` asks for.
-- Both held on CannObserv/watcher's Dependabot PRs (same provider, same SA; watcher#356, watcher#364, per broker's `docs/CI.md`).
-- Confirmed here on the first Dependabot PR, #110 (setup-uv 10.3.2 → 10.3.3): run 41426874011, 2026-11-02, a `pull_request` run triggered by `dependabot[bot]`. **Authenticate to Google Cloud (WIF, read-only)** and **Sync cannobserv wheelhouse** (retired by #121) passed in both `lint` and `test`.
-- On a red one, read **Authenticate to Google Cloud** first:
-  - *"must specify exactly one of workload_identity_provider or credentials_json"*: the variable didn't reach the run.
-  - *"did not inject $ACTIONS_ID_TOKEN_REQUEST_TOKEN"*: no OIDC token.
-  - Past both, the cause is the provider's attribute condition or the SA binding.
-
-  None of these is the bump's fault, so the fix belongs on the CI side. Don't take the bump to make it green.
-
-**How a Dependabot PR lands:** fast-forwarded in this checkout, on `main`, like every other PR. Never squashed, and never by switching this checkout's branch.
-
-```bash
-# Read the action's release notes, not just the diff: a major can change inputs.
-gh pr comment <N> --body "@dependabot rebase"   # only if main moved; wait for the force-push
-gh pr checks <N> --watch                        # green on the commit that lands
-# check the PR's new SHA against its tag, as under Pins above
-git fetch origin "$(gh pr view <N> --json headRefName -q .headRefName)"
-git merge --ff-only FETCH_HEAD
-git push origin main                            # GitHub marks the PR merged
-```
-
-- The commit CI tested is the commit that lands, and its subject (`chore: bump …`) already follows AGENTS.md.
-- Land one PR at a time. After each push, the next may need `@dependabot rebase`.
-- A major passes `tests/test_ci.py`'s floor (`ACTIONS`) as it is. Raising the floor is a PR of its own: never push to Dependabot's branch, since Dependabot stops rebasing a PR someone else has pushed to.
-- **No deploy:** an action bump touches `.github/` alone, which is outside `RUNTIME_*` ([§ The drift check](#the-drift-check)).
-
-**The runner image.** Every job in `ci.yml` and `audit.yml` runs on `ubuntu-24.04`, co-processor's image, not `ubuntu-latest`. That is 26.04 now: main's run 41003391205 (2026-10-30) ran on `ubuntu-26.04` (#81, as broker#88). The shell lint and the suite then run on the node's userland, and `test`'s Redis fallback, 24.04's apt `redis-server`, is 7.0.15. `tests/test_ci.py` holds every `runs-on` to one image, and on co-processor holds that image to `/etc/os-release`. So a node upgrade fails the suite there until the pins move with it.
-
-## Shell lint
-
-Ported from broker#112 (#81). `scripts/shellcheck.sh` lints this repo's own shell scripts: every tracked `*.sh` and `.githooks/*`.
-- **Not a symlink:** the `.claude/hooks/` ones point into `skills-vendor/`.
-- **Not `.skills/`:** the vendored refresh hook rewrites `doctor.sh` there.
-- A finding in either is an issue on gregoryfoster/skills.
-
-`ci.yml` runs the script over the tree as a step of `lint`. A step, not a job: `deploy.sh`'s `CI_JOBS` gate covers it as is, and a new job would need a `CI_JOBS` entry.
-
-A commit runs it over what is staged, along with `ruff check` and `ruff format --check` over staged Python, once the clone opts in:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-The hook is per clone, and `--no-verify` skips it, so CI is the enforcement.
-
-**The version.** Both run shellcheck 0.11.0 from `shellcheck-py` in `uv.lock`'s `lint` group, a hash-pinned wheel:
-- no root install on the node, and nothing fetched at run time;
-- `audit_lock.sh` reads it;
-- the release's `uv sync --no-dev` installs neither tool.
-
-They call `uv run --frozen --only-group lint`, without the project, so a clone needs no co-pypi token to commit. `--no-config` stood in for `find-links` until #121, which measured the group from an empty cache with no token.
-
-**A bump** changes what the gate finds, so it lands with its fixes: `uv lock --upgrade-package shellcheck-py`, then `bash scripts/shellcheck.sh`, then this paragraph's version. Never `uv lock --upgrade` (the co-core rule). It moves `pyproject.toml` or `uv.lock`, so it is a deploy.
-
-**Disables.** Fix a finding rather than disable it. A `# shellcheck disable=` that stays sits on the line before the command, with its reason on the same line: `# shellcheck disable=SC2064 # expanded now: …`. A trailing directive after the command doesn't suppress.
-
-`tests/test_shellcheck.py` pins the selector, the hook, the group and the version named here.
-
-## The lock audit
-
-Disclosures arrive without commits: #71's 12 advisories surfaced only because someone ran `uv audit` by hand. Two things read the lock against OSV now:
-
-- **`audit.yml`, the signal.** `.github/workflows/audit.yml` runs `scripts/audit_lock.sh` on every push to `main`, every PR, weekly (`audit.yml`'s cron), and on dispatch (#73, ported from broker#86). A push or PR run is seen by whoever made the change. A scheduled run that finds something is still green, so it notifies nobody (#75).
-- **The weekly window, the human read** (#75, operator 2026-10-26). Each run's after-probe (§ Patching, step 9) runs `uv audit --frozen` on `/srv/processor/live/uv.lock`, the **live** lock, as the lock file's owner, `exedev`, on a copy, never in the tree. It asks OSV live, so a disclosure `audit.yml`'s Monday 14:37Z run saw is read again in the window, which opens 14 h later. The count goes in the run's record, and the operator reads it. `tests/test_patching_knob.py` keeps the units' `WorkingDirectory=`, the knob's `owner` line and `scripts/deploy.sh`'s live link equal, so a refactor can't move the probe off the lock unnoticed.
-
-The script and its workflow:
-
-- **Report-only.** The script always exits 0. A finding (uv exit 1) is a `uv.lock advisories` warning, with the audit and where it goes in the job summary. Any other failure is a `uv audit did not run` warning, never a clean result. A red gate would turn `main` red on someone else's disclosure date.
-- **Outside the deploy gate.** The gate reads `ci.yml`'s push run alone (§ The CI gate); `tests/test_lock_audit.py` holds both workflows to that.
-- **No secret, no WIF.** `uv audit --frozen` reads the lock without fetching a package (measured with no co-pypi token, #121). OSV's text is echoed between `::stop-commands::` and a random token, so it can't issue workflow commands.
-- **By hand:** `bash scripts/audit_lock.sh` from any directory audits this checkout's lock.
-- **Where a finding goes:** every finding is `uv lock --upgrade-package <name>` plus a `[tool.uv] constraint-dependencies` floor with its check in `tests/test_lock_floors.py`, so a later re-lock can't undo it. A package in the extraction stack also bumps `LOCAL_GENERATION`, with the notice: § Extraction dependencies (#71 did both for pypdf). Re-locks touch `uv.lock`, so deploy after the merge.
-
-What the window doesn't cover:
-- A disclosure mid-week waits for the next window, at most 7 days. Between windows, `audit.yml` alone sees it.
-- A skipped window means no read that week, and no reading says so. A run without step 9 leaves the class in its other probes' `not_read`.
-- A unit moved off the lock would read clean: the probe finds trees only through `WorkingDirectory=`, and one with no lockfile still reads complete. That is the test's case.
-- The run never re-locks. A finding there goes to "Where a finding goes", above, outside the window.
-
-**Reopen path:** if a window is skipped twice running, or an advisory that matters reaches production between windows, take #75's option 2: the scheduled run opens or updates an issue, with `issues: write` on that job only.
-
-## The drift check
-
-**Live lagging `origin/main` in code that runs alerts through Status** (#35, ported from status#12). `processor-drift.timer` starts `processor-drift.service` 5 min after boot, then hourly. It runs `/srv/processor/live/.venv/bin/processor drift` as `processor`: it asks GitHub how far live's `REVISION` is behind `main`, then checks in once to Status's monitor `co-processor-drift` (tenant `co-processor`, CannObserv/status#24) at `http://status:9000`. The rules are in `src/processor/drift.py`.
-
-| Live | Check-in (`kind`) | What to do |
-|---|---|---|
-| `main`; behind only in what never runs; behind in code for 8 h or less since the push that brought it | `ok` (`ok`) | nothing |
-| behind in code for more than 8 h | `alert` (`lag`), every hour until deployed. It names `main`'s CI result | `scripts/deploy.sh`. If `main`'s CI isn't green, § The CI gate refuses: fix `main` first |
-| not on `main`: diverged, or GitHub doesn't know live's commit (a rewritten `main`) | `alert` (`off_main`) | deploy a commit on `main`; `journalctl -t processor-deploy` says how live got there |
-| unstamped: the release has no `REVISION` | `alert` (`unstamped`) | `live` names something that isn't a finished release: deploy |
-| GitHub can't answer: a rate limit, a 5xx, a timeout, a wrong-shaped answer | none; the run exits 1 | nothing. The monitor's grace absorbs one missed run |
-
-- **Each `alert` names its kind as `metadata.fault`** (#58; status#28, the contract of `co-archiver-drift` and `co-broker-drift`); an `ok` sends no `metadata`. Status groups a run of alerts into one fault by it, so a change of kind (`lag` → `off_main`, say) reports at once, not at the next daily reminder.
-- **What runs:** `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml`, `uv.lock`. A rename counts by either name. Docs, tests, CI, skills and the other scripts never count, however old.
-- **The check is itself runtime:** it lives in `src/` and its units in `deploy/`. A change to it needs a deploy, and lags like any other.
-- **The clock** starts at the push, from its CI run's `created_at`, never the commit date. Within the grace, the body names the oldest push since live, which may be docs only.
-- **GitHub's budget:** unauthenticated, 60 requests an hour per address, shared with § The CI gate. A run costs 1 request in sync or behind in docs only, 2 behind in code, and at most 10 past the grace.
-- **Apart from `processor run`:** a oneshot with `TimeoutStartSec=90`, no `Restart=`, and no retry. No GitHub call starts past 60 s, but each is bounded per read, not in total, so the 90 s is the hard stop. A run killed there sends nothing, which reads as a GitHub-silent run. A GitHub or Status outage costs it its exit code and nothing else. It reads no `.env`, so it never holds the broker credential.
-
-**`missing` on `co-processor-drift` means the check isn't reporting.** The cause is one of: the timer is stopped, live was rolled back past #35 (§ Rollback), `co-processor` is down, the tailnet path to `status` is gone, the key is wrong or missing, Status refuses, or GitHub stayed silent for two runs in a row. It says nothing about `processor run` (that is `co-processor-live`, § Liveness). To find out which:
-
-```bash
-systemctl list-timers processor-drift.timer
-systemctl status processor-drift.service
-journalctl -u processor-drift -o cat | jq -cR 'fromjson? | select(.message == "drift check") | {timestamp, level, kind, checkin, body}'
-```
-
-Each run logs one `drift check` record: `build`, `main`, `kind`, `body`, and `checkin`. `checkin` is one of:
-- `202`;
-- `null`: GitHub was silent;
-- `failed: <Status's answer>`;
-- `not sent: missing <what>`: the monitor id or the key.
-
-The level is INFO for `ok`, WARNING for an alert or a silent GitHub, and ERROR when the check-in failed. Exit 0 means Status took the check-in.
-
-**Run it now:** `sudo systemctl start processor-drift.service`, then read the journal as above.
-
-**Silence a lag you mean to keep.** It alerts hourly until deployed. `sudo systemctl stop processor-drift.timer` stops the alerts, and the monitor then goes `missing`, which is honest. `start` resumes them. A deploy never re-enables a timer it installed before, so `disable --now` keeps it stopped across reboots too.
-
-**A deliberate alert** proves the channels end to end. It sends `kind: test`, and asks GitHub nothing. Its fault is `test`, so sent while a real fault is open it reports at once, as a fault of its own; the next hourly run's alert, back to the real kind, reports at once too:
-
-```bash
-sudo systemd-run --quiet --pipe --wait --collect -p User=processor -p Group=processor \
-  -p LoadCredential=status-checkin-key:/etc/processor/status-checkin.key \
-  -p "$(systemctl show -p Environment processor-drift.service)" -p WorkingDirectory=/srv/processor/live \
-  /srv/processor/live/.venv/bin/processor drift --test-alert
-```
-
-**Installing the key** (once; #35 gate 3). Status's operator mints it into `/etc/status/pending/co-processor.key` on `co-status` (status#24), and it is read across terminal to terminal. It never goes on a command line, into an issue or into a chat:
-
-```bash
-sudo install -m 600 -o root -g root /dev/null /etc/processor/status-checkin.key
-sudo tee /etc/processor/status-checkin.key >/dev/null     # paste the key, Enter, then Ctrl-D
-sudo systemctl start processor-drift.service              # once the timer is installed: check in now
-```
-
-Installed before the deploy that brings the timer, the timer's first run (at the enable) checks in.
-
-## Liveness
-
-**`processor run` checks in to Status while it is consuming** (#39). A task beside the consume loop checks in `ok` to Status's monitor `co-processor-live` (tenant `co-processor`, CannObserv/status#24) every 5 min. It does so only while the loop has made progress within 605 s: a finished read (an empty one counts), a handled message, or a backoff. It never sends `alert`. When it stops checking in, Status's `missing` is the page. The code is `src/processor/liveness.py`.
-
-| Monitor | Value |
-|---|---|
-| interval | 300 s (`CO_PROCESSOR_LIVE_INTERVAL_S`; change the monitor's with it) |
-| grace | 900 s: Status pages after 20 min of silence |
-| renotify | daily |
-| variables | `build`, `last_progress_age_s`, `backing_off` |
-
-- **The monitor id** is in `deploy/processor.service` (`CO_PROCESSOR_LIVE_MONITOR_ID`). Without it, liveness is off: dev and CI.
-- **The key** is the drift check's, the same file (§ `/etc/processor/`). If it's missing, the service still starts. `starting` then says `liveness: off: missing the status-checkin-key credential`, an ERROR record `liveness check-in off` follows, and the monitor goes `missing`.
-- **Never in consumption's way.** Each check-in runs in a daemon thread, bounded at 10 s, with one attempt per tick. A tick whose check-in is still running is skipped. A Status outage costs log lines, never a command's time.
-- **605 s** is `reclaim_min_idle_ms + read_block_ms`: the reclaim's own bound for a dead command, plus one read. A reclaim walk over a backlog counts as progress per message, so it is never a wedge.
-- **The grace covers a deploy.** The worst case is about 850 s:
-  - up to 300 s since the last check-in;
-  - a 240 s stop (`TimeoutStopSec`, while the in-flight command finishes);
-  - a 300 s verify of a new build that never starts;
-  - then the switch back, whose old build checks in about 5 s after it starts.
-
-  A normal deploy (about 5 s) never pages.
-
-**`missing` on `co-processor-live` means `processor run` isn't consuming**, or can't say so. It is one of:
-- the service is stopped, or crash-looping (a failed preflight, a failed canary, refused containment);
-- the consume loop is wedged: no read, message or backoff has finished in 605 s, though the process is up;
-- the key is missing or wrong, so the check-ins fail;
-- `co-processor` is down, the tailnet path to `status` is gone, or Status refuses.
-
-It never means the queue is empty. A broker outage isn't it either: that backs off, which counts as consuming, and the variables say `backing_off: true`. To find out which:
-
-```bash
-systemctl status processor
-journalctl -u processor -o cat | jq -cR 'fromjson? | select(.message == "starting") | {timestamp, build, liveness}' | tail -n 1
-journalctl -u processor -o cat --since -1h | jq -cR 'fromjson? | select(.logger == "processor.liveness") | {timestamp, level, message, error, last_progress_age_s}'
-```
-
-| Record | Level | Means |
-|---|---|---|
-| `liveness check-in` | INFO | the first `ok` after start, a failure or a silence; a steady `ok` logs nothing |
-| `liveness check-in failed` | WARNING | Status refused or didn't answer (`error`) |
-| `consume loop stale; not checking in` | WARNING | the wedge: `systemctl restart processor` (a stop lets the in-flight command finish), and keep the journal for an issue |
-| `previous check-in still in flight; skipping this tick` | WARNING | Status hangs past the timeout |
-
-**A deliberate stop longer than 20 min pages.** Ask Status's operator to pause the monitor first (`"enabled": false`), and to resume it after.
-
-## Containment
-
-The extraction child is assumed compromised by the document it parses (spec §3, #2). Three layers protect against that:
-- **The child contains itself:** Landlock (read-only on a derived allowlist, no TCP, abstract sockets and signals scoped) and seccomp (no socket of any family).
-- **The parent is undumpable.**
-- **The service runs as `processor`,** reading releases it doesn't own.
-
-- **Prerequisites:**
-  - Landlock ABI ≥ 6 (Linux 6.12; `co-processor`: 6);
-  - x86_64 or aarch64;
-  - `docker.socket` disabled. It is enabled by default on exeuntu, and `/run/docker.sock` meant root to the `docker` group; the child can't reach any socket now, but `processor` isn't in that group either.
-- **Fail closed.** Under `CO_PROCESSOR_CHILD_CONTAINMENT=required` (the default), `processor run` exits 1 with `child containment unavailable` where the kernel can't contain the child, and systemd restarts it, so the unit flaps visibly.
-- **The boot canary.** Before it takes any command, `processor run` makes one real extraction (a tiny HTML page) through the child, under the configured containment. It exits 1 with `child canary failed` (`kind`, `detail`) if that fails. This covers what the ABI check can't see, such as a library outside the allowlist after a host update, which would otherwise crash every command three times and publish a terminal `extraction_error` for each. A child that fails to contain itself exits 70 before it reads its request, which counts as a strike.
-- **Debugging the parent.** Being undumpable means no core dump, and `py-spy dump` or `gdb -p` need root (`sudo py-spy dump --pid <pid>`). The child is still dumpable, and its environment holds only `PATH` and `LANG`.
-- **What the child can still reach:**
-  - the kernel's other syscalls;
-  - its own code, the stdlib and the shared libraries;
-  - CPU up to the timeout, and memory up to `RLIMIT_AS`;
-  - its own command's output, which only Watcher's comparison checks.
-
-**Check on the host** (after an install, a kernel change, or a unit edit):
-
-```bash
-pid=$(systemctl show -p MainPID --value processor)
-ps -o user= -p "$pid"                                            # processor
-grep NoNewPrivs "/proc/$pid/status"                              # 1
-sudo -u processor cat "/proc/$pid/environ" >/dev/null            # Permission denied (undumpable)
-sudo -u processor cat /etc/processor/.env >/dev/null             # Permission denied
-systemctl is-enabled docker.socket                               # disabled
-# The key as the unit receives it: readable by the service's uid through an ACL,
-# from anywhere on the host, so by the child's but for Landlock (CR 9). The control
-# proves the uid can read it, so the second line's refusal is Landlock's.
-for key in /run/credentials/processor.service/{gcs-writer-key,status-checkin-key}; do
-  (cd / && sudo -u processor head -c1 "$key" >/dev/null) && echo "control: readable"
-  (cd / && sudo -u processor /srv/processor/live/.venv/bin/python -I -c \
-    "from processor._contain import contain; contain('required'); open('$key')") # PermissionError
-done
-journalctl -u processor -o cat | jq -cR 'fromjson? | select(.message == "starting") | {build, child_containment, landlock_abi}' | tail -n 1
-```
-
-`tests/test_child.py` proves each denial on the host it runs on, against the real `/etc/processor/.env`, both keys (on disk, and as the unit's credentials) and the repo's `.env` when they're readable there. After the install `exedev` can read none but the last, so on `co-processor` those tests skip, and the `key` loop above is the evidence. Each denial is paired with an uncontained control. `tests/test_contain.py` proves each layer alone. On `co-processor` the suite never skips them.
-
-**Rollback A, containment alone:** add `CO_PROCESSOR_CHILD_CONTAINMENT=off` to `/etc/processor/.env` and `sudo systemctl restart processor`. A deploy then fails its verify, which requires `required`, so take the line out before the next deploy.
-
-## Install (once; #2's Stage B)
-
-On 2026-10-02 the service was installed as `exedev`, running `~/processor` (below). #2 moves it to the `processor` user and to releases. As root where marked:
-
-```bash
-sudo install -d -m 700 /var/backups/processor/2
-sudo cp -a /etc/systemd/system/processor.service /etc/processor /var/backups/processor/2/
-sudo useradd --system --user-group --no-create-home --home-dir /nonexistent \
-  --shell /usr/sbin/nologin processor
-sudo install -d -o exedev -g exedev -m 755 /srv/processor
-sudo sed -i '/^GOOGLE_APPLICATION_CREDENTIALS=/d' /etc/processor/.env
-sudo chown -R root:root /etc/processor && sudo chmod 700 /etc/processor
-sudo chmod 600 /etc/processor/.env /etc/processor/co-gcs-processor-writer.json   # by name: a glob is expanded as exedev, and * skips .env
-cd ~/processor && git pull --ff-only && scripts/deploy.sh   # builds, installs the unit, restarts, verifies
-```
-
-Then run § Containment's checks, and wait for the next shadow command: `ack: complete` with its digests, and Watcher still reporting a match.
-
 ## Rollback
 
 - **A failed deploy** switches back by itself (exit 1). `scripts/deploy.sh <old build>` rolls back on purpose; the old release still exists among the 5 kept, so nothing is rebuilt. It is gated on the old build's CI like any deploy; if GitHub can't answer, add `--skip-ci` (§ The CI gate).
@@ -581,23 +131,6 @@ Then run § Containment's checks, and wait for the next shadow command: `ack: co
 
   The backup has the old ownership (`exedev`) and the `GOOGLE_APPLICATION_CREDENTIALS` line. The user and `/srv/processor` can stay.
 
-## Before #2: the first install (2026-10-02)
-
-The service ran as `exedev` from this checkout (`uv sync --frozen --no-dev`; `WorkingDirectory=/home/exedev/processor`) until #2's install.
-
-**Installed on `co-processor` 2026-10-02 23:27:27Z** (`main` at `6e518d8`): `starting`, then `consuming` within a second; 65 MB charged to the unit's cgroup (`MemoryCurrent`, page cache included; the cap is `MemoryMax=6G`). A smoke test ran one real blob through `handler.handle` with the production stores and child, and its publish captured locally (never the broker). The blob was `2e38aa5e…`, from Watcher's real corpus.
-- Read 89 ms, extract 550 ms, store 102 ms.
-- The stored text's digest equals Watcher's recorded fingerprint, and it read back intact.
-- A second run was write-if-absent.
-- It left one permanent object, `gs://co-gcs-processor/blobs/b8f6d0f1ec63d0b4c0e20fec0052871704f2353b59663cb715ca3eb783600bdf.bin` (17,327 bytes): exactly what Watcher's command for that revision produces.
-- 23:45:29Z: `scripts/smoke_scratch_bus.py` passed on the same input. That is the full loop on the scratch bus (read, child, store, publish, ack) against the production bucket, and its write was a no-op on the existing object.
-
-On boot, the service preflights both buckets and exits non-zero if either is unreachable, and systemd restarts it. Broker outages do not stop the service: the loop backs off from 1 s up to 30 s and retries.
-
-## Create the group: as soon as the credential verifies
-
-`processor.process` must exist before Watcher's first command (spec §6, the hard ordering). A group created later from `$` skips earlier entries. On 2026-09-30 broker#75 found `content.process` absent, so creating the group then skipped nothing. Done 2026-10-01; idempotent: `processor_cli ensure-group` (§ `/etc/processor/`).
-
 ## Operate
 
 - **Drift:** `journalctl -u processor-drift` (§ The drift check).
@@ -606,184 +139,6 @@ On boot, the service preflights both buckets and exits non-zero if either is unr
 - **Dead letters:** `processor_cli dlq list | show <id> | drop <id>` (§ `/etc/processor/`). There is no replay. An entry failed to decode, was not a command, or is a command that raised outside the handler on every attempt (`reason` starts `gave up on attempt`): that one is a bug to fix. Before dead-lettering such a command, Processor published a terminal `dead_lettered` whose `detail` starts `dead-lettered:` (best effort), so Watcher has closed it (#17; `extraction_error` before co-core 0.37.0, #21). The journal's `dead-lettering` record says which: `failure_fact` is `published`, `skipped` (a fact had already gone out) or `refused`. On a command given up at the cap, `handle_skipped` is `true` when the record retries a give-up that did not finish (the failure fact refused transiently, or the dead-letter refused), with no re-run of the command and the original traceback (#28). The same entry logging that every ~11 min while it stays pending means `content.process.dlq` refuses it: `journalctl -u processor -o cat | jq -cR 'fromjson? | select(.handle_skipped) | {timestamp, command_id, message_id, reason}'`.
 - **Lag / missing group:** the broker probe watches `processor.process` (broker#75).
 - **Strikes** are counted in memory. A restart resets them, so a poison command gets at most 3 more attempts.
-
-## Bumping co-core
-
-co-core is pinned `==`, and Processor owns the pin (spec D5, §5; amended 2026-10-10, #47). Until watcher#350 it was in lockstep with Watcher. A bump changes `processor_version` on every fact, and Watcher re-baselines on that:
-
-1. Update the pin in `pyproject.toml` (all three names) and `EXPECTED` in `tests/test_pin.py`, then `bash scripts/co-pypi.sh uv lock --upgrade-package co-core --upgrade-package co-core-aio --upgrade-package co-core-sync`, never `--upgrade`. Nothing else moves: no wheelhouse, no digest table (#121).
-   - **The lock carries the digests.** Each co-core file gets its sha256 from the index, and `uv sync --locked` refuses a miss. cannobserv's publish run fails unless the index lists every file under its local sha256 (from v0.41.0, CannObserv/cannobserv#554).
-   - **Check the diff:** each co-core `source` is the index URL, and nothing outside the bump moved. A moved extraction-stack package belongs to the bump (§ Extraction dependencies).
-2. A release that adds an essence or an extraction rule gets its cases in `tests/fixtures/parity/cases.json` first, so their goldens come from co-core. Then regenerate the goldens from co-core directly: `uv run python scripts/gen_parity_goldens.py tests/fixtures/parity`. It prints every digest that moved, and every case that started or stopped being refused. Paste that list into the bump note: each line is a deliberate re-baseline. Never regenerate to make a parity test pass outside a bump. A catch-up across releases reads each CHANGELOG's Downstream lines for the extract, bus and blob-store surfaces, and diffs those packages' code between the tags (#29 did 0.19.7 → 0.32.0).
-3. The real corpus (`tests/fixtures/parity/real/`) is never regenerated. It passes unchanged, or the bump note says which recorded fingerprints moved.
-4. **Notice to Watcher** before deploy: the new `processor_version`, and the moved digests. A change to the contract needs coordination with Watcher first, not just notice. The contract is the `content.process` / `content.derived` models and `canonical_text` semantics. A change to essence resolution is notice, not coordination (spec §5, #57).
-5. Merge, then `scripts/deploy.sh`.
-
-## Extraction dependencies
-
-`processor_version` sees co-core and `LOCAL_GENERATION`, nothing else in the lock. The extraction stack (the transitive closure of co-core's `extract` extra: pypdf, lxml, bs4, html5lib, openpyxl, …) turns bytes into text too, and co-core floors it loosely, so a re-lock can move a fingerprint under an unchanged version. Watcher reads that as a content change and notifies. So moving the stack outside a co-core bump is a generation bump (spec §5, amended 2026-10-24, #71):
-
-1. `uv lock --upgrade-package <pkg>`, never `uv lock --upgrade`; the diff moves what you named. A security floor goes in `[tool.uv] constraint-dependencies`, with its check in `tests/test_lock_floors.py`.
-2. `tests/test_pin.py` fails, naming what moved. Update `EXTRACTION_STACK`, and bump `LOCAL_GENERATION` in `src/processor/processors/extract.py` and `GENERATION` in the test. At a co-core bump the version moves anyway: update the table, leave the generation.
-3. Measure what moved: the parity tests (goldens, real corpus) must pass unchanged (a golden that moves is a co-core-pin question, not this one), and run co-core's extractor for the moved package over a wider corpus on both versions (#71 used pypdf's and py-pdf's sample PDFs: 4 of 106 moved). Put the result in the PR.
-4. **Notice to Watcher** before deploy: the new `processor_version` and the evidence. Merge, then `scripts/deploy.sh`.
-
-Since #71: `0.38.0+2`, pypdf 6.21.2, opentelemetry-api 1.45.1 (not stack; a floor only). Since #112: `0.38.0+3`, pypdf 6.21.4, pyasn1 0.6.5 (not stack; a floor only).
-
-## TLS trust
-
-The service's TLS trust is certifi's bundle in the release venv, not the system store: GCS (`google-auth` / `google-cloud-storage` over `requests`) and the drift check's GitHub calls verify against `certifi.where()`, and nothing sets `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE`. A CA distrust (exe.dev's system-store remediation doesn't reach the venv) is a certifi bump: raise `constraint-dependencies` in `pyproject.toml` and the floor in `tests/test_tls_trust.py`, `uv lock --upgrade-package certifi` (the diff moves certifi alone, never `uv lock --upgrade`), merge, then `scripts/deploy.sh`. The restart is the fix: a running process keeps the bundle it loaded. Check from the release venv: `/srv/processor/live/.venv/bin/python -I -c "import certifi; print(certifi.__version__)"`. certifi isn't co-core, so `processor_version` doesn't move and Watcher needs no notice. Since #66: ≥ 2026.10.19, without `emSign ECC Root CA - G3` (the eMudhra compromise, https://exe.dev/security/emudhra-compromise).
-
-## Tailscale DNS
-
-Since #8 (2026-10-01) this VM runs Tailscale with `--accept-dns=true`, as every cohort node does (observo#631, notifier#43 D8). It had run with DNS off since provisioning: the `tailscale up` of 2026-09-29, from an Observo session (observo#629), passed `--accept-dns=false`, and nothing records a reason.
-
-How it works here:
-
-- exeuntu has no `systemd-resolved`, so tailscaled runs in direct mode and writes `/etc/resolv.conf` itself, pointing it at MagicDNS (`100.100.100.100`).
-- exe.dev wrote `nameserver 169.254.169.254` (its resolver) into `/etc/resolv.conf` at the VM's first boot: the file has the same 2026-09-29 22:50:42 mtime as `/etc/hosts`. At boot, before systemd starts, exe.dev's init rewrote it when it differed: after the 2026-10-01 hard reset it replaced the tailscaled file it found. It left it alone when it matched, after that day's graceful reboot, as it has `/etc/hosts` at both boots. tailscaled keeps that file as `/etc/resolv.pre-tailscale-backup.conf` and forwards public names to it, since the tailnet sets no global resolvers. The unit's `ExecStopPost=/usr/sbin/tailscaled --cleanup` puts it back on a clean stop, and tailscaled takes it over again when it starts.
-- `broker` resolves through MagicDNS, so the bus URL names it and never its address. Broker's `docs/RECOVERY.md` rebuilds the node under the same name with a new address. Only the peers the tailnet policy shows this node resolve; on 2026-10-01 that was `broker` alone.
-
-**`CorpDNS` must be true.** It can be false while `tailscale status` looks healthy: the peers are listed, and every tailnet name still fails (archiver#193). `tests/test_tailscaled.py` checks it on this node.
-
-```bash
-tailscale debug prefs | grep CorpDNS     # true
-getent hosts broker storage.googleapis.com
-```
-
-### tailscaled's OOM rank
-
-The accepted cost: tailscaled sits in the path of every lookup on the host, as well as carrying the bus. [deploy/tailscaled.service.d/90-processor-oom.conf](../deploy/tailscaled.service.d/90-processor-oom.conf) ranks it at `-950`, below `processor.service` (`-500`). `OOMScoreAdjust=` applies at exec, so restart tailscaled after installing it. The restart blips DNS and the tailnet: on 2026-10-01 `broker` resolved again 2.4 s after it, and `oom_score` went from 670 to 37.
-
-```bash
-sudo install -D -m 644 deploy/tailscaled.service.d/90-processor-oom.conf /etc/systemd/system/tailscaled.service.d/90-processor-oom.conf
-sudo systemctl daemon-reload && sudo systemctl restart tailscaled
-cat /proc/$(systemctl show -p MainPID --value tailscaled)/oom_score_adj   # -950
-```
-
-### At boot
-
-**Proven across a graceful reboot (`sudo systemctl reboot`) and a hard reset (`exe.dev restart`), both on 2026-10-01.** A probe ran at each boot:
-
-- One unit snapshots `/etc/resolv.conf` and the backup before tailscaled starts (from the hard reset on).
-- A second unit times each lookup from tailscaled's start. It would have turned Tailscale DNS off if public names had still failed after 90 s.
-
-The probe, its two units and its log are in `/var/backups/processor/8/` (root only). To arm it again, copy both units to `/etc/systemd/system/` and `systemctl enable` both; the second unit disables both after one run.
-
-The graceful reboot:
-
-- tailscaled started 1.1 s into boot, at `-950`, with `CorpDNS: true`.
-- Public names resolved on the probe's first try (+0.5 s), through exe.dev's resolver in the file the stop hook had restored, which was in place from boot.
-- tailscaled took the file over at +1.46 s, exact from the file's mtime. `broker` resolved by +1.65 s (replicator#88 measured about 2 s).
-- The boot's journal has no name-resolution error.
-
-The hard reset skips the stop hook, so tailscaled's own file and its backup were still in place when the VM went down:
-
-- exe.dev's init replaced the file with `nameserver 169.254.169.254` 1.5 s into boot (mtime at 1.534 s), as it started its guest daemon (`exe-init guestd`, 1.53 s). guestd runs in PID 1's own `init.scope` rather than as a service, the mark of a process exe-init forked before it exec'd systemd. journald came up at 1.84 s. So every lookup a systemd unit makes before tailscaled takes over goes to exe.dev's resolver, as after a clean stop.
-- tailscaled started at 2.1 s, at `-950`, with `CorpDNS: true`. It deleted the backup the reset left behind, then took the file over at +1.60 s, exact from the file's mtime, backing up exe.dev's fresh copy.
-- Public names resolved on the probe's first try (+0.8 s). `broker` and `index` resolved by +1.67 s.
-- The boot's journal has no name-resolution error.
-
-The second unit polled every 0.25 s, starting 0.32 s (reboot) and 0.44 s (reset) after tailscaled, so the lookup times are upper bounds.
-
-**With the unit installed, a graceful reboot on 2026-10-03 (#15)** (the first boot since the 2026-10-02 install):
-
-- The stop hook restored exe.dev's resolver at 16:53:14Z. tailscaled and `processor` started together at 16:53:19.4–19.7Z, and tailscaled took the file over at 19.4 + 1.35 s.
-- So the GCS preflight resolved through exe.dev's resolver. `starting` came at 21.74 and `consuming` at 21.76, about 1 s after `broker` became resolvable.
-- `NRestarts=0`. No backoff warning, no preflight failure, and no name-resolution error in the boot's journal.
-- The broker path was direct on the first ping and still direct after 5 idle minutes.
-- `tests/test_main.py` pins the restart path: preflight failure exits 1, `Restart=on-failure`, inside the default start limit.
-
-**With the unit installed, a hard reset on 2026-10-30 (#83)** (`ssh exe.dev restart co-processor`, the operator's, at about 17:54:12Z; the record is on #83):
-
-- **The old boot just ends.** There's no shutdown, and no `stopped` from `processor`. Nothing of its journal was lost: a `logger` marker written seconds before the restart is its last line. That's measured but unexplained, since journald syncs every 5 min by default.
-- **The new boot:**
-  - the kernel's first line came at 17:54:32.5Z, the same kernel (`6.12.113`);
-  - tailscaled and `processor` started at 17:54:33.6–33.9Z, and tailscaled took the file over 1.55 s later;
-  - `starting` came at 38.430 (most of the 4.7 s since the unit started is the GCS preflight), and `consuming` at 38.447.
-- **The bus was out for about 26 s at most** (from the marker to `consuming`), against about 20 s at #77's graceful reboot.
-- **No restart or warning:** `NRestarts=0`, no WARNING, and no name-resolution error.
-- **Status:**
-  - liveness checked in at once (202); the silence was about 47 s against the 900 s grace, so nothing paged;
-  - drift was `ok` at boot + 5.5 min (`OnBootSec=5min`);
-  - disk headroom checked in at boot + 6 min, and neither GC timer caught up.
-- **Nothing was in flight,** so nothing was reclaimed, and the DLQ stayed empty. A command caught mid-run would come back 10–11 min after its delivery (`reclaim_min_idle_ms` plus the 60 s tick), since a hard reset sends no SIGTERM and the command doesn't finish.
-
-On both paths, tailnet names such as `broker` don't resolve until tailscaled takes the file over, 1.5–1.6 s after it starts; public names do. The bus loop backs off and retries a name that does not resolve yet, as it does for any broker fault (`tests/test_consumer.py`). The GCS preflight's listing retries a connection error for up to 120 s (the storage client's `DEFAULT_RETRY`). A start that still fails exits 1, and systemd restarts it 5 s later.
-
-Check after a reboot:
-
-```bash
-tailscale debug prefs | grep CorpDNS                                       # true
-getent hosts broker storage.googleapis.com github.com
-cat /proc/$(systemctl show -p MainPID --value tailscaled)/oom_score_adj   # -950
-journalctl -u processor -b | grep -ciE 'name or service not known|temporary failure in name resolution'
-```
-
-### Rollback
-
-```bash
-sudo tailscale set --accept-dns=false   # tailscaled moves its backup back over /etc/resolv.conf
-grep nameserver /etc/resolv.conf        # 169.254.169.254
-```
-
-The backup is gone afterwards (measured 2026-10-01), so there is nothing left to copy. Restore it by hand only while tailscaled is down and its own file is still in place: `sudo cp /etc/resolv.pre-tailscale-backup.conf /etc/resolv.conf`. Once tailscaled is back up, run the `set` above, or it takes the file over again.
-
-After this, `broker` stops resolving. Until DNS is back on, put the broker's address from `tailscale status` into `CO_PROCESSOR_BUS_URL` and restart the service.
-
-## Tailnet flaps
-
-**The rule** (operator, 2026-10-23, #67): "A tailnet flap gets an issue only if it delays a command, pages, or outlasts liveness's 900 s grace. Any other flap is logged on the epic with its window and signature."
-
-A flap is the tailnet path to `broker` going away for minutes while tailscaled keeps running. The consumer backs off and retries, with no restart (§ Liveness). It has ridden out both flaps so far:
-
-| Window | What it was | Processor |
-|---|---|---|
-| 2026-10-10 02:26–04:12Z | Path churn between direct (peers at the shared NAT `16.145.19.221`) and DERP. No `LinkChange` and no clock jump | 19 WARNINGs, 14 `open-conn-track` timeouts, no command affected |
-| 2026-10-22 04:13:38–04:15:30Z | A host-side event on five of the six VMs behind egress `32.185.164.108` (broker, processor, replicator, status, notifier): memory-balloon pressure, then each VM paused, staggered over about 40 min | 6 WARNINGs, 1 failed check-in, no command delayed, nothing paged |
-
-**The 2026-10-22 signature,** in order:
-
-- The journal: no entry at all 04:12:53–04:13:26Z (32.7 s, the length of the jump). An idle VM can be that quiet, so this suggests the pause rather than proving it.
-- kernel: `virtio_balloon virtio5: Out of puff! Can't get 1 pages` ×26, 04:13:26–38Z. The host was inflating the balloon, and the guest had no pages to give back. These were the only balloon messages on this boot (since 2026-10-03).
-- `processor`: `consumer loop error; backing off`, `error` `TimeoutError: Timeout reading from broker:6379`, then `Timeout connecting to server` until the path is back (backoff 1, 2, 4 … s).
-- tailscaled:
-  - `magicsock: endpoints changed`, with a second STUN address beside the usual one;
-  - `LinkChange: major, rebinding … rebind-reason=[time-jumped(33s),ips-changed]`. The wall clock jumped 33 s, which is what a paused VM looks like from inside;
-  - `closing connection to derp-10 (rebind-ping-fail)`, then a reconnect;
-  - `open-conn-track` timeouts.
-- `processor`: possibly one `liveness check-in failed` (the 10 s bound). The next check-in lands inside the 900 s grace, so nothing pages.
-- Recovery on its own: `NRestarts=0`, and `ack: complete` resumes. A command issued during the gap stays in the stream and is acked once the path is back.
-
-**The cohort saw the same event** (a Mayfly questionnaire, 2026-10-23; synthesis on #67, the broker's timeline on CannObserv/broker#118):
-- co-broker and co-replicator, behind the same egress, each logged the first balloon pressure of their boot (04:13:07Z and 04:13:39Z), then a 31–33 s time jump;
-- co-status (moved onto that egress during the event) had balloon pressure at 04:14:04Z and a pause at about 04:17:07–24Z;
-- notifier, behind it too, had the same 19 min later: balloon pressure at 04:32:48Z, then a pause logged at 04:51:10Z;
-- on two VMs without swap (status at 7.9 GiB, notifier at 3.8 GiB, as their earlyoom configs size them), the balloon pushed memory to earlyoom's floor, and earlyoom killed a user process (not a service);
-- co-index, behind the same egress, logged neither. It has room to spare, and `Out of puff` appears only when the guest *can't* give pages back, so a quiet balloon there isn't ruled out. It did pause on its own on 2026-10-18 around 04:06Z; co-processor didn't;
-- co-registrar (archiver), co-provisioner and co-watcher, each on its own egress, logged neither; they only lost `broker` for about 2 min.
-
-The events were staggered per VM, not one simultaneous pause. Every bus client lost `broker` at once, from about 04:13:18 to 04:15:33Z. That window matches the broker's balloon reclaim, not its own pause, which its clock places about 04:16:14–43Z (CannObserv/broker#118).
-
-exe.dev's docs don't describe maintenance, host migration, ballooning or pauses. The cause is a host-side memory reclaim they don't explain. Asking exe.dev is the operator's step (CannObserv/broker#118).
-
-**Telling it apart:**
-
-- **A broker-side problem** (a Redis restart, the broker's patch window, broker#91, or a host pause of the broker alone, which is how archiver, provisioner and watcher saw 2026-10-22): this VM's tailscaled logs no `LinkChange` or `time-jumped`. The broker's patch run (2026-10-13 04:17–04:22Z) left backoff WARNINGs at its Redis restart and at its reboot, and `open-conn-track` timeouts during the reboot.
-- **A tailscaled restart here** (#65, 2026-10-22 23:40:29Z): tailscaled gets a new `MainPID` and logs `linkChange: in state NoState`. The tailnet is down for 2.3 s, and the broker socket survives with no WARNING.
-- **A flap:** this VM's tailscaled logs `endpoints changed` and `LinkChange` (and, on 2026-10-22, `time-jumped`), or peers go stale or relayed in `tailscale status`.
-
-```bash
-journalctl -u processor -p warning -o cat --since <start> | jq -cR 'fromjson? | {timestamp, level, logger, message, error}'
-journalctl -u tailscaled -o short-iso --since <start> | grep -E 'LinkChange|endpoints changed|rebind-reason|closing connection to derp|open-conn-track'
-journalctl -k -o short-iso --since <start> | grep -E 'Out of puff|balloon'
-systemctl show processor -p NRestarts
-tailscale status
-```
-
-`-p warning` does the level filter (#76) and `fromjson?` drops systemd's own warning lines; for a window before #76's deploy, every record is `PRIORITY=6`, so drop `-p warning` and filter with `select(.level != "INFO")` instead (§ Operate → Logs).
-
-Log a flap on the epic as: the window (first WARNING to the first `ack: complete` after it), the counts above, and which kind it was.
 
 ## Patching
 
@@ -891,84 +246,6 @@ Status's side (status#95): `enabled: false` stops only its `missing` sweep, neve
 
 **Silence it** for a week you mean to skip: `sudo systemctl stop processor-patching.timer`, and the monitor goes `missing`, which is honest; `start` resumes it. Better: post a record saying why, which reads `ok`.
 
-## Disk GC
-
-Provisioner's disk GC and headroom sensor (provisioner#61), **VERSION 3** (#99), installed and turned on through gregoryfoster/skills `maintaining-host-disk` ([skills/maintaining-host-disk](../skills/maintaining-host-disk/SKILL.md), #82). VERSION 3 changed only the `vscode-servers` tier: it keeps every `Stable-*` build newer than the newest live one, and the newest when none is live, by `server/product.json`'s version ([editor-builds.md](../skills/maintaining-host-disk/references/editor-builds.md)). Its first run, 2026-10-31 05:44Z, exited 0: it removed 135.3M in 2 items (a 135.1M `vsix-cache` entry and the npm cache), kept 6 (among them `Stable-2c33b50b`, 1.144.0, newer than the live 1.140.0), and left `/` at 57%. The skill's [turning-on.md](../skills/maintaining-host-disk/references/turning-on.md) is the procedure; this section is what's particular to this host. The GC's tiers and rules are Provisioner's. A change to them is raised there, through the operator, and never patched into the installed copy: the installer refuses a copy that doesn't match its MANIFEST.
-
-| What | Where |
-|---|---|
-| The GC, its units, the journald cap | `/usr/local/lib/cannobserv/disk-gc/` (`VERSION`, `MANIFEST`); `/usr/local/lib/systemd/system/cannobserv-disk-{gc,headroom}.{service,timer}`; `/usr/local/lib/systemd/journald.conf.d/zz-cannobserv-journal.conf` (`SystemMaxUse=512M`; the journal was 87M on 2026-10-27) |
-| Config | [deploy/disk-gc/disk-gc.conf](../deploy/disk-gc/disk-gc.conf) → `/etc/cannobserv/disk-gc/disk-gc.conf` (root, 0644). Installed by hand; `scripts/deploy.sh` compares the two |
-| Key | `/etc/cannobserv/disk-gc/checkin.key` (root, 0600): a copy of the tenant's `/etc/processor/status-checkin.key`. **Rotating the tenant key means updating both** |
-| State | `/var/lib/cannobserv-disk-gc/`: the GC's `state.json`, and the sensor's hold in `sensor.json` |
-| Timers | `cannobserv-disk-gc.timer`: daily at 05:15 UTC, plus up to 30 min, with no catch-up at boot. `cannobserv-disk-headroom.timer`: every 10 min |
-| Monitor | `co-processor-disk-headroom` (`01M5ZQBHEX06T5D50Q96QYKCR6`, CannObserv/status#69), tenant `co-processor`: 600 / 1800 / renotify 3600. Its faults are `low-headroom`, `gc-failed`, `gc-stale` (72 h), `unreadable` and `test` |
-
-**This host's choices** (each one is a comment in the config):
-- **Homes:** `homes` is `/home/exedev` (`processor` has no home).
-- **Tiers:** the template's, plus `worktrees` for this repo's `.worktrees/`. `docker` stays off, because the daemon is inactive. `npx_spec_files` keeps the SocratiCode pin in the deploy checkout's `.claude/settings.json`.
-- **uv cache:** pruned only (`uv_clean_above_mb = 0`). Releases are built with `UV_LINK_MODE=copy`.
-- **Lines:** alert at 85% Use% (as `df` reports it), clear at 80%. On 2026-10-27, `/` was 76% used with 1.8G under the line, before the first prune (estimated at about 3.5G of idle VS Code builds and caches; the report-only run measures it, #82).
-- **pytest:** `pyproject.toml` keeps one basetemp, and only a failed run's (`tmp_path_retention_*`). A run's basetemp is about 62M.
-
-**Install or change the config** from the deploy checkout's root, after `git pull --ff-only`. Each install is a sudo step, approved:
-
-```bash
-sudo install -D -m 0644 -o root -g root deploy/disk-gc/disk-gc.conf /etc/cannobserv/disk-gc/disk-gc.conf
-uv run pytest tests/test_disk_gc.py   # on the node: the installed copy matches, and the installed GC accepts it
-```
-
-**With § Patching:**
-- **patching-hosts reads `[sensor] mount` and `alert_at_percent` as a floor** (gregoryfoster/skills#390). It refuses a step whose download and install would take `/` to 85%, and stops on a config the GC would refuse.
-- **The GC's daily run (05:15–05:45) falls inside the Tuesday window.** It never touches apt's trees, and it yields: `Nice=10`, idle I/O.
-- **After a reboot,** if the GC runs before VS Code reconnects, it finds no build running and keeps the newest (VERSION 3, #99). Under VERSION 2 it kept none, and the next session re-downloaded its build (about 640M).
-- **A run the reboot cuts off** finishes the next day. A missed day pages only as `gc-stale`, after 72 h.
-
-**Read it** without sudo: `exedev` is in `adm`, so `journalctl -u cannobserv-disk-headroom -p err --since -1d` reads the alerts. verifying.md's `sudo` is for users outside `adm`, for whom the same command prints `-- No entries --`. Its rule holds here too: only `checked in ok (ok): HTTP 202` proves a check-in.
-
-**Updates and removal** are the skill's ([SKILL.md](../skills/maintaining-host-disk/SKILL.md)). A new release arrives as a pin bump in the daily skills-vendor refresh.
-
-## Memory: no earlyoom
-
-**earlyoom is not installed** (operator, 2026-10-30, #83). The kernel's own OOM killer is the only one on this host, and it already ranks agent sessions ahead of the service. That is broker's reasoning (CannObserv/broker#58, broker#71): sessions sit at adj 0 once they're off exe.dev's -1000, and what earlyoom would add is acting at its `-m` floor instead of at exhaustion. The cohort's other two positions:
-- **co-status runs it** (`-m 12,6`, `--avoid` the service, `--prefer` the sessions; copied from notifier). Its reason: with no swap, the kernel's killer acts late.
-- **broker installs it and keeps it disabled**, with its config current, so enabling it is one command.
-
-**The figures** `[measured 2026-10-30 on release d29e240cb85f, unless cited]`:
-
-| What | Reading |
-|---|---|
-| Host | 7935 MiB, no swap; `available` 6373–6685 MiB; `/proc/pressure/memory` all zeros |
-| `processor` | `MemoryPeak` 105M, `MemoryCurrent` 69M (both since the 15:58:47Z start); `MemoryMax=6G`, `OOMScoreAdjust=-500` |
-| A patch run (#77) | the dry run peaked at 265 MB max RSS, the held steps at about 190 MB; no OOM |
-| The disk GC (#82) | the report-only run peaked at 26 MB max RSS. A finished oneshot keeps no `MemoryPeak` on systemd 255, so the real prunes have no figure |
-| The kernel log | no `oom-kill`, `Out of memory` or `page allocation failure` since 2026-09-29: the whole retention, 5 boots |
-| The 2026-10-22 balloon event | co-processor took the same balloon (`Out of puff` ×26, § Tailnet flaps) with no earlyoom: no OOM kill and no allocation failure. status (7.9 GiB, as sized in its `earlyoom.default`) and notifier (3.8 GiB), both swapless, run earlyoom, and it killed a user process on each at its floor |
-
-**The kernel's order** (`oom_score`, 2026-10-30):
-- first `exedev`'s `systemd --user` (734, adj 100) and its `(sd-pam)`, about 11 MiB between them;
-- then the sessions at adj 0: `claude`, `MainThread` (VS Code's node) and `npm exec socrat` (SocratiCode), 672–691;
-- `processor` (adj -500) at 342, tailscaled at -950 (§ tailscaled's OOM rank);
-- only `exe-init` and `sshd` at -1000.
-
-An extraction child volunteers at 1000 while it runs ([deploy/processor.service](../deploy/processor.service)'s `OOMPolicy=continue` comment), so it goes before all of them. The -500 is worth half the host's pages, so the service would pass a session only with about 3.9 GiB more resident than that session. `MemoryMax=6G` allows that; the measured peak is 105M.
-
-**Re-open the decision** (install as broker does, disabled, or as co-status does) on any of these:
-- `available` under 1 GiB at any reading;
-- an `oom-kill` or a `page allocation failure` in the kernel log. Watch for the second as well: co-status's `deploy/earlyoom.default` records that on broker nothing was OOM-killed, while atomic allocations failed in unrelated processes;
-- a session back at -1000 (an exe-init regression, as broker#58). Broker pins that with a node-only test, and nothing here does, so the check below reads it.
-
-```bash
-free -m; cat /proc/pressure/memory
-journalctl -k --since -30d | grep -ciE 'oom-kill|out of memory|page allocation failure'   # 0
-ps -eo oomadj=,comm= | grep -E 'claude|MainThread|npm exec' | sort | uniq -c             # every line 0
-```
-
-**Not changed here:**
-- the unit's `OOMScoreAdjust` and `MemoryMax`;
-- `MemoryLow=` ([docs/SOCRATICODE.md](SOCRATICODE.md#repo-specific-notes));
-- `vm.min_free_kbytes`, 11399 here. Broker raised its own to 64 MiB for atomic allocations (broker#21).
-
 ## Node.js (agent tooling only)
 
 Node 24 LTS from NodeSource's apt repo, for `using-mayfly-chat` and SocratiCode (`npx`). The `processor` unit never runs it. The cohort survey and the reasons for NodeSource and for 24 are in #6.
@@ -1016,3 +293,79 @@ sudo apt-get purge nodejs
 sudo rm /etc/apt/keyrings/nodesource.gpg /etc/apt/sources.list.d/nodesource.sources /etc/apt/preferences.d/nodesource.pref
 sudo apt-get update
 ```
+
+## Moved sections
+
+These sections left this runbook (#126); each heading keeps its old anchor.
+
+### Prerequisites (operator)
+
+[PROVISIONING.md](PROVISIONING.md#prerequisites-operator)
+
+### `/etc/processor/`
+
+[PROVISIONING.md](PROVISIONING.md#etcprocessor)
+
+### CI pins and Dependabot
+
+[DEPENDENCIES.md](DEPENDENCIES.md#ci-pins-and-dependabot)
+
+### Shell lint
+
+[DEPENDENCIES.md](DEPENDENCIES.md#shell-lint)
+
+### The lock audit
+
+[DEPENDENCIES.md](DEPENDENCIES.md#the-lock-audit)
+
+### The drift check
+
+[MONITORING.md](MONITORING.md#the-drift-check)
+
+### Liveness
+
+[MONITORING.md](MONITORING.md#liveness)
+
+### Containment
+
+[PROVISIONING.md](PROVISIONING.md#containment)
+
+### Install (once; #2's Stage B)
+
+[PROVISIONING.md](PROVISIONING.md#install-once-2s-stage-b)
+
+### Before #2: the first install (2026-10-02)
+
+[PROVISIONING.md](PROVISIONING.md#before-2-the-first-install-2026-10-02)
+
+### Create the group: as soon as the credential verifies
+
+[PROVISIONING.md](PROVISIONING.md#create-the-group-as-soon-as-the-credential-verifies)
+
+### Bumping co-core
+
+[DEPENDENCIES.md](DEPENDENCIES.md#bumping-co-core)
+
+### Extraction dependencies
+
+[DEPENDENCIES.md](DEPENDENCIES.md#extraction-dependencies)
+
+### TLS trust
+
+[DEPENDENCIES.md](DEPENDENCIES.md#tls-trust)
+
+### Tailscale DNS
+
+[NETWORK.md](NETWORK.md#tailscale-dns)
+
+### Tailnet flaps
+
+[NETWORK.md](NETWORK.md#tailnet-flaps)
+
+### Disk GC
+
+[MONITORING.md](MONITORING.md#disk-gc)
+
+### Memory: no earlyoom
+
+[MONITORING.md](MONITORING.md#memory-no-earlyoom)

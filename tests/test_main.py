@@ -248,7 +248,7 @@ def test_a_settings_error_is_one_json_record_and_exit_2(monkeypatch, capsys) -> 
 def test_a_store_preflight_failure_exits_1_inside_the_units_restart_budget(
     env, monkeypatch, capsys
 ) -> None:
-    # DEPLOYMENT.md "At boot" (#8, #15): a start whose preflight still fails after the
+    # NETWORK.md "At boot" (#8, #15): a start whose preflight still fails after the
     # storage client's own retries exits 1, and systemd restarts it. That needs a
     # non-zero exit, Restart=on-failure, and retries that stay under systemd's default
     # start limit (5 starts in 10 s), or the unit gives up for good.

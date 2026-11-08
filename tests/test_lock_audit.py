@@ -29,7 +29,7 @@ SCRIPT = REPO / "scripts" / "audit_lock.sh"
 WORKFLOW = REPO / ".github" / "workflows" / "audit.yml"
 CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 DEPLOY = REPO / "scripts" / "deploy.sh"
-ROUTING_ANCHOR = "docs/DEPLOYMENT.md#extraction-dependencies"
+ROUTING_ANCHOR = "docs/DEPENDENCIES.md#extraction-dependencies"
 
 # uv < 0.11.19 has no ``audit-command`` name (astral-sh/uv#19645): its parser
 # rejects the value before the command runs.
@@ -342,7 +342,9 @@ def test_the_audit_is_outside_the_deploy_gate(audit: dict) -> None:
 
 @pytest.mark.parametrize("heading", ["Extraction dependencies", "The lock audit"])
 def test_the_linked_sections_exist(heading: str) -> None:
-    """The summary and AGENTS.md link DEPLOYMENT.md's sections by anchor: keep the
-    headings."""
+    """The summary and AGENTS.md link DEPENDENCIES.md's sections by anchor, and
+    DEPLOYMENT.md's stubs keep the old anchors (#126): keep the headings."""
+    dependencies = (REPO / "docs" / "DEPENDENCIES.md").read_text()
+    assert re.search(rf"^## {heading}$", dependencies, re.M)
     deployment = (REPO / "docs" / "DEPLOYMENT.md").read_text()
-    assert re.search(rf"^## {heading}$", deployment, re.M)
+    assert re.search(rf"^### {heading}$", deployment, re.M)

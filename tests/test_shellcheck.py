@@ -42,7 +42,7 @@ SELECTOR = ROOT / "scripts" / "shellcheck.sh"
 HOOK = ROOT / ".githooks" / "pre-commit"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 DEPLOY = ROOT / "scripts" / "deploy.sh"
-DOC = ROOT / "docs" / "DEPLOYMENT.md"
+DOC = ROOT / "docs" / "DEPENDENCIES.md"
 VENV_BIN = Path(sys.executable).parent
 
 #: How both callers reach the locked tools: no project, no config, the lock as committed.
@@ -119,7 +119,7 @@ class TestTheLock:
         assert all(w["hash"].startswith("sha256:") for w in wheels)
 
     def test_the_doc_names_the_locked_version(self):
-        """docs/DEPLOYMENT.md says which shellcheck the gate runs, held to the lock:
+        """docs/DEPENDENCIES.md says which shellcheck the gate runs, held to the lock:
         shellcheck-py's fourth field is its own packaging release, the first three
         the binary's."""
         binary = ".".join(_lock_package("shellcheck-py")["version"].split(".")[:3])

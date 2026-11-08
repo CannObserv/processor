@@ -12,7 +12,7 @@ erroring anywhere a person looks, so each property is pinned here.
   security (operator, 2026-11-03, #112), which no test can read. Since #121 they
   resolve co-core from the co-pypi index over OIDC (proven by run 42338249411), and
   each PR lands by hand
-  (docs/DEPLOYMENT.md § CI pins and Dependabot).
+  (docs/DEPENDENCIES.md § CI pins and Dependabot).
 * **Every workflow pins each action as ``@<sha> # vX.Y.Z``.** Dependabot proposes
   in the pin's own form, so a SHA and its comment move together.
 * **The open-PR limit outlasts a full batch**, derived from the workflows: past

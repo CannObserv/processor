@@ -20,7 +20,7 @@ tests/fixtures/parity/
 deploy/
 scripts/
 
-# CI, its pins and Dependabot (DEPLOYMENT.md § CI pins and Dependabot).
+# CI, its pins and Dependabot (DEPENDENCIES.md § CI pins and Dependabot).
 .github/
 
 # Skills, hooks and this gate's own knobs (docs/SKILLS.md). skills-vendor/ is

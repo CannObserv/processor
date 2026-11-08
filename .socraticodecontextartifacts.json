@@ -13,7 +13,27 @@
     {
       "name": "deployment-runbook",
       "path": "./docs/DEPLOYMENT.md",
-      "description": "Operating processor on co-processor: prerequisites, the broker credential, /etc/processor/, releases and scripts/deploy.sh, the drift check, liveness, containment, install and rollback, co-core bumps, Tailscale DNS, Node.js."
+      "description": "Deploying and operating processor on co-processor: releases and scripts/deploy.sh, the CI gate, rollback, operate, patching, Node.js; stubs for the sections that moved (#126)."
+    },
+    {
+      "name": "provisioning-doc",
+      "path": "./docs/PROVISIONING.md",
+      "description": "What the operator set up once: prerequisites, the broker credential, GCP provisioning, /etc/processor/ and processor_cli, containment, the install, the consumer group."
+    },
+    {
+      "name": "dependencies-doc",
+      "path": "./docs/DEPENDENCIES.md",
+      "description": "Pins and how each moves: CI action and image pins, Dependabot, shell lint, the lock audit, co-core bumps, extraction dependencies, TLS trust."
+    },
+    {
+      "name": "monitoring-doc",
+      "path": "./docs/MONITORING.md",
+      "description": "Status check-ins and host resources: the drift check, liveness, the disk GC and headroom sensor, memory (no earlyoom)."
+    },
+    {
+      "name": "network-doc",
+      "path": "./docs/NETWORK.md",
+      "description": "The tailnet path to the broker: Tailscale DNS, tailscaled's OOM rank and boot ordering, tailnet flaps."
     },
     {
       "name": "skills-doc",

@@ -52,7 +52,7 @@ STACK_MOVED = (
     "The extraction stack moved: {moved}. processor_version can't see it, and Watcher "
     "reads a moved fingerprint under an unchanged version as a content change. Outside "
     "a co-core bump, bump LOCAL_GENERATION and GENERATION; either way update "
-    "EXTRACTION_STACK, and give Watcher notice (spec §5; DEPLOYMENT.md, Extraction "
+    "EXTRACTION_STACK, and give Watcher notice (spec §5; DEPENDENCIES.md, Extraction "
     "dependencies; processor#71)."
 )
 
@@ -180,6 +180,6 @@ def test_processor_never_resolves_a_dispatch_essence() -> None:
     assert not uses, (
         f"Processor resolves a dispatch essence itself: {uses}. A change to essence "
         "resolution is then a contract change, coordinated with Watcher, not notice: "
-        "restore it to the contract (spec §5, D5; AGENTS.md; DEPLOYMENT.md step 4; "
+        "restore it to the contract (spec §5, D5; AGENTS.md; DEPENDENCIES.md step 4; "
         "processor#57)."
     )

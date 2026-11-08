@@ -135,7 +135,7 @@ def test_installed_copy_matches_tracked() -> None:
     try:
         installed = INSTALLED.read_text()
     except FileNotFoundError:
-        pytest.fail(f"{INSTALLED} is not installed on {NODE} (docs/DEPLOYMENT.md § Disk GC)")
+        pytest.fail(f"{INSTALLED} is not installed on {NODE} (docs/MONITORING.md § Disk GC)")
     assert installed == CONF.read_text()
 
 
@@ -144,7 +144,7 @@ def test_tracked_conf_passes_the_installed_gc() -> None:
     if not _on_node():
         pytest.skip(f"not {NODE}")
     if not GC.is_file():
-        pytest.fail(f"{GC} is not installed on {NODE} (docs/DEPLOYMENT.md § Disk GC)")
+        pytest.fail(f"{GC} is not installed on {NODE} (docs/MONITORING.md § Disk GC)")
     loader = importlib.machinery.SourceFileLoader("cannobserv_disk_gc", str(GC))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     gc = importlib.util.module_from_spec(spec)

@@ -33,7 +33,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DROPIN = ROOT / "deploy" / "tailscaled.service.d" / "90-processor-oom.conf"
 INSTALLED = Path("/etc/systemd/system/tailscaled.service.d") / DROPIN.name
 SERVICE = ROOT / "deploy" / "processor.service"
-DEPLOYMENT = ROOT / "docs" / "DEPLOYMENT.md"
+NETWORK = ROOT / "docs" / "NETWORK.md"
+PROVISIONING = ROOT / "docs" / "PROVISIONING.md"
 RESOLV_BACKUP = "/etc/resolv.pre-tailscale-backup.conf"
 NODE_TAG = "tag:processor"
 TAILNET = ipaddress.ip_network("100.64.0.0/10")
@@ -118,7 +119,7 @@ def test_tailscaled_ranks_below_the_service_it_carries() -> None:
 
 
 def test_deployment_installs_the_dropin() -> None:
-    doc = DEPLOYMENT.read_text()
+    doc = NETWORK.read_text()
     assert f"deploy/tailscaled.service.d/{DROPIN.name}" in doc
     assert str(INSTALLED) in doc
 
@@ -180,7 +181,7 @@ def test_no_committable_file_names_the_broker_by_address() -> None:
 
 
 def test_every_bus_url_in_the_runbook_names_the_broker() -> None:
-    urls = re.findall(r"redis://processor:[^@\s]*@([^:/\s]+):6379", DEPLOYMENT.read_text())
+    urls = re.findall(r"redis://processor:[^@\s]*@([^:/\s]+):6379", PROVISIONING.read_text())
     assert urls and set(urls) == {"broker"}, urls
 
 
@@ -297,7 +298,7 @@ def test_installed_pins_match_tracked() -> None:
     try:
         installed = PINS_INSTALLED.read_text()
     except FileNotFoundError:
-        pytest.fail(f"{PINS_INSTALLED} is not installed on this node (docs/DEPLOYMENT.md)")
+        pytest.fail(f"{PINS_INSTALLED} is not installed on this node (docs/NETWORK.md)")
     assert installed == PINS.read_text()
 
 

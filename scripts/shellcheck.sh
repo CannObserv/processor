@@ -2,7 +2,7 @@
 # Lint this repo's own shell scripts: the tree, or with --staged what a commit is
 # about to take (#81, as CannObserv/broker#112). ci.yml's lint job runs the first
 # and .githooks/pre-commit the second, so both lint the same files with the same
-# binary: shellcheck-py from uv.lock's lint group (docs/DEPLOYMENT.md § Shell lint).
+# binary: shellcheck-py from uv.lock's lint group (docs/DEPENDENCIES.md § Shell lint).
 #
 # Ours is every tracked *.sh and .githooks/*. Not a symlink: the .claude/hooks/ ones
 # point into skills-vendor/, upstream's code under upstream's rules, as ruff's

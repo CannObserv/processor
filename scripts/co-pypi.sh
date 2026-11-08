@@ -9,7 +9,7 @@
 # dependency is uv.lock's co-pypi group, run --frozen in this checkout
 # (--project), never resolved at run time (#79). The wrapped uv runs where this
 # was called from: scripts/deploy.sh calls it in a release. Details: that
-# module's docstring and docs/DEPLOYMENT.md § Bumping co-core.
+# module's docstring and docs/DEPENDENCIES.md § Bumping co-core.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

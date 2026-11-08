@@ -196,7 +196,7 @@ def test_a_failed_mint_exits_1_and_runs_nothing(environ, capsys, caplog):
     assert "could not mint a co-pypi access token" in err
     assert "invalid_grant" in err, "the cause is named, so the operator can act on it"
     assert DEFAULT_KEY in err
-    assert "docs/DEPLOYMENT.md" in err, "where the key comes from"
+    assert "docs/PROVISIONING.md" in err, "where the key comes from"
     assert_never_printed(capsys, caplog)
 
 

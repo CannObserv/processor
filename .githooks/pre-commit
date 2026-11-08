@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The commit-time half of the lint gate (#81, as CannObserv/broker#112): shellcheck
 # and ruff over what is staged. Enabled per clone, `git config core.hooksPath
-# .githooks` (docs/DEPLOYMENT.md § Shell lint). --no-verify skips it, so CI's lint
+# .githooks` (docs/DEPENDENCIES.md § Shell lint). --no-verify skips it, so CI's lint
 # job is the enforcement.
 #
 # It lints the working-tree copy of each staged path, so a partly staged file is

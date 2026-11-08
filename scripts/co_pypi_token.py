@@ -12,7 +12,7 @@ from the co-pypi-reader key (``roles/artifactregistry.reader`` on co-pypi) at
 ``/etc/processor-deploy/co-pypi-reader.json``, or at ``PROCESSOR_CO_PYPI_KEY``,
 and ``exec``s the command with the pair set in that child's environment alone.
 Shaped after CannObserv/watcher#358's wrapper; where the key lives and how it
-gets there: docs/DEPLOYMENT.md § GCP provisioning.
+gets there: docs/PROVISIONING.md § GCP provisioning.
 
 **The token is never printed, logged, put in argv or written anywhere.** It
 exists in this process's memory and in the wrapped ``uv``'s environment, and
@@ -99,7 +99,7 @@ def main(
         # The exception is the token endpoint's or the key file's, never the token.
         print(
             f"error: could not mint a co-pypi access token from {key_path}:"
-            f" {type(exc).__name__}: {exc}. The key: docs/DEPLOYMENT.md § GCP provisioning.",
+            f" {type(exc).__name__}: {exc}. The key: docs/PROVISIONING.md § GCP provisioning.",
             file=sys.stderr,
         )
         return 1

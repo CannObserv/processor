@@ -6,7 +6,7 @@ name: audit
 # but every one lands by hand, so this stays the signal nobody has to merge.
 #
 # Report-only: scripts/audit_lock.sh always exits 0, and a finding is a warning
-# annotation plus the job summary, which says where it goes (docs/DEPLOYMENT.md
+# annotation plus the job summary, which says where it goes (docs/DEPENDENCIES.md
 # § Extraction dependencies). A red gate would turn main red on someone else's
 # disclosure date. Its own workflow, so scripts/deploy.sh's CI gate, which reads
 # ci.yml's push run alone, never sees it. Push and PR runs read the lock a change
