@@ -145,7 +145,7 @@ CO_PROCESSOR_BUS_URL=redis://processor:<password>@broker:6379/0
 # CO_PROCESSOR_RECLAIM_INTERVAL_S=60
 # CO_PROCESSOR_MAX_ATTEMPTS=3
 # CO_PROCESSOR_CONSUMER_NAME=co-processor
-# CO_PROCESSOR_LIVE_INTERVAL_S=300           # change co-processor-live's interval with it (§ Liveness)
+# CO_PROCESSOR_LIVE_INTERVAL_S=300           # change co-processor-live's interval with it (MONITORING.md § Liveness)
 # CO_PROCESSOR_LIVE_CHECKIN_TIMEOUT_S=10     # below the interval
 ```
 
@@ -153,9 +153,9 @@ CO_PROCESSOR_BUS_URL=redis://processor:<password>@broker:6379/0
 - **Keep `GOOGLE_APPLICATION_CREDENTIALS` out of `.env`.** `EnvironmentFile=` overrides `Environment=`, so a leftover line would point the service back at the root-only key path, and the preflight would fail.
 - **The service user can read the credentials directory, and so can the child.** Landlock refuses it to the child (§ Containment).
 - **The Status key** is `/etc/processor/status-checkin.key`. Each unit that checks in loads it as `LoadCredential=status-checkin-key:…`:
-  - `processor-drift.service`, which reads no `.env`, so the drift check never holds the broker credential (§ The drift check);
-  - `processor.service`, since #39, for the liveness check-in (§ Liveness). Landlock refuses it to the child, as it refuses the GCS key;
-  - `processor-patching.service`, since #113, which reads no `.env` either (§ The patch-due check).
+  - `processor-drift.service`, which reads no `.env`, so the drift check never holds the broker credential (MONITORING.md § The drift check);
+  - `processor.service`, since #39, for the liveness check-in (MONITORING.md § Liveness). Landlock refuses it to the child, as it refuses the GCS key;
+  - `processor-patching.service`, since #113, which reads no `.env` either (DEPLOYMENT.md § The patch-due check).
 
 A command that needs the service's settings runs as the service, through systemd. Don't load the file into a shell:
 

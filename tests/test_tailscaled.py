@@ -34,7 +34,17 @@ DROPIN = ROOT / "deploy" / "tailscaled.service.d" / "90-processor-oom.conf"
 INSTALLED = Path("/etc/systemd/system/tailscaled.service.d") / DROPIN.name
 SERVICE = ROOT / "deploy" / "processor.service"
 NETWORK = ROOT / "docs" / "NETWORK.md"
-PROVISIONING = ROOT / "docs" / "PROVISIONING.md"
+#: The runbook, split by topic since #126.
+RUNBOOK = [
+    ROOT / "docs" / name
+    for name in (
+        "DEPLOYMENT.md",
+        "PROVISIONING.md",
+        "DEPENDENCIES.md",
+        "MONITORING.md",
+        "NETWORK.md",
+    )
+]
 RESOLV_BACKUP = "/etc/resolv.pre-tailscale-backup.conf"
 NODE_TAG = "tag:processor"
 TAILNET = ipaddress.ip_network("100.64.0.0/10")
@@ -181,7 +191,8 @@ def test_no_committable_file_names_the_broker_by_address() -> None:
 
 
 def test_every_bus_url_in_the_runbook_names_the_broker() -> None:
-    urls = re.findall(r"redis://processor:[^@\s]*@([^:/\s]+):6379", PROVISIONING.read_text())
+    runbook = "\n".join(doc.read_text() for doc in RUNBOOK)
+    urls = re.findall(r"redis://processor:[^@\s]*@([^:/\s]+):6379", runbook)
     assert urls and set(urls) == {"broker"}, urls
 
 

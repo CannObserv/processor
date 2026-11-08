@@ -37,10 +37,10 @@ Python 3.12, uv, hatchling src layout, pytest, ruff.
 | Scratch bus | `redis-server` on `localhost:6379` — tests and smoke runs only |
 | Input | `gs://co-gcs-blobs` (Replicator's raw blobs), read-only |
 | Output | `gs://co-gcs-processor/blobs/<sha256>.bin`, write-if-absent, **never deleted** |
-| Service | systemd unit `processor` ([deploy/processor.service](deploy/processor.service)), as user `processor`, from `/srv/processor/live` → `releases/<build>`, a read-only release `scripts/deploy.sh` builds from a commit on `origin/main` (#2). **Never from a checkout**. Runbook: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md); setup: [docs/PROVISIONING.md](docs/PROVISIONING.md) |
-| CI | [.github/workflows/ci.yml](.github/workflows/ci.yml): lint (ruff, shellcheck), then the full suite against `redis:7.0.15`, the broker's. Pins, keyless WIF to `co-pypi-reader`, Dependabot (`github-actions` only), shell lint: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#ci-pins-and-dependabot) |
+| Service | systemd unit `processor` ([deploy/processor.service](deploy/processor.service)), as user `processor` (no sudo, not in `docker`, no home), from `/srv/processor/live` → `releases/<build>`, a read-only release `scripts/deploy.sh` builds from a commit on `origin/main` (#2). **Never from a checkout**. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| CI | [.github/workflows/ci.yml](.github/workflows/ci.yml): lint (ruff, shellcheck), then the full suite against `redis:7.0.15`, the broker's, pulled from `mirror.gcr.io`, never anonymously from Docker Hub (#43). Pins, keyless WIF to `co-pypi-reader`, Dependabot (`github-actions` only): [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#ci-pins-and-dependabot); shell lint: [§ Shell lint](docs/DEPENDENCIES.md#shell-lint) |
 | Lock audit | [.github/workflows/audit.yml](.github/workflows/audit.yml), report-only, outside the deploy gate: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#the-lock-audit) |
-| Status | Check-ins: the drift check (`processor-drift.timer`, hourly), liveness (from `processor run`, every 5 min), disk headroom (Provisioner's disk GC, config [deploy/disk-gc/disk-gc.conf](deploy/disk-gc/disk-gc.conf)): [docs/MONITORING.md](docs/MONITORING.md) |
+| Status | Check-ins: drift (`processor-drift.timer`, hourly), liveness (`processor run`, 5 min), disk headroom ([deploy/disk-gc/disk-gc.conf](deploy/disk-gc/disk-gc.conf)): [docs/MONITORING.md](docs/MONITORING.md) |
 | Patching | `automatic` (knob `.skills/patching-hosts`, #113): `-security` daily by unattended-upgrades; the rest in one approved run a week, `Tue 05:00–10:00` UTC. Never a bare `apt-get upgrade`. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#patching) |
 | Node.js | 24 LTS from NodeSource apt, agent tooling only: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#nodejs-agent-tooling-only) |
 
@@ -98,8 +98,8 @@ scripts/deploy.sh [<build>]              # ship: CI green, then build a release 
 ## Detail Docs
 
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — releases and `scripts/deploy.sh`, the CI gate, rollback, operate, patching (posture, window, the run), Node.js; stubs for moved sections
-- [docs/PROVISIONING.md](docs/PROVISIONING.md) — prerequisites, the broker credential handoff, GCP, `/etc/processor/` and `processor_cli`, containment, install, the group
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — releases and `scripts/deploy.sh`, the CI gate, rollback, operate, patching (posture, window, the run), Node.js
+- [docs/PROVISIONING.md](docs/PROVISIONING.md) — prerequisites, the broker credential, GCP, `/etc/processor/` and `processor_cli`, containment, install
 - [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) — CI pins and Dependabot, shell lint, the lock audit, co-core bumps, extraction dependencies, TLS trust
 - [docs/MONITORING.md](docs/MONITORING.md) — the drift check, liveness, the disk GC, memory (no earlyoom)
 - [docs/NETWORK.md](docs/NETWORK.md) — Tailscale DNS, tailscaled at boot, tailnet flaps (signature, rule)

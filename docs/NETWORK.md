@@ -109,7 +109,7 @@ After this, `broker` stops resolving. Until DNS is back on, put the broker's add
 
 **The rule** (operator, 2026-10-23, #67): "A tailnet flap gets an issue only if it delays a command, pages, or outlasts liveness's 900 s grace. Any other flap is logged on the epic with its window and signature."
 
-A flap is the tailnet path to `broker` going away for minutes while tailscaled keeps running. The consumer backs off and retries, with no restart (§ Liveness). It has ridden out both flaps so far:
+A flap is the tailnet path to `broker` going away for minutes while tailscaled keeps running. The consumer backs off and retries, with no restart (MONITORING.md § Liveness). It has ridden out both flaps so far:
 
 | Window | What it was | Processor |
 |---|---|---|
@@ -155,6 +155,6 @@ systemctl show processor -p NRestarts
 tailscale status
 ```
 
-`-p warning` does the level filter (#76) and `fromjson?` drops systemd's own warning lines; for a window before #76's deploy, every record is `PRIORITY=6`, so drop `-p warning` and filter with `select(.level != "INFO")` instead (§ Operate → Logs).
+`-p warning` does the level filter (#76) and `fromjson?` drops systemd's own warning lines; for a window before #76's deploy, every record is `PRIORITY=6`, so drop `-p warning` and filter with `select(.level != "INFO")` instead (DEPLOYMENT.md § Operate → Logs).
 
 Log a flap on the epic as: the window (first WARNING to the first `ack: complete` after it), the counts above, and which kind it was.

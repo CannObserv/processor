@@ -17,7 +17,7 @@ What checks in to Status, and the host's resources: the drift check, liveness, t
 | Live | Check-in (`kind`) | What to do |
 |---|---|---|
 | `main`; behind only in what never runs; behind in code for 8 h or less since the push that brought it | `ok` (`ok`) | nothing |
-| behind in code for more than 8 h | `alert` (`lag`), every hour until deployed. It names `main`'s CI result | `scripts/deploy.sh`. If `main`'s CI isn't green, § The CI gate refuses: fix `main` first |
+| behind in code for more than 8 h | `alert` (`lag`), every hour until deployed. It names `main`'s CI result | `scripts/deploy.sh`. If `main`'s CI isn't green, DEPLOYMENT.md § The CI gate refuses: fix `main` first |
 | not on `main`: diverged, or GitHub doesn't know live's commit (a rewritten `main`) | `alert` (`off_main`) | deploy a commit on `main`; `journalctl -t processor-deploy` says how live got there |
 | unstamped: the release has no `REVISION` | `alert` (`unstamped`) | `live` names something that isn't a finished release: deploy |
 | GitHub can't answer: a rate limit, a 5xx, a timeout, a wrong-shaped answer | none; the run exits 1 | nothing. The monitor's grace absorbs one missed run |
@@ -26,10 +26,10 @@ What checks in to Status, and the host's resources: the drift check, liveness, t
 - **What runs:** `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml`, `uv.lock`. A rename counts by either name. Docs, tests, CI, skills and the other scripts never count, however old.
 - **The check is itself runtime:** it lives in `src/` and its units in `deploy/`. A change to it needs a deploy, and lags like any other.
 - **The clock** starts at the push, from its CI run's `created_at`, never the commit date. Within the grace, the body names the oldest push since live, which may be docs only.
-- **GitHub's budget:** unauthenticated, 60 requests an hour per address, shared with § The CI gate. A run costs 1 request in sync or behind in docs only, 2 behind in code, and at most 10 past the grace.
+- **GitHub's budget:** unauthenticated, 60 requests an hour per address, shared with DEPLOYMENT.md § The CI gate. A run costs 1 request in sync or behind in docs only, 2 behind in code, and at most 10 past the grace.
 - **Apart from `processor run`:** a oneshot with `TimeoutStartSec=90`, no `Restart=`, and no retry. No GitHub call starts past 60 s, but each is bounded per read, not in total, so the 90 s is the hard stop. A run killed there sends nothing, which reads as a GitHub-silent run. A GitHub or Status outage costs it its exit code and nothing else. It reads no `.env`, so it never holds the broker credential.
 
-**`missing` on `co-processor-drift` means the check isn't reporting.** The cause is one of: the timer is stopped, live was rolled back past #35 (§ Rollback), `co-processor` is down, the tailnet path to `status` is gone, the key is wrong or missing, Status refuses, or GitHub stayed silent for two runs in a row. It says nothing about `processor run` (that is `co-processor-live`, § Liveness). To find out which:
+**`missing` on `co-processor-drift` means the check isn't reporting.** The cause is one of: the timer is stopped, live was rolled back past #35 (DEPLOYMENT.md § Rollback), `co-processor` is down, the tailnet path to `status` is gone, the key is wrong or missing, Status refuses, or GitHub stayed silent for two runs in a row. It says nothing about `processor run` (that is `co-processor-live`, § Liveness). To find out which:
 
 ```bash
 systemctl list-timers processor-drift.timer
@@ -80,7 +80,7 @@ Installed before the deploy that brings the timer, the timer's first run (at the
 | variables | `build`, `last_progress_age_s`, `backing_off` |
 
 - **The monitor id** is in `deploy/processor.service` (`CO_PROCESSOR_LIVE_MONITOR_ID`). Without it, liveness is off: dev and CI.
-- **The key** is the drift check's, the same file (§ `/etc/processor/`). If it's missing, the service still starts. `starting` then says `liveness: off: missing the status-checkin-key credential`, an ERROR record `liveness check-in off` follows, and the monitor goes `missing`.
+- **The key** is the drift check's, the same file (PROVISIONING.md § `/etc/processor/`). If it's missing, the service still starts. `starting` then says `liveness: off: missing the status-checkin-key credential`, an ERROR record `liveness check-in off` follows, and the monitor goes `missing`.
 - **Never in consumption's way.** Each check-in runs in a daemon thread, bounded at 10 s, with one attempt per tick. A tick whose check-in is still running is skipped. A Status outage costs log lines, never a command's time.
 - **605 s** is `reclaim_min_idle_ms + read_block_ms`: the reclaim's own bound for a dead command, plus one read. A reclaim walk over a backlog counts as progress per message, so it is never a wedge.
 - **The grace covers a deploy.** The worst case is about 850 s:
@@ -141,7 +141,7 @@ sudo install -D -m 0644 -o root -g root deploy/disk-gc/disk-gc.conf /etc/cannobs
 uv run pytest tests/test_disk_gc.py   # on the node: the installed copy matches, and the installed GC accepts it
 ```
 
-**With § Patching:**
+**With DEPLOYMENT.md § Patching:**
 - **patching-hosts reads `[sensor] mount` and `alert_at_percent` as a floor** (gregoryfoster/skills#390). It refuses a step whose download and install would take `/` to 85%, and stops on a config the GC would refuse.
 - **The GC's daily run (05:15–05:45) falls inside the Tuesday window.** It never touches apt's trees, and it yields: `Nice=10`, idle I/O.
 - **After a reboot,** if the GC runs before VS Code reconnects, it finds no build running and keeps the newest (VERSION 3, #99). Under VERSION 2 it kept none, and the next session re-downloaded its build (about 640M).
@@ -166,7 +166,7 @@ uv run pytest tests/test_disk_gc.py   # on the node: the installed copy matches,
 | A patch run (#77) | the dry run peaked at 265 MB max RSS, the held steps at about 190 MB; no OOM |
 | The disk GC (#82) | the report-only run peaked at 26 MB max RSS. A finished oneshot keeps no `MemoryPeak` on systemd 255, so the real prunes have no figure |
 | The kernel log | no `oom-kill`, `Out of memory` or `page allocation failure` since 2026-09-29: the whole retention, 5 boots |
-| The 2026-10-22 balloon event | co-processor took the same balloon (`Out of puff` ×26, § Tailnet flaps) with no earlyoom: no OOM kill and no allocation failure. status (7.9 GiB, as sized in its `earlyoom.default`) and notifier (3.8 GiB), both swapless, run earlyoom, and it killed a user process on each at its floor |
+| The 2026-10-22 balloon event | co-processor took the same balloon (`Out of puff` ×26, NETWORK.md § Tailnet flaps) with no earlyoom: no OOM kill and no allocation failure. status (7.9 GiB, as sized in its `earlyoom.default`) and notifier (3.8 GiB), both swapless, run earlyoom, and it killed a user process on each at its floor |
 
 **The kernel's order** (`oom_score`, 2026-10-30):
 - first `exedev`'s `systemd --user` (734, adj 100) and its `(sd-pam)`, about 11 MiB between them;

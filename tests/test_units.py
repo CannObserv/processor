@@ -249,7 +249,18 @@ def test_deploy_sh_compares_every_host_config() -> None:
 def test_the_install_never_globs_inside_etc_processor() -> None:
     # CR 12: the operator's shell expands a glob as exedev, after the chown has made
     # /etc/processor root's 700, so it matches nothing; and `*` never matches .env.
-    runbook = (DEPLOY.parent / "docs" / "PROVISIONING.md").read_text()
+    # The runbook, split by topic since #126: the install is PROVISIONING.md's.
+    docs = DEPLOY.parent / "docs"
+    runbook = "\n".join(
+        (docs / name).read_text()
+        for name in (
+            "DEPLOYMENT.md",
+            "PROVISIONING.md",
+            "DEPENDENCIES.md",
+            "MONITORING.md",
+            "NETWORK.md",
+        )
+    )
     assert "/etc/processor/*" not in runbook
     assert (
         "sudo chmod 600 /etc/processor/.env /etc/processor/co-gcs-processor-writer.json" in runbook
