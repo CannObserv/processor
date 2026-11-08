@@ -1,0 +1,6 @@
+# check-counts.sh acknowledgements (curating-context). Grammar: check-counts.sh --help.
+# #126, judged 2026-11-08; all three predate it.
+# "#8" is an issue reference, not a count:
+AGENTS.md :: stable :: Since #8 `broker` resolves on this VM
+AGENTS.md :: enumerated :: cohort four-key floor
+AGENTS.md :: pointer :: docs/specs/2026-09-29-processor-service-design.md

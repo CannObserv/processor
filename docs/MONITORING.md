@@ -2,6 +2,14 @@
 
 What checks in to Status, and the host's resources: the drift check, liveness, the disk GC and its headroom sensor, memory. Day-to-day commands: [DEPLOYMENT.md](DEPLOYMENT.md#operate).
 
+## At a glance
+
+| Thing | Value |
+|---|---|
+| Drift check | `processor-drift.timer`, hourly: does live lag `origin/main` in code that runs (`processor.drift.RUNTIME_*`)? Checks in to Status's `co-processor-drift` (`http://status:9000`, status#24); `alert` past 8 h. [§ below](#the-drift-check) (#35) |
+| Liveness | `processor run` checks in `ok` to Status's `co-processor-live` every 5 min, only while the consume loop progressed within 605 s; silence past the 900 s grace pages. Daemon thread, 10 s bound: Status never touches consumption. [§ below](#liveness) (#39) |
+| Disk GC | Provisioner's GC and headroom sensor (`maintaining-host-disk`): a daily prune of tooling under `/home/exedev`, and a check-in to Status's `co-processor-disk-headroom` every 10 min (85% / 80%). Config [deploy/disk-gc/disk-gc.conf](../deploy/disk-gc/disk-gc.conf); patch runs read its line as a floor. [§ below](#disk-gc) (#82) |
+
 ## The drift check
 
 **Live lagging `origin/main` in code that runs alerts through Status** (#35, ported from status#12). `processor-drift.timer` starts `processor-drift.service` 5 min after boot, then hourly. It runs `/srv/processor/live/.venv/bin/processor drift` as `processor`: it asks GitHub how far live's `REVISION` is behind `main`, then checks in once to Status's monitor `co-processor-drift` (tenant `co-processor`, CannObserv/status#24) at `http://status:9000`. The rules are in `src/processor/drift.py`.
@@ -163,7 +171,7 @@ uv run pytest tests/test_disk_gc.py   # on the node: the installed copy matches,
 **The kernel's order** (`oom_score`, 2026-10-30):
 - first `exedev`'s `systemd --user` (734, adj 100) and its `(sd-pam)`, about 11 MiB between them;
 - then the sessions at adj 0: `claude`, `MainThread` (VS Code's node) and `npm exec socrat` (SocratiCode), 672–691;
-- `processor` (adj -500) at 342, tailscaled at -950 (§ tailscaled's OOM rank);
+- `processor` (adj -500) at 342, tailscaled at -950 ([NETWORK.md § tailscaled's OOM rank](NETWORK.md#tailscaleds-oom-rank));
 - only `exe-init` and `sshd` at -1000.
 
 An extraction child volunteers at 1000 while it runs ([deploy/processor.service](../deploy/processor.service)'s `OOMPolicy=continue` comment), so it goes before all of them. The -500 is worth half the host's pages, so the service would pass a session only with about 3.9 GiB more resident than that session. `MemoryMax=6G` allows that; the measured peak is 105M.

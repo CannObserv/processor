@@ -2,6 +2,13 @@
 
 What Processor pins and how each pin moves: the CI workflow's actions and images, shellcheck, the lock audit, co-core, the extraction stack, certifi. The deploy's CI gate: [DEPLOYMENT.md](DEPLOYMENT.md#the-ci-gate).
 
+## At a glance
+
+| Thing | Value |
+|---|---|
+| CI | GitHub Actions [.github/workflows/ci.yml](../.github/workflows/ci.yml) on `ubuntu-24.04`, the node's image: lint (ruff, shellcheck), then the full suite against `redis:7.0.15` (the broker's, not 7.2: CLIENT SETINFO; upstream EOL, the next is broker#85's call), pulled from `mirror.gcr.io`, never anonymously from Docker Hub (#43). Keyless WIF to `co-pypi-reader`, whose token only `uv sync` gets (#121), needs the org variable `GCP_WIF_PROVIDER` shared with this repo and a `roles/iam.workloadIdentityUser` binding for `principalSet://…/attribute.repository/CannObserv/processor`. Actions SHA-pinned; Dependabot version updates `github-actions` only, `uv` security updates landed by hand ([§ below](#ci-pins-and-dependabot), #80). Shell lint, with an opt-in pre-commit hook: [§ below](#shell-lint) (#81) |
+| Lock audit | [.github/workflows/audit.yml](../.github/workflows/audit.yml): `uv audit --frozen`, report-only, outside the deploy gate (#73). The weekly patch window reads the live lock (#75): [§ below](#the-lock-audit) |
+
 ## CI pins and Dependabot
 
 Ported from broker#88 and broker#90 (#80).
@@ -145,6 +152,10 @@ co-core is pinned `==`, and Processor owns the pin (spec D5, §5; amended 2026-1
 4. **Notice to Watcher** before deploy: the new `processor_version` and the evidence. Merge, then `scripts/deploy.sh`.
 
 Since #71: `0.38.0+2`, pypdf 6.21.2, opentelemetry-api 1.45.1 (not stack; a floor only). Since #112: `0.38.0+3`, pypdf 6.21.4, pyasn1 0.6.5 (not stack; a floor only).
+
+## Parity goldens
+
+**Parity goldens** come from co-core's pure extract API directly (`scripts/gen_parity_goldens.py`), never from Processor's code. The script imports nothing from `processor`, and a test checks that. The v1 set was Watcher's, and the generator reproduced it byte for byte on 0.19.7 (2026-10-10, #47; `v1_provenance`). A test holds the committed goldens equal to the generator's output on the pinned co-core. A spec co-core refuses (`UnsupportedExtractionError`) is a golden too, `{"refused": …}`; any other raise is a generator error (#29). Regenerate only at a co-core bump, and list every moved digest in the bump note. A failing parity test means the output diverged; do not regenerate the goldens to make it pass. The real corpus, `tests/fixtures/parity/real/` (#16), is Watcher's export verbatim and the only copy of its blobs (gone from `gs://co-gcs-blobs` after the TTL): never edit or regenerate it; a bump that moves its output says so in the bump note.
 
 ## TLS trust
 

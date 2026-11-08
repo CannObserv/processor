@@ -4,6 +4,14 @@ Processor runs as one systemd unit, `processor`, on exe.dev VM `co-processor`, a
 
 The rest of the runbook, by topic (#126): [PROVISIONING.md](PROVISIONING.md) (prerequisites, `/etc/processor/` and `processor_cli`, containment, the install), [DEPENDENCIES.md](DEPENDENCIES.md) (CI pins and Dependabot, shell lint, the lock audit, co-core and extraction bumps, TLS trust), [MONITORING.md](MONITORING.md) (the drift check, liveness, disk GC, memory), [NETWORK.md](NETWORK.md) (Tailscale DNS, tailnet flaps).
 
+## At a glance
+
+| Thing | Value |
+|---|---|
+| Service | systemd unit `processor` — [deploy/processor.service](../deploy/processor.service), runbook [docs/DEPLOYMENT.md](DEPLOYMENT.md); live since 2026-10-02. Runs as user `processor` (no sudo, not in `docker`, no home) from `/srv/processor/live` → `releases/<build>`, a read-only release `scripts/deploy.sh` builds from a commit on `origin/main` (#2; the cohort standard, broker#22 / status#9). **Never from a checkout** |
+| Patching | `automatic` (knob `.skills/patching-hosts`, #113): `-security` daily by unattended-upgrades (13:00 UTC, no restart, no reboot); the rest in one approved run a week, `Tue 05:00–10:00` UTC (Monday night Pacific), as the broker's window closes; `processor-patching.timer` asks for it through Status. Never a bare `apt-get upgrade`. [§ below](#patching) (#77) |
+| Node.js | 24 LTS from NodeSource apt, agent tooling only (mayfly, SocratiCode): `deploy/nodesource.sh install\|check`, [§ below](#nodejs-agent-tooling-only) |
+
 ## Releases, not a checkout
 
 **The unit runs a release, never a checkout** (#2). Processor follows the cohort's release standard, broker#22, as CannObserv/status#9 shipped it. That spec is `docs/specs/2026-09-30-deploy-releases-design.md` in CannObserv/status, decisions R1–R13.
@@ -35,7 +43,7 @@ Status's CI gate (status#11) is adopted as § The CI gate (#34), and its drift c
 
 ## Deploy a change: `scripts/deploy.sh`
 
-Run as `exedev`, from `~/processor`, after the PR merges. It needs `git`, `uv`, `jq`, `curl` and `flock` (util-linux) on the `PATH`, HTTPS to `api.github.com`, and for a build the co-pypi reader's key (§ GCP provisioning) with HTTPS to `oauth2.googleapis.com` (the mint) and `us-west1-python.pkg.dev` (the index), plus `sudo` for `systemctl`, `systemd-run` and the unit file; `co-processor` has all of them. The script fetches `origin` itself:
+Run as `exedev`, from `~/processor`, after the PR merges. It needs `git`, `uv`, `jq`, `curl` and `flock` (util-linux) on the `PATH`, HTTPS to `api.github.com`, and for a build the co-pypi reader's key ([PROVISIONING.md § GCP provisioning](PROVISIONING.md#gcp-provisioning)) with HTTPS to `oauth2.googleapis.com` (the mint) and `us-west1-python.pkg.dev` (the index), plus `sudo` for `systemctl`, `systemd-run` and the unit file; `co-processor` has all of them. The script fetches `origin` itself:
 
 ```bash
 cd ~/processor && git pull --ff-only     # for the skills hook; the deploy fetches on its own

@@ -1,0 +1,49 @@
+# check-seams.sh acknowledgements (curating-context). Grammar: check-seams.sh --help.
+# #126, judged 2026-11-08: each points at AGENTS.md content that stayed inline
+# (the co-core pin and extraction stack, Environment & Tooling, commit Types:,
+# the deploy rule, the Node.js row, Code Exploration Policy) or reads the file.
+docs/DEPENDENCIES.md :: already follows AGENTS.md
+docs/DEPLOYMENT.md :: and AGENTS.md's Node.js row
+docs/SKILLS.md :: AGENTS.md
+docs/SOCRATICODE.md :: AGENTS.md
+.claude/hooks/ :: AGENTS.md
+.github/dependabot.yml :: (AGENTS.md, #71)
+.socraticodecontextartifacts.json :: ./AGENTS.md
+pyproject.toml :: readme = "AGENTS.md"
+scripts/audit_lock.sh :: (AGENTS.md, Environment & Tooling)
+src/processor/drift.py :: AGENTS.md's rule for when a merge needs
+tests/test_ :: AGENTS
+tests/test_drift.py :: "CLAUDE.md",
+# Moved verbatim from DEPLOYMENT.md; renaming it would break the anchor that
+# PROVISIONING.md's own table and older issue threads cite.
+docs/PROVISIONING.md :: Broker credential handoff (hash-only, broker#75 as of 2026-09-30)
+# The DEPLOYMENT.md split (check-seams.sh --file docs/DEPLOYMENT.md).
+# Links to DEPLOYMENT.md sections that stayed (the CI gate, operate, patching, Node.js):
+docs/DEPENDENCIES.md :: What Processor pins and how each pin moves
+docs/MONITORING.md :: What checks in to Status, and the host's resources
+docs/PROVISIONING.md :: What the operator set up once
+docs/DEPLOYMENT.md :: | Service | systemd unit `processor`
+docs/SKILLS.md :: [DEPLOYMENT.md § Patching](DEPLOYMENT.md#patching)
+.gitignore :: docs/DEPLOYMENT.md § Rollback
+tests/test_apt_automatic.py :: docs/DEPLOYMENT.md § Patching
+# A section title named in its own new doc, or a manifest description:
+docs/PROVISIONING.md :: [GCP provisioning](#gcp-provisioning)
+.socraticodecontextartifacts.json :: "description":
+.socraticodecontextartifacts.json :: ./docs/DEPLOYMENT.md
+scripts/co_pypi_token.py :: docs/PROVISIONING.md § GCP provisioning
+# Runtime paths (processor.drift.RUNTIME_*): editing one is a deploy, and #126 is
+# docs only. Each still resolves: a section that stayed, or its stub under
+# DEPLOYMENT.md's "Moved sections". Repoint with the next runtime change.
+deploy/ :: DEPLOYMENT.md
+scripts/deploy.sh :: DEPLOYMENT.md
+src/processor/ :: DEPLOYMENT.md
+pyproject.toml :: docs/DEPLOYMENT.md § Shell lint
+# Already retargeted at the moved subsection's new doc, or naming a section that stayed:
+docs/DEPLOYMENT.md :: [PROVISIONING.md § GCP provisioning](PROVISIONING.md#gcp-provisioning)
+docs/MONITORING.md :: [NETWORK.md § tailscaled's OOM rank]
+tests/test_main.py :: NETWORK.md "At boot"
+tests/test_deploy.py :: docs/DEPLOYMENT.md § Rollback
+tests/test_needrestart.py :: docs/DEPLOYMENT.md § Patching
+tests/test_nodesource.py :: docs/DEPLOYMENT.md, #6
+# A fixture path, not a pointer:
+tests/test_drift.py :: files=["docs/DEPLOYMENT.md"

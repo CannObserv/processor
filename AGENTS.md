@@ -24,7 +24,7 @@ TDD required. Red → Green → Refactor. No production code without a failing t
 
 Python 3.12, uv, hatchling src layout, pytest, ruff.
 
-**co-core is pinned exactly (`==0.38.0`); Processor owns the pin** (spec D5, §5; since watcher#350 nothing else extracts). `processor_version` = `"<co-core version>+<LOCAL_GENERATION>"`; a pin test makes every bump a deliberate, test-failing act. Never let a dependency bot or `uv lock --upgrade` move co-core. A bump gives Watcher notice (it re-baselines on `processor_version`). It is coordinated with Watcher only if it changes the contract: the `content.process` / `content.derived` models or `canonical_text` semantics. Procedure: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#bumping-co-core). The extraction stack (co-core's `extract` extra, closure: pypdf, lxml, …) is held too: moving it outside a co-core bump bumps `LOCAL_GENERATION` (#71, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#extraction-dependencies)).
+**co-core is pinned exactly (`==0.38.0`); Processor owns the pin** (spec D5, §5; since watcher#350 nothing else extracts). `processor_version` = `"<co-core version>+<LOCAL_GENERATION>"`; a pin test makes every bump a deliberate, test-failing act. Never let a dependency bot or `uv lock --upgrade` move co-core. A bump gives Watcher notice (it re-baselines on `processor_version`). It is coordinated with Watcher only if it changes the contract: the `content.process` / `content.derived` models or `canonical_text` semantics. Procedure: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#bumping-co-core). The extraction stack (co-core's `extract` extra, closure: pypdf, lxml, …) is held too: moving it outside a co-core bump bumps `LOCAL_GENERATION` (#71, [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#extraction-dependencies)).
 
 **The co-pypi index.** `co-core`, `co-core-aio`, `co-core-sync` resolve only from the explicit `co-pypi` Artifact Registry index (`pyproject.toml`, #121). The lock holds each file's sha256, and `uv sync --locked` refuses a miss. `uv lock`, and a `uv sync` that downloads, need the reader's token: `bash scripts/co-pypi.sh uv …` mints it for that one `uv`, and never prints it. After the first `uv sync` in a fresh checkout, `uv sync --reinstall-package processor` if `import processor` fails.
 
@@ -33,18 +33,18 @@ Python 3.12, uv, hatchling src layout, pytest, ruff.
 | Thing | Value |
 |---|---|
 | VM | exe.dev `co-processor` (8 GB, 2 vCPU), tag `processor` |
-| Broker | `broker:6379`, by MagicDNS name, never by address. Tailscale runs `--accept-dns=true`, with an OOM drop-in for tailscaled: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#tailscale-dns) |
+| Broker | `broker:6379`, by MagicDNS name, never by address. Tailscale runs `--accept-dns=true`, with an OOM drop-in for tailscaled: [docs/NETWORK.md](docs/NETWORK.md#tailscale-dns) |
 | Scratch bus | `redis-server` on `localhost:6379` — tests and smoke runs only |
 | Input | `gs://co-gcs-blobs` (Replicator's raw blobs), read-only |
 | Output | `gs://co-gcs-processor/blobs/<sha256>.bin`, write-if-absent, **never deleted** |
-| Node.js | 24 LTS from NodeSource apt, agent tooling only (mayfly, SocratiCode): `deploy/nodesource.sh install\|check`, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#nodejs-agent-tooling-only) |
-| CI | GitHub Actions [.github/workflows/ci.yml](.github/workflows/ci.yml) on `ubuntu-24.04`, the node's image: lint (ruff, shellcheck), then the full suite against `redis:7.0.15` (the broker's, not 7.2: CLIENT SETINFO; upstream EOL, the next is broker#85's call), pulled from `mirror.gcr.io`, never anonymously from Docker Hub (#43). Keyless WIF to `co-pypi-reader`, whose token only `uv sync` gets (#121), needs the org variable `GCP_WIF_PROVIDER` shared with this repo and a `roles/iam.workloadIdentityUser` binding for `principalSet://…/attribute.repository/CannObserv/processor`. Actions SHA-pinned; Dependabot version updates `github-actions` only, `uv` security updates landed by hand ([docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#ci-pins-and-dependabot), #80). Shell lint, with an opt-in pre-commit hook: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#shell-lint) (#81) |
-| Lock audit | [.github/workflows/audit.yml](.github/workflows/audit.yml): `uv audit --frozen`, report-only, outside the deploy gate (#73). The weekly patch window reads the live lock (#75): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#the-lock-audit) |
-| Drift check | `processor-drift.timer`, hourly: does live lag `origin/main` in code that runs (`processor.drift.RUNTIME_*`)? Checks in to Status's `co-processor-drift` (`http://status:9000`, status#24); `alert` past 8 h. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#the-drift-check) (#35) |
-| Patching | `automatic` (knob `.skills/patching-hosts`, #113): `-security` daily by unattended-upgrades (13:00 UTC, no restart, no reboot); the rest in one approved run a week, `Tue 05:00–10:00` UTC (Monday night Pacific), as the broker's window closes; `processor-patching.timer` asks for it through Status. Never a bare `apt-get upgrade`. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#patching) (#77) |
-| Disk GC | Provisioner's GC and headroom sensor (`maintaining-host-disk`): a daily prune of tooling under `/home/exedev`, and a check-in to Status's `co-processor-disk-headroom` every 10 min (85% / 80%). Config [deploy/disk-gc/disk-gc.conf](deploy/disk-gc/disk-gc.conf); patch runs read its line as a floor. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#disk-gc) (#82) |
-| Liveness | `processor run` checks in `ok` to Status's `co-processor-live` every 5 min, only while the consume loop progressed within 605 s; silence past the 900 s grace pages. Daemon thread, 10 s bound: Status never touches consumption. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#liveness) (#39) |
-| Service | systemd unit `processor` — [deploy/processor.service](deploy/processor.service), runbook [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md); live since 2026-10-02. Runs as user `processor` (no sudo, not in `docker`, no home) from `/srv/processor/live` → `releases/<build>`, a read-only release `scripts/deploy.sh` builds from a commit on `origin/main` (#2; the cohort standard, broker#22 / status#9). **Never from a checkout** |
+| Service | systemd unit `processor` ([deploy/processor.service](deploy/processor.service)), as user `processor`, from `/srv/processor/live` → `releases/<build>`, a read-only release `scripts/deploy.sh` builds from a commit on `origin/main` (#2). **Never from a checkout**. Runbook: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md); setup: [docs/PROVISIONING.md](docs/PROVISIONING.md) |
+| CI | [.github/workflows/ci.yml](.github/workflows/ci.yml): lint (ruff, shellcheck), then the full suite against `redis:7.0.15`, the broker's. Pins, keyless WIF to `co-pypi-reader`, Dependabot (`github-actions` only), shell lint: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#ci-pins-and-dependabot) |
+| Lock audit | [.github/workflows/audit.yml](.github/workflows/audit.yml), report-only, outside the deploy gate: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#the-lock-audit) |
+| Status | Check-ins: the drift check (`processor-drift.timer`, hourly), liveness (from `processor run`, every 5 min), disk headroom (Provisioner's disk GC, config [deploy/disk-gc/disk-gc.conf](deploy/disk-gc/disk-gc.conf)): [docs/MONITORING.md](docs/MONITORING.md) |
+| Patching | `automatic` (knob `.skills/patching-hosts`, #113): `-security` daily by unattended-upgrades; the rest in one approved run a week, `Tue 05:00–10:00` UTC. Never a bare `apt-get upgrade`. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#patching) |
+| Node.js | 24 LTS from NodeSource apt, agent tooling only: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#nodejs-agent-tooling-only) |
+
+## Hard Rules
 
 **Tests never touch the real broker or real buckets.** Use the scratch Redis, co-core's `LocalBlobStore`, and fakes. Since #8 `broker` resolves on this VM, so a test that connects names `localhost` (or `broker.invalid` for name-resolution cases), never `broker`. `processor` cannot and must not `XADD content.process` on the broker.
 
@@ -54,7 +54,7 @@ Python 3.12, uv, hatchling src layout, pytest, ruff.
 
 **Extraction runs in a killable child process** (`python -I -m processor._child`: timeout, `RLIMIT_AS`, `oom_score_adj` 1000, scrubbed env, allowlisting unpickler for its result), never a thread. The child is untrusted: it parses untrusted documents. **It contains itself** (`processor._contain`, #2, spec §3): Landlock (read-only on an allowlist derived from `sys.path`, no TCP, scoped signals) and seccomp (no socket at all). `processor run` is undumpable, and refuses to start where the child can't be contained (`CO_PROCESSOR_CHILD_CONTAINMENT=required`, the default). Keep the child's imports inside the allowlist: a new extractor that reads a data file outside it fails under containment, and the whole-corpus test in `tests/test_child.py` catches that. The test suite runs `required` where the kernel allows it (the pytest header says which), and never skips containment on `co-processor`.
 
-**Parity goldens** come from co-core's pure extract API directly (`scripts/gen_parity_goldens.py`), never from Processor's code. The script imports nothing from `processor`, and a test checks that. The v1 set was Watcher's, and the generator reproduced it byte for byte on 0.19.7 (2026-10-10, #47; `v1_provenance`). A test holds the committed goldens equal to the generator's output on the pinned co-core. A spec co-core refuses (`UnsupportedExtractionError`) is a golden too, `{"refused": …}`; any other raise is a generator error (#29). Regenerate only at a co-core bump, and list every moved digest in the bump note. A failing parity test means the output diverged; do not regenerate the goldens to make it pass. The real corpus, `tests/fixtures/parity/real/` (#16), is Watcher's export verbatim and the only copy of its blobs (gone from `gs://co-gcs-blobs` after the TTL): never edit or regenerate it; a bump that moves its output says so in the bump note.
+**Parity goldens** come from co-core's pure extract API directly (`scripts/gen_parity_goldens.py`), never from Processor's code. Regenerate only at a co-core bump; a failing parity test means the output diverged, so never regenerate to make it pass. Never edit or regenerate the real corpus, `tests/fixtures/parity/real/`: the only copy of its blobs. Detail: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#parity-goldens).
 
 ## Agent Skills
 
@@ -62,7 +62,7 @@ Python 3.12, uv, hatchling src layout, pytest, ruff.
 
 ## Environment Files
 
-1. `/etc/processor/` (root, dir 700, files 600) — production: `.env` (`CO_PROCESSOR_*`, the broker credential), read by systemd, never by the service user; the GCS key and the Status key, handed over by `LoadCredential=` (#2, #35, #39). Managed by the operator. Commands needing it run as the service: `processor_cli` in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+1. `/etc/processor/` (root, dir 700, files 600) — production: `.env` (`CO_PROCESSOR_*`, the broker credential), read by systemd, never by the service user; the GCS key and the Status key, handed over by `LoadCredential=` (#2, #35, #39). Managed by the operator. Commands needing it run as the service: `processor_cli` in [docs/PROVISIONING.md](docs/PROVISIONING.md#etcprocessor).
 2. `/etc/processor-deploy/co-pypi-reader.json` (`root:exedev 640`, dir 750) — the index reader's key, read by `scripts/co-pypi.sh` alone (#121).
 3. `.env` (repo root, git-ignored) — dev/agent secrets: `GH_TOKEN` (this repo; `.claude/hooks/gh-env.sh` exports it), `GH_TOKEN_<REPO>` (sibling repos, read). **Never commit, never print values.**
 
@@ -98,7 +98,11 @@ scripts/deploy.sh [<build>]              # ship: CI green, then build a release 
 ## Detail Docs
 
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — prerequisites, the broker credential handoff, `/etc/processor/`, releases and `scripts/deploy.sh`, CI pins and Dependabot, shell lint, the lock audit, the drift check, liveness, containment, install and rollback, operate, co-core bumps, extraction dependencies, TLS trust, Tailscale DNS, tailnet flaps (signature, rule), patching (posture, window, the run), the disk GC, memory (no earlyoom), Node.js
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — releases and `scripts/deploy.sh`, the CI gate, rollback, operate, patching (posture, window, the run), Node.js; stubs for moved sections
+- [docs/PROVISIONING.md](docs/PROVISIONING.md) — prerequisites, the broker credential handoff, GCP, `/etc/processor/` and `processor_cli`, containment, install, the group
+- [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) — CI pins and Dependabot, shell lint, the lock audit, co-core bumps, extraction dependencies, TLS trust
+- [docs/MONITORING.md](docs/MONITORING.md) — the drift check, liveness, the disk GC, memory (no earlyoom)
+- [docs/NETWORK.md](docs/NETWORK.md) — Tailscale DNS, tailscaled at boot, tailnet flaps (signature, rule)
 - [docs/plans/](docs/plans/) — implementation plans
 - [docs/SKILLS.md](docs/SKILLS.md) — vendored agent skills: inventory, overrides (none), the refresh hook, worktrees
 - [docs/SOCRATICODE.md](docs/SOCRATICODE.md) — semantic search: tools, the shared store, link stubs, the pin, the memory decision

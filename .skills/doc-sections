@@ -5,7 +5,7 @@
 # or heading that no longer exists. Whether a line routes a path is prose.
 
 docs/specs/2026-09-29-processor-service-design.md: a behaviour change under src/ amends the spec (a dated Amended entry plus the sections it touches); tests/fixtures/parity/ moves only at a co-core bump, every moved digest in the bump note
-AGENTS.md: the co-core pin and the co-pypi index under Environment & Tooling (pyproject.toml, uv.lock); the Infrastructure table (deploy/, .github/, scripts/deploy.sh); the containment and parity paragraphs (src/processor/_child.py, _contain.py, tests/fixtures/parity/); Detail Docs when a doc is added or renamed
+AGENTS.md: the co-core pin and the co-pypi index under Environment & Tooling (pyproject.toml, uv.lock); the Infrastructure table (deploy/, .github/, scripts/deploy.sh); Hard Rules, its containment and parity paragraphs (src/processor/_child.py, _contain.py, tests/fixtures/parity/); Detail Docs when a doc is added or renamed
 docs/DEPENDENCIES.md "Bumping co-core", docs/DEPENDENCIES.md "Extraction dependencies": pyproject.toml, uv.lock, the co-pypi index and scripts/co-pypi.sh, LOCAL_GENERATION
 docs/DEPLOYMENT.md "Deploy a change: `scripts/deploy.sh`", docs/MONITORING.md "The drift check", docs/MONITORING.md "Liveness": deploy/ units, scripts/deploy.sh, processor.drift.RUNTIME_*
 docs/DEPENDENCIES.md "CI pins and Dependabot", docs/DEPENDENCIES.md "Shell lint", docs/DEPENDENCIES.md "The lock audit": .github/, scripts/shellcheck.sh, scripts/audit_lock.sh, .githooks/

@@ -2,6 +2,12 @@
 
 The tailnet path to the broker: Tailscale's DNS, tailscaled's boot and OOM rank, and what a tailnet flap looks like.
 
+## At a glance
+
+| Thing | Value |
+|---|---|
+| Broker | `broker:6379`, by MagicDNS name, never by address. Tailscale runs `--accept-dns=true`, with an OOM drop-in for tailscaled: [§ below](#tailscale-dns) |
+
 ## Tailscale DNS
 
 Since #8 (2026-10-01) this VM runs Tailscale with `--accept-dns=true`, as every cohort node does (observo#631, notifier#43 D8). It had run with DNS off since provisioning: the `tailscale up` of 2026-09-29, from an Observo session (observo#629), passed `--accept-dns=false`, and nothing records a reason.
