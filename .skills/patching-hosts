@@ -24,14 +24,14 @@ window Tue 05:00-10:00
 # and a Status check-in. processor-patching.timer (#113) ticks on the hour, the
 # same read and check-in, and reads this file's weekday window lines from the
 # release: a change here is a deploy (RUNTIME_FILES). Liveness checks in every 5 min from inside
-# `processor run`; a stop past its 900 s grace pages (docs/DEPLOYMENT.md).
+# `processor run`; a stop past its 900 s grace pages (docs/MONITORING.md § Liveness).
 
 # --- the service ----------------------------------------------------------
 # Stopped in the reboot chain, and checked after boot for its first start and
 # NRestarts. KillMode=mixed + TimeoutStopSec=240 let the in-flight command
 # finish; one cut off stays pending and is reclaimed (store -> publish -> ack).
 # A deploy restarts it outside any window, by the owner's choice (2026-10-26):
-# docs/DEPLOYMENT.md § Patching.
+# docs/PATCHING.md § Patching.
 service processor.service
 
 # An extraction mid-run: its child is a `python -I -m processor._child`.
@@ -61,7 +61,7 @@ hold tailscale tailscale
 
 # --- owners ---------------------------------------------------------------
 # The release is an extract with no git origin: its uv.lock is this repo's,
-# updated through scripts/deploy.sh (the lock audit: docs/DEPLOYMENT.md).
+# updated through scripts/deploy.sh (docs/DEPENDENCIES.md § The lock audit).
 owner /srv/processor/live self
 
 records CannObserv/processor

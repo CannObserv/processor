@@ -1,6 +1,6 @@
 // posture automatic (#113; patching-hosts policy.md § automatic): unattended-upgrades
 // takes -security daily, from apt-daily-upgrade.timer, and never reboots. Installed
-// by hand as /etc/apt/apt.conf.d/processor-periodic (docs/DEPLOYMENT.md § Patching).
+// by hand as /etc/apt/apt.conf.d/processor-periodic (docs/PATCHING.md § Patching).
 // apt reads apt.conf.d in name order: this name sorts after the image's
 // docker-disable-periodic-update, which sets Enable "0". A 99… name sorts before it.
 // The two lines 20auto-upgrades already sets are restated, so this file alone says

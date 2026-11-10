@@ -48,7 +48,7 @@ dev = [
 # co-pypi index and no token (#121). shellcheck-py's wheel carries the shellcheck binary, so the lock
 # hash-pins it: no root install on the node, one version everywhere. A bump moves the
 # gate: `uv lock --upgrade-package shellcheck-py`, then fix what it finds and the
-# version docs/DEPLOYMENT.md § Shell lint names, which tests/test_shellcheck.py holds.
+# version docs/DEPENDENCIES.md § Shell lint names, which tests/test_shellcheck.py holds.
 lint = ["ruff>=0.16.8,<0.17", "shellcheck-py>=0.11.0.1,<0.12"]
 # scripts/co_pypi_token.py's own dep, locked (#79's rule, #121): scripts/co-pypi.sh
 # runs it `--frozen --only-group co-pypi`, before any co-core file is fetched, and

@@ -12,7 +12,7 @@
 # its exit code and nothing else (#35 trap 4).
 [Unit]
 Description=Processor: does live lag origin/main? Check in to Status
-Documentation=https://github.com/CannObserv/processor/blob/main/docs/DEPLOYMENT.md
+Documentation=https://github.com/CannObserv/processor/blob/main/docs/MONITORING.md
 Wants=network-online.target tailscaled.service
 After=network-online.target tailscaled.service
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Node.js from NodeSource's apt repo: agent tooling only (using-mayfly-chat, SocratiCode);
-# the processor service never runs it. docs/DEPLOYMENT.md -> Node.js; #6.
+# the processor service never runs it. docs/PATCHING.md -> Node.js; #6.
 #
 # Usage:
 #   sudo bash deploy/nodesource.sh install   # key (fingerprint-checked), source, pin, nodejs

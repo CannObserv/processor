@@ -13,7 +13,7 @@
 # this unit its exit code and nothing else.
 [Unit]
 Description=Processor: is this week's patch run recorded? Check in to Status
-Documentation=https://github.com/CannObserv/processor/blob/main/docs/DEPLOYMENT.md
+Documentation=https://github.com/CannObserv/processor/blob/main/docs/PATCHING.md
 Wants=network-online.target tailscaled.service
 After=network-online.target tailscaled.service
 

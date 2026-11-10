@@ -63,7 +63,7 @@ def post_checkin(
     if not _KEY.fullmatch(key):
         raise CheckinFailed(
             f"the {CREDENTIAL_NAME} credential is not one token of printable ASCII; "
-            "reinstall it (docs/DEPLOYMENT.md § The drift check)"
+            "reinstall it (docs/MONITORING.md § The drift check)"
         )
     url = f"{base_url.rstrip('/')}/api/v1/monitors/{monitor_id}/checkin"
     body: dict[str, object] = {"status": status, "variables": variables}

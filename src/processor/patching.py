@@ -247,14 +247,14 @@ def _assess(get: Get, this: Opening, now: datetime) -> Verdict:
         return Verdict(
             "due",
             f"the patch window is open until {closes}, and this week's attended run "
-            "isn't recorded: approve it in co-processor's session (docs/DEPLOYMENT.md "
+            "isn't recorded: approve it in co-processor's session (docs/PATCHING.md "
             "§ Patching)",
             window,
         )
     return Verdict(
         "missed",
         f"the patch window closed at {closes} with no run recorded: run it out of window "
-        "or record why not (docs/DEPLOYMENT.md § Patching)",
+        "or record why not (docs/PATCHING.md § Patching)",
         window,
     )
 

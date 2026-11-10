@@ -371,10 +371,10 @@ else
 fi
 touch "$release" # prune by last deploy, not first build
 
-# The unit's user must exist before anything switches (DEPLOYMENT.md § Install).
+# The unit's user must exist before anything switches (PROVISIONING.md § Install).
 user="$(sed -n 's/^User=//p' "$release/deploy/$UNIT.service")"
 getent passwd "$user" >/dev/null ||
-  die "the unit runs as $user, who does not exist here; nothing switched (DEPLOYMENT.md § Install)"
+  die "the unit runs as $user, who does not exist here; nothing switched (PROVISIONING.md § Install)"
 
 # --- switch, verify, or switch back ----------------------------------------
 
@@ -498,7 +498,7 @@ enable_new_timers() {
       note "$name enabled; its first run: journalctl -u ${name%.timer} -n 5"
       logger -t processor-deploy "$name enabled" || true
     else
-      note "systemctl enable --now $name failed; enable it by hand (docs/DEPLOYMENT.md § The drift check)"
+      note "systemctl enable --now $name failed; enable it by hand (docs/MONITORING.md § The drift check)"
     fi
   done <"$backup/units.added"
 }
