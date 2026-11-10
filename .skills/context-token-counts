@@ -5,10 +5,10 @@
 # file never counted exactly or since drifted far from the size recorded here.
 14033 5945 AGENTS.md
 20180 8174 docs/DEPENDENCIES.md
-23173 9346 docs/DEPLOYMENT.md
+23401 9473 docs/DEPLOYMENT.md
 18501 7629 docs/MONITORING.md
 14366 5801 docs/NETWORK.md
-21173 8630 docs/PATCHING.md
+21352 8690 docs/PATCHING.md
 19538 8299 docs/PROVISIONING.md
 16288 6666 docs/SKILLS.md
 11647 4469 docs/SOCRATICODE.md
