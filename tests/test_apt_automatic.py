@@ -12,7 +12,7 @@ whose span meets ``apt-daily-upgrade.timer``'s range (its calendar times plus
 ``apply.sh`` doesn't read ``apt-daily.timer``; its ``apt update`` can still meet the
 bulk's own list refresh, so it moves too.
 
-Tracked in ``deploy/``, installed by hand (docs/DEPLOYMENT.md § Patching) as:
+Tracked in ``deploy/``, installed by hand (docs/PATCHING.md § Patching) as:
 
 - ``apt/apt.conf.d/processor-periodic`` -> ``/etc/apt/apt.conf.d/``
 - ``apt-daily.timer.d/processor-window.conf`` -> ``/etc/systemd/system/apt-daily.timer.d/``
@@ -228,7 +228,7 @@ def test_installed_copy_matches_tracked(tracked: Path) -> None:
     try:
         text = installed.read_text()
     except FileNotFoundError:
-        pytest.fail(f"{installed} is not installed on {NODE} (docs/DEPLOYMENT.md § Patching)")
+        pytest.fail(f"{installed} is not installed on {NODE} (docs/PATCHING.md § Patching)")
     assert text == tracked.read_text()
 
 

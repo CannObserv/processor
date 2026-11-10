@@ -41,8 +41,8 @@ Python 3.12, uv, hatchling src layout, pytest, ruff.
 | CI | [.github/workflows/ci.yml](.github/workflows/ci.yml): lint (ruff, shellcheck), then the full suite against `redis:7.0.15`, the broker's, pulled from `mirror.gcr.io`, never anonymously from Docker Hub (#43). Pins, keyless WIF to `co-pypi-reader`, Dependabot (`github-actions` only): [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#ci-pins-and-dependabot); shell lint: [§ Shell lint](docs/DEPENDENCIES.md#shell-lint) |
 | Lock audit | [.github/workflows/audit.yml](.github/workflows/audit.yml), report-only, outside the deploy gate: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#the-lock-audit) |
 | Status | Check-ins: drift (`processor-drift.timer`, hourly), liveness (`processor run`, 5 min), disk headroom ([deploy/disk-gc/disk-gc.conf](deploy/disk-gc/disk-gc.conf)): [docs/MONITORING.md](docs/MONITORING.md) |
-| Patching | `automatic` (knob `.skills/patching-hosts`, #113): `-security` daily by unattended-upgrades; the rest in one approved run a week, `Tue 05:00–10:00` UTC. Never a bare `apt-get upgrade`. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#patching) |
-| Node.js | 24 LTS from NodeSource apt, agent tooling only: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#nodejs-agent-tooling-only) |
+| Patching | `automatic` (knob `.skills/patching-hosts`, #113): `-security` daily by unattended-upgrades; the rest in one approved run a week, `Tue 05:00–10:00` UTC. Never a bare `apt-get upgrade`. [docs/PATCHING.md](docs/PATCHING.md#patching) |
+| Node.js | 24 LTS from NodeSource apt, agent tooling only: [docs/PATCHING.md](docs/PATCHING.md#nodejs-agent-tooling-only) |
 
 ## Hard Rules
 
@@ -98,7 +98,8 @@ scripts/deploy.sh [<build>]              # ship: CI green, then build a release 
 ## Detail Docs
 
 - [docs/specs/2026-09-29-processor-service-design.md](docs/specs/2026-09-29-processor-service-design.md) — the spec: decisions, grants, runtime, failure table, versioning, cutover, testing, contract quick reference
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — releases and `scripts/deploy.sh`, the CI gate, rollback, operate, patching (posture, window, the run), Node.js
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — releases and `scripts/deploy.sh`, the CI gate, rollback, operate
+- [docs/PATCHING.md](docs/PATCHING.md) — patching (posture, window, the run, the patch-due check), Node.js
 - [docs/PROVISIONING.md](docs/PROVISIONING.md) — prerequisites, the broker credential, GCP, `/etc/processor/` and `processor_cli`, containment, install
 - [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) — CI pins and Dependabot, shell lint, the lock audit, co-core bumps, extraction dependencies, TLS trust
 - [docs/MONITORING.md](docs/MONITORING.md) — the drift check, liveness, the disk GC, memory (no earlyoom)

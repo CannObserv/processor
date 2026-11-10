@@ -155,7 +155,7 @@ CO_PROCESSOR_BUS_URL=redis://processor:<password>@broker:6379/0
 - **The Status key** is `/etc/processor/status-checkin.key`. Each unit that checks in loads it as `LoadCredential=status-checkin-key:…`:
   - `processor-drift.service`, which reads no `.env`, so the drift check never holds the broker credential (MONITORING.md § The drift check);
   - `processor.service`, since #39, for the liveness check-in (MONITORING.md § Liveness). Landlock refuses it to the child, as it refuses the GCS key;
-  - `processor-patching.service`, since #113, which reads no `.env` either (DEPLOYMENT.md § The patch-due check).
+  - `processor-patching.service`, since #113, which reads no `.env` either (PATCHING.md § The patch-due check).
 
 A command that needs the service's settings runs as the service, through systemd. Don't load the file into a shell:
 

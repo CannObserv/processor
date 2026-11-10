@@ -259,6 +259,7 @@ def test_the_install_never_globs_inside_etc_processor() -> None:
             "DEPENDENCIES.md",
             "MONITORING.md",
             "NETWORK.md",
+            "PATCHING.md",
         )
     )
     assert "/etc/processor/*" not in runbook

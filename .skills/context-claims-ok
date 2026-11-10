@@ -1,11 +1,2 @@
 # curating-context claims warrants (prove-no-loss.sh --claims). Grammar: `--help`.
-# #126: links into docs/DEPLOYMENT.md sections that the same change split out.
-AGENTS.md :: retarget :: DEPLOYMENT.md#bumping-co-core
-AGENTS.md :: retarget :: DEPLOYMENT.md#ci-pins-and-dependabot
-AGENTS.md :: retarget :: DEPLOYMENT.md#disk-gc
-AGENTS.md :: retarget :: DEPLOYMENT.md#extraction-dependencies
-AGENTS.md :: retarget :: DEPLOYMENT.md#liveness
-AGENTS.md :: retarget :: DEPLOYMENT.md#shell-lint
-AGENTS.md :: retarget :: DEPLOYMENT.md#tailscale-dns
-AGENTS.md :: retarget :: DEPLOYMENT.md#the-drift-check
-AGENTS.md :: retarget :: DEPLOYMENT.md#the-lock-audit
+# None for #126 part 2: no line was tightened. Part 1's are in git history.

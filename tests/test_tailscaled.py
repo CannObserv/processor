@@ -43,6 +43,7 @@ RUNBOOK = [
         "DEPENDENCIES.md",
         "MONITORING.md",
         "NETWORK.md",
+        "PATCHING.md",
     )
 ]
 RESOLV_BACKUP = "/etc/resolv.pre-tailscale-backup.conf"

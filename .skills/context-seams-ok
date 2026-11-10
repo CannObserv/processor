@@ -27,7 +27,6 @@ tests/test_drift.py :: "CLAUDE.md",
 tests/test_drift.py :: r"deploy only if the merge touched (.+?) \(", (root / "AGENTS.md").read_text()
 tests/test_lock_audit.py :: """The summary and AGENTS.md link DEPENDENCIES.md's sections by anchor, and
 tests/test_nodesource.py :: assert f"{EXPECTED_MAJOR} LTS from NodeSource" in (ROOT / "AGENTS.md").read_text()
-tests/test_patching_knob.py :: """The knob, AGENTS.md and docs/SKILLS.md link DEPLOYMENT.md's sections by anchor."""
 tests/test_pin.py :: "restore it to the contract (spec §5, D5; AGENTS.md; DEPENDENCIES.md step 4; "
 tests/test_skills.py :: """A superpowers skill's ``superpowers:<n>`` is ``skills/<n>``; AGENTS.md maps strays."""
 tests/test_skills.py :: agents = (ROOT / "AGENTS.md").read_text()
@@ -37,29 +36,21 @@ tests/test_skills.py :: agents = (ROOT / "AGENTS.md").read_text()
 .gitignore :: # keeps its files for a rollback past #121 (docs/DEPLOYMENT.md § Rollback). No
 .socraticodecontextartifacts.json :: "path": "./docs/DEPLOYMENT.md",
 docs/DEPENDENCIES.md :: - **Outside the deploy gate.** The gate reads `ci.yml`'s push run alone (DEPLOYMENT.md § The CI gate); `tests/test_lock_
-docs/DEPENDENCIES.md :: - **The weekly window, the human read** (#75, operator 2026-10-26). Each run's after-probe (DEPLOYMENT.md § Patching, st
 docs/DEPENDENCIES.md :: What Processor pins and how each pin moves: the CI workflow's actions and images, shellcheck, the lock audit, co-core, t
-docs/DEPLOYMENT.md :: In one commit, edit `node_<N>.x` in `deploy/apt/nodesource.sources`, `EXPECTED_MAJOR` in `tests/test_nodesource.py`, thi
 docs/DEPLOYMENT.md :: | Service | systemd unit `processor` — [deploy/processor.service](../deploy/processor.service), runbook [docs/DEPLOYMENT
-docs/MONITORING.md :: **With DEPLOYMENT.md § Patching:**
 docs/MONITORING.md :: **`missing` on `co-processor-drift` means the check isn't reporting.** The cause is one of: the timer is stopped, live w
 docs/MONITORING.md :: - **GitHub's budget:** unauthenticated, 60 requests an hour per address, shared with DEPLOYMENT.md § The CI gate. A run
 docs/MONITORING.md :: What checks in to Status, and the host's resources: the drift check, liveness, the disk GC and its headroom sensor, memo
 docs/MONITORING.md :: | behind in code for more than 8 h | `alert` (`lag`), every hour until deployed. It names `main`'s CI result | `scripts/
 docs/NETWORK.md :: `-p warning` does the level filter (#76) and `fromjson?` drops systemd's own warning lines; for a window before #76's de
-docs/PROVISIONING.md :: - `processor-patching.service`, since #113, which reads no `.env` either (DEPLOYMENT.md § The patch-due check).
 docs/PROVISIONING.md :: What the operator set up once, on `co-processor` and around it: grants and credentials, `/etc/processor/`, the child's c
 docs/SKILLS.md :: **gregoryfoster-skills (16):** `auditing-ci-cost` (CI since #12), `coordinating-epics` (#24 since #52), `curating-contex
 docs/SKILLS.md :: - **Superpowers' `using-git-worktrees` and `writing-plans` are not linked**: gregoryfoster's own, same-named, win. So br
 docs/SKILLS.md :: None since #62. `brainstorming` was one, synced from v6.4.2 to move the design doc to `docs/specs/`, until v7 deferred t
 docs/SKILLS.md :: The post-merge pass runs as written. Its `git pull --ff-only` is a no-op after the push. Step 8 then offers `run-deploy-
 docs/SKILLS.md :: `curating-context` holds `AGENTS.md` to 6,000 tokens and each live doc under `docs/` (not `plans/`, `specs/`) to 10,000
-tests/test_apt_automatic.py :: Tracked in ``deploy/``, installed by hand (docs/DEPLOYMENT.md § Patching) as:
-tests/test_apt_automatic.py :: pytest.fail(f"{installed} is not installed on {NODE} (docs/DEPLOYMENT.md § Patching)")
 tests/test_deploy.py :: by its own commit's deploy.sh (docs/DEPLOYMENT.md § Rollback)."""
 tests/test_drift.py :: world.lag(hours=72, files=["docs/DEPLOYMENT.md", "tests/test_drift.py"])
-tests/test_needrestart.py :: pytest.fail(f"{INSTALLED} is not installed on {NODE} (docs/DEPLOYMENT.md § Patching)")
-tests/test_nodesource.py :: """The NodeSource apt setup is pinned and self-consistent (docs/DEPLOYMENT.md, #6).
 
 # A moved subsection, already named with the doc it moved to (or its own doc).
 .socraticodecontextartifacts.json :: "description": "The tailnet path to the broker: Tailscale DNS, tailscaled's OOM rank and boot orderi
@@ -72,34 +63,43 @@ scripts/co_pypi_token.py :: f" {type(exc).__name__}: {exc}. The key: docs/PROVIS
 scripts/co_pypi_token.py :: gets there: docs/PROVISIONING.md § GCP provisioning.
 tests/test_main.py :: # NETWORK.md "At boot" (#8, #15): a start whose preflight still fails after the
 
-# Runtime paths (processor.drift.RUNTIME_*): editing one is a deploy, and this
-# change is docs only. Each still resolves: a section that stayed, or its stub
-# under DEPLOYMENT.md's "Moved sections". Repointing them is #126's remaining work.
-deploy/apt-daily.timer.d/processor-window.conf :: # /etc/systemd/system/apt-daily.timer.d/processor-window.conf (docs/DEPLOYMENT.md).
-deploy/apt/apt.conf.d/processor-periodic :: // by hand as /etc/apt/apt.conf.d/processor-periodic (docs/DEPLOYMENT.md § Patching).
-deploy/disk-gc/disk-gc.conf :: # (root, 0644); scripts/deploy.sh compares the two. docs/DEPLOYMENT.md § Disk GC.
-deploy/needrestart.conf.d/processor.conf :: # Restarts on this node belong to the patch window (docs/DEPLOYMENT.md § Patching).
-deploy/nodesource.sh :: # the processor service never runs it. docs/DEPLOYMENT.md -> Node.js; #6.
+# Runtime paths (processor.drift.RUNTIME_*) that name docs/DEPLOYMENT.md: each
+# points at what stayed there (the deploy, the CI gate, rollback, host configs).
+# The rest were repointed in #126 part 2's deploy.
 deploy/processor-drift.service :: # release and enables the timer the first time it installs it (docs/DEPLOYMENT.md).
-deploy/processor-drift.service :: Documentation=https://github.com/CannObserv/processor/blob/main/docs/DEPLOYMENT.md
-deploy/processor-patching.service :: Documentation=https://github.com/CannObserv/processor/blob/main/docs/DEPLOYMENT.md
 deploy/processor.service :: # the deploy installs this file from that release (docs/DEPLOYMENT.md).
 deploy/processor.service :: Documentation=https://github.com/CannObserv/processor/blob/main/docs/DEPLOYMENT.md
-deploy/tailscaled.service.d/90-processor-oom.conf :: # Install: docs/DEPLOYMENT.md. OOMScoreAdjust= applies at exec, so tailscaled
-pyproject.toml :: # version docs/DEPLOYMENT.md § Shell lint names, which tests/test_shellcheck.py holds.
 pyproject.toml :: readme = "AGENTS.md"
 scripts/deploy.sh :: "restarted on the unit it replaced. docs/DEPLOYMENT.md § Rollback"
 scripts/deploy.sh :: "sudo systemctl disable --now $name (docs/DEPLOYMENT.md § Rollback)"
 scripts/deploy.sh :: # (#34, as status#11; docs/DEPLOYMENT.md § The CI gate).
 scripts/deploy.sh :: # (its spec's R1-R13; docs/DEPLOYMENT.md says where processor differs). The unit
 scripts/deploy.sh :: die "Roll back to a kept release, or build this one with its own commit's scripts/deploy.sh (docs/DEPLOYMENT.md § Rollba
-scripts/deploy.sh :: note "systemctl enable --now $name failed; enable it by hand (docs/DEPLOYMENT.md § The drift check)"
 scripts/deploy.sh :: say "host config deploy/$rel differs from $dest; install it by hand (docs/DEPLOYMENT.md)"
 scripts/deploy.sh :: say "host config deploy/$rel is not installed at $dest (docs/DEPLOYMENT.md)"
-src/processor/checkin.py :: "reinstall it (docs/DEPLOYMENT.md § The drift check)"
 src/processor/drift.py :: #: AGENTS.md's rule for when a merge needs ``scripts/deploy.sh``, defined here
-src/processor/patching.py :: "isn't recorded: approve it in co-processor's session (docs/DEPLOYMENT.md "
-src/processor/patching.py :: "or record why not (docs/DEPLOYMENT.md § Patching)",
 
 # Moved verbatim from DEPLOYMENT.md; renaming it would break its anchor.
 docs/PROVISIONING.md :: Broker credential handoff (hash-only, broker#75 as of 2026-09-30)
+
+# #126 part 2 (judged 2026-11-10): PATCHING.md's intro and its links to sections
+# that stayed in DEPLOYMENT.md, or to its own; mentions of the patch-due check
+# as a thing, not a section; its tests and manifest entry.
+docs/PATCHING.md :: Keeping `co-processor`'s packages current: the posture and its two lanes, the weekly attended run, the patch-due check, 
+docs/PATCHING.md :: | `health` ×2 | The unit is active, and nothing at `-p warning` in 6 min ([§ Operate → Logs](DEPLOYMENT.md#operate); val
+docs/PATCHING.md :: | `origin deb.nodesource.com follow` | Node, agent tooling ([§ Patching Node](#patching-node)) |
+docs/PATCHING.md :: **Deploys don't wait for a window** (operator, 2026-10-26, #77). The skill's policy.md says a deploy that restarts a dec
+docs/PATCHING.md :: **The record** goes on the issue (`records CannObserv/processor`), per run.md §7, and ends with the next window's date. 
+docs/PATCHING.md :: In one commit, edit `node_<N>.x` in `deploy/apt/nodesource.sources`, `EXPECTED_MAJOR` in `tests/test_nodesource.py`, thi
+docs/DEPLOYMENT.md :: The rest of the runbook, by topic (#126): [PROVISIONING.md](PROVISIONING.md) (prerequisites, `/etc/processor/` and `proc
+docs/DEPLOYMENT.md :: A merge that changes nothing under `src/`, `deploy/`, `scripts/deploy.sh`, `pyproject.toml`, `uv.lock` or `.skills/patch
+docs/PROVISIONING.md :: - `processor-patching.service`, since #113, which reads no `.env` either (PATCHING.md § The patch-due check).
+.socraticodecontextartifacts.json :: "description": "Keeping co-processor patched: the automatic posture and its two lanes, the weekly attended run, the patc
+src/processor/__main__.py :: — the drift check; ``processor patching`` — the patch-due check."""
+src/processor/patching.py :: """Has this week's attended patch run been recorded? The patch-due check (#113).
+tests/test_nodesource.py :: it. Moving the major line is a deliberate act: edit ``EXPECTED_MAJOR`` here in the same
+tests/test_patching_knob.py :: for heading in ("## Patching", "### Patching Node"):
+
+# Prose that happens to contain a moved heading ("removing it").
+.claude/hooks/skills-submodule-update.sh :: # Judging a marker dead and then removing it are two steps, and two sessions
+.claude/hooks/skills-submodule-update.sh :: # Taken, not removed (CR 1897): between judging it dead and removing it,

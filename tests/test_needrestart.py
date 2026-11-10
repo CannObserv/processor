@@ -90,7 +90,7 @@ def test_installed_copy_matches_tracked() -> None:
     try:
         installed = INSTALLED.read_text()
     except FileNotFoundError:
-        pytest.fail(f"{INSTALLED} is not installed on {NODE} (docs/DEPLOYMENT.md § Patching)")
+        pytest.fail(f"{INSTALLED} is not installed on {NODE} (docs/PATCHING.md § Patching)")
     assert installed == DROPIN.read_text()
 
 

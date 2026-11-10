@@ -149,9 +149,9 @@ def test_the_language_read_finds_the_live_lock() -> None:
 
 def _patching_steps() -> str:
     """§ Patching's numbered run, from "This host's run" to the next paragraph."""
-    deployment = (ROOT / "docs" / "DEPLOYMENT.md").read_text()
-    assert "\n## Patching\n" in deployment, "DEPLOYMENT.md has no ## Patching"
-    section = deployment.split("\n## Patching\n", 1)[1].split("\n## ", 1)[0]
+    patching = (ROOT / "docs" / "PATCHING.md").read_text()
+    assert "\n## Patching\n" in patching, "PATCHING.md has no ## Patching"
+    section = patching.split("\n## Patching\n", 1)[1].split("\n## ", 1)[0]
     assert "**This host's run**" in section, "§ Patching has no **This host's run**"
     run = section.split("**This host's run**", 1)[1]
     return run.split("\n\n**", 1)[0]
@@ -166,10 +166,14 @@ def test_the_runbook_takes_the_language_read() -> None:
 
 
 def test_the_runbook_sections_exist() -> None:
-    """The knob, AGENTS.md and docs/SKILLS.md link DEPLOYMENT.md's sections by anchor."""
-    deployment = (ROOT / "docs" / "DEPLOYMENT.md").read_text()
+    """AGENTS.md and docs/SKILLS.md link PATCHING.md's sections by anchor; links from
+    before #126 reach them through DEPLOYMENT.md's stubs, so both keep the headings."""
+    patching = (ROOT / "docs" / "PATCHING.md").read_text()
     for heading in ("## Patching", "### Patching Node"):
-        assert re.search(rf"^{heading}$", deployment, re.M), heading
+        assert re.search(rf"^{heading}$", patching, re.M), heading
+    deployment = (ROOT / "docs" / "DEPLOYMENT.md").read_text()
+    for heading in ("### Patching", "### Node.js (agent tooling only)"):
+        assert re.search(rf"^{re.escape(heading)}$", deployment, re.M), heading
 
 
 def test_the_gate_reads_the_extraction_and_the_unit() -> None:

@@ -1,4 +1,4 @@
-"""The NodeSource apt setup is pinned and self-consistent (docs/DEPLOYMENT.md, #6).
+"""The NodeSource apt setup is pinned and self-consistent (docs/PATCHING.md, #6).
 
 Node.js is agent tooling only (using-mayfly-chat, SocratiCode); the service never runs
 it. Moving the major line is a deliberate act: edit ``EXPECTED_MAJOR`` here in the same
@@ -65,19 +65,19 @@ def test_script_installs_what_the_repo_versions() -> None:
     assert _script_value("FINGERPRINT") == FINGERPRINT
 
 
-def test_deployment_doc_names_the_same_fingerprint() -> None:
-    doc = re.sub(r"\s", "", (ROOT / "docs" / "DEPLOYMENT.md").read_text())
+def test_patching_doc_names_the_same_fingerprint() -> None:
+    doc = re.sub(r"\s", "", (ROOT / "docs" / "PATCHING.md").read_text())
     assert FINGERPRINT in doc
 
 
 def test_docs_follow_the_major_line_and_the_installed_paths() -> None:
     """A bump or a rename that leaves the docs behind fails here, not in an operator's shell."""
-    deployment = (ROOT / "docs" / "DEPLOYMENT.md").read_text()
-    assert f"Node {EXPECTED_MAJOR} LTS" in deployment
-    assert f"node_{EXPECTED_MAJOR}.x" in deployment
+    patching = (ROOT / "docs" / "PATCHING.md").read_text()
+    assert f"Node {EXPECTED_MAJOR} LTS" in patching
+    assert f"node_{EXPECTED_MAJOR}.x" in patching
     for name in ("KEYRING", "SOURCES", "PREF"):
         # The table and the removal block both name each path.
-        assert deployment.count(_script_value(name)) >= 2, name
+        assert patching.count(_script_value(name)) >= 2, name
     assert f"{EXPECTED_MAJOR} LTS from NodeSource" in (ROOT / "AGENTS.md").read_text()
 
 

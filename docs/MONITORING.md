@@ -141,7 +141,7 @@ sudo install -D -m 0644 -o root -g root deploy/disk-gc/disk-gc.conf /etc/cannobs
 uv run pytest tests/test_disk_gc.py   # on the node: the installed copy matches, and the installed GC accepts it
 ```
 
-**With DEPLOYMENT.md § Patching:**
+**With PATCHING.md § Patching:**
 - **patching-hosts reads `[sensor] mount` and `alert_at_percent` as a floor** (gregoryfoster/skills#390). It refuses a step whose download and install would take `/` to 85%, and stops on a config the GC would refuse.
 - **The GC's daily run (05:15–05:45) falls inside the Tuesday window.** It never touches apt's trees, and it yields: `Nice=10`, idle I/O.
 - **After a reboot,** if the GC runs before VS Code reconnects, it finds no build running and keeps the newest (VERSION 3, #99). Under VERSION 2 it kept none, and the next session re-downloaded its build (about 640M).

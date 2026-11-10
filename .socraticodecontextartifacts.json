@@ -13,7 +13,12 @@
     {
       "name": "deployment-runbook",
       "path": "./docs/DEPLOYMENT.md",
-      "description": "Deploying and operating processor on co-processor: releases and scripts/deploy.sh, the CI gate, rollback, operate, patching, Node.js; stubs for the sections that moved (#126)."
+      "description": "Deploying and operating processor on co-processor: releases and scripts/deploy.sh, the CI gate, rollback, operate; stubs for the sections that moved (#126)."
+    },
+    {
+      "name": "patching-doc",
+      "path": "./docs/PATCHING.md",
+      "description": "Keeping co-processor patched: the automatic posture and its two lanes, the weekly attended run, the patch-due check (processor patching), and Node.js from NodeSource."
     },
     {
       "name": "provisioning-doc",
