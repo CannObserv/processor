@@ -29,3 +29,11 @@ docs/DEPLOYMENT.md :: retarget :: Read a run with `journalctl -u processor-patch
 # are refreshed daily at 12:00 UTC. Both lines now say so.
 docs/DEPLOYMENT.md :: disproven :: 1. `sudo apt-get update`. The maintenance dry run reads the host's lists, which nothing else refreshes (gregoryfoster/skills#467).
 docs/DEPLOYMENT.md :: disproven :: **An out-of-cycle fix** (a Node security release): `sudo bash deploy/nodesource.sh install`. It refreshes the package lists first, which nothing else here does (`apt-daily.timer` is masked and `APT::Periodic::Enable` is 0), so a bare `apt-get install nodejs` answers "already the newest version" while the release sits unfetched. It then takes the newest `nodejs` candidate, at adj 0 with needrestart listing only, and ends with `check`. `check` alone reads the lists as of the last update.
+
+# Fresh-eyes review: the host-config line now links where each one installs,
+# since PATCHING.md took the last install steps DEPLOYMENT.md held.
+docs/DEPLOYMENT.md :: retarget :: Then the host configs under `deploy/` (`HOST_CONFIGS`: tailscaled's drop-in, the apt files and the apt timers' drop-ins, needrestart's, the disk GC's) are compared with their installed copies. A difference is a note, never an install, and is journaled, as is an installed unit the release lacks. The deploy keeps the 5 most recently deployed releases plus `live`.
+
+# Refuted on co-processor 2026-11-10 (fresh-eyes review): both apt timers have
+# stamps under /var/lib/systemd/timers/ since their first runs (12:14Z, 13:42Z).
+docs/DEPLOYMENT.md :: disproven :: The first unattended run reads in `journalctl -u apt-daily-upgrade` and `/var/log/unattended-upgrades/unattended-upgrades.log` (root). No apt timer has a stamp under `/var/lib/systemd/timers/` (measured 2026-11-05), so `Persistent=true` has no missed run to catch up: enabling fires nothing, and the first run is the next 13:00. **To go back to `scheduled`:** `sudo systemctl disable --now` and `mask` both timers, remove `processor-periodic`, and set the knob's `posture`.

@@ -75,8 +75,6 @@ scripts/deploy.sh :: "sudo systemctl disable --now $name (docs/DEPLOYMENT.md § 
 scripts/deploy.sh :: # (#34, as status#11; docs/DEPLOYMENT.md § The CI gate).
 scripts/deploy.sh :: # (its spec's R1-R13; docs/DEPLOYMENT.md says where processor differs). The unit
 scripts/deploy.sh :: die "Roll back to a kept release, or build this one with its own commit's scripts/deploy.sh (docs/DEPLOYMENT.md § Rollba
-scripts/deploy.sh :: say "host config deploy/$rel differs from $dest; install it by hand (docs/DEPLOYMENT.md)"
-scripts/deploy.sh :: say "host config deploy/$rel is not installed at $dest (docs/DEPLOYMENT.md)"
 src/processor/drift.py :: #: AGENTS.md's rule for when a merge needs ``scripts/deploy.sh``, defined here
 
 # Moved verbatim from DEPLOYMENT.md; renaming it would break its anchor.
@@ -103,3 +101,8 @@ tests/test_patching_knob.py :: for heading in ("## Patching", "### Patching Node
 # Prose that happens to contain a moved heading ("removing it").
 .claude/hooks/skills-submodule-update.sh :: # Judging a marker dead and then removing it are two steps, and two sessions
 .claude/hooks/skills-submodule-update.sh :: # Taken, not removed (CR 1897): between judging it dead and removing it,
+
+# Fresh-eyes review: the host-config notes name § Deploy a change, which stayed
+# and links where each one installs.
+scripts/deploy.sh :: say "host config deploy/$rel is not installed at $dest (where each is installed: docs/DEPLOYMENT.md § Deploy a change)"
+scripts/deploy.sh :: say "host config deploy/$rel differs from $dest; install it by hand (where: docs/DEPLOYMENT.md § Deploy a change)"

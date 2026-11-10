@@ -56,13 +56,13 @@ sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer   # unattend
 uv run pytest tests/test_needrestart.py tests/test_tailscaled.py tests/test_apt_automatic.py   # on the node, the installed and live tests run and pass
 ```
 
-The first unattended run reads in `journalctl -u apt-daily-upgrade` and `/var/log/unattended-upgrades/unattended-upgrades.log` (root). No apt timer has a stamp under `/var/lib/systemd/timers/` (measured 2026-11-05), so `Persistent=true` has no missed run to catch up: enabling fires nothing, and the first run is the next 13:00. **To go back to `scheduled`:** `sudo systemctl disable --now` and `mask` both timers, remove `processor-periodic`, and set the knob's `posture`.
+The first unattended run reads in `journalctl -u apt-daily-upgrade` and `/var/log/unattended-upgrades/unattended-upgrades.log` (root). No apt timer had a stamp under `/var/lib/systemd/timers/` when they were enabled (measured 2026-11-05), so `Persistent=true` had no missed run to catch up: enabling fired nothing, and the first run was the next 13:00. Both have stamps since their first runs (2026-11-10), so a timer disabled and enabled again now catches up a run it missed. **To go back to `scheduled`:** `sudo systemctl disable --now` and `mask` both timers, remove `processor-periodic`, and set the knob's `posture`.
 
 **The probe escalates by itself.** `probe.sh` runs its root readings through `sudo -n` whenever that works, without asking. So every run, including `--dry-run-into` and `--post-boot`, is a sudo step and needs the owner's approval. For a non-root read, put a `sudo` that exits 1 first on `PATH`; the root readings then land in its `not_read`.
 
 **This host's run** (each sudo step approved in this repo's session; `<run>` = `/var/backups/patching-hosts-<UTC>`). Run the scripts under `skills/patching-hosts/scripts/` from the deploy checkout's root, pulled: each defaults its knob to `.skills/patching-hosts` at `git rev-parse --show-toplevel`, or else the working directory, and with no knob found it falls back to `automatic`, report-only.
 
-1. `sudo apt-get update`. The maintenance dry run reads the host's lists, which `apt-daily.timer` last refreshed at 12:00 UTC the day before (gregoryfoster/skills#467).
+1. `sudo apt-get update`. The maintenance dry run reads the host's lists, which `apt-daily.timer` last refreshed between 12:00 and 12:30 UTC the day before (gregoryfoster/skills#467).
 2. `probe.sh --lane maintenance --dry-run-into <dir>`, in the background: 0 findings expected, beside a `lists:stale` risk that reads the security archive's own publish date, not when the lists were refreshed (2026-10-26). Read the `redis-server` candidate; it must still be a `7.0.15` build, not Valkey, until #54.
 3. The needrestart proof, as above.
 4. `apply.sh --approve --step bulk --lane maintenance --dry-run <dir>`, in the background, within 24 h of the dry run. It restarts nothing. With no data store there is no recovery point: `recovery-point.sh` refuses ("nothing to dump"), and the bulk records the before-versions, the rollback path, in the `<run>` it creates and prints.
@@ -149,7 +149,7 @@ Unattended-Upgrade::Origins-Pattern {
 
 Proven 2026-09-30, with `nodejs` stepped back to 24.20.0: `unattended-upgrade --dry-run` selected it under `site=deb.nodesource.com` and not under the stock security-lane config. `origin=. nodistro` also selects it, but can't tell NodeSource from any other aptly repo. The skill's policy.md cites `nodesource.pref` as its example of scoping a followed origin (gregoryfoster/skills#344).
 
-**An out-of-cycle fix** (a Node security release): `sudo bash deploy/nodesource.sh install`. It refreshes the package lists first, which `apt-daily.timer` does only daily at 12:00 UTC, so a bare `apt-get install nodejs` can answer "already the newest version" while the release sits unfetched. It then takes the newest `nodejs` candidate, at adj 0 with needrestart listing only, and ends with `check`. `check` alone reads the lists as of the last update.
+**An out-of-cycle fix** (a Node security release): `sudo bash deploy/nodesource.sh install`. It refreshes the package lists first, which `apt-daily.timer` does only daily, between 12:00 and 12:30 UTC, so a bare `apt-get install nodejs` can answer "already the newest version" while the release sits unfetched. It then takes the newest `nodejs` candidate, at adj 0 with needrestart listing only, and ends with `check`. `check` alone reads the lists as of the last update.
 
 ### Moving the major line
 

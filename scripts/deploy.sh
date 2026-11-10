@@ -588,9 +588,9 @@ compare_host_configs() {
     rel="${entry%%=*}" dest="$ETC/${entry#*=}"
     [[ -f "$release/deploy/$rel" ]] || continue
     if [[ ! -e "$dest" ]]; then
-      say "host config deploy/$rel is not installed at $dest (docs/DEPLOYMENT.md)"
+      say "host config deploy/$rel is not installed at $dest (where each is installed: docs/DEPLOYMENT.md § Deploy a change)"
     elif ! cmp -s "$release/deploy/$rel" "$dest"; then
-      say "host config deploy/$rel differs from $dest; install it by hand (docs/DEPLOYMENT.md)"
+      say "host config deploy/$rel differs from $dest; install it by hand (where: docs/DEPLOYMENT.md § Deploy a change)"
     fi
   done
   return 0
