@@ -140,8 +140,9 @@ on `co-processor`.
 **Amended 2026-11-15 (Watcher's reader retired, processor#130):**
 - Watcher no longer reads `gs://co-gcs-processor` (watcher#379). Its
   `co-gcs-blob-reader` binding is removed and the account deleted
-  (CannObserv/watcher#420, read back 2026-11-15). Its Grants row is gone; D4,
-  Section 1 and the prefix note name only Archiver and Provisioner (Section 2).
+  (CannObserv/watcher#420, read back 2026-11-15). Its Grants row is gone; D4
+  names no reader; Section 1 and the prefix note name only Archiver and
+  Provisioner (Decisions, Sections 1 and 2).
 
 ---
 
