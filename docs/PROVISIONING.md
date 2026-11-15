@@ -21,7 +21,7 @@ What the operator set up once, on `co-processor` and around it: grants and crede
 | Tailnet `tag:processor` → `tag:status:9000` | tailnet policy | #35 gate 2, done 2026-10-07: `http://status:9000/health` answered `production` from `co-processor` at 14:03Z |
 | Status tenant `co-processor`, its production key, and the monitor `co-processor-drift` (`01M4BHMGGTXWQ16J3G5WWDQRYQ`) | `co-status` | CannObserv/status#24 (#35 gate 1), done 2026-10-07 16:02Z |
 | Status key at `/etc/processor/status-checkin.key` (root 600; `processor-drift.service`'s `LoadCredential=`) | this VM | #35 gate 3, [The drift check](MONITORING.md#the-drift-check) |
-| Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level, for `co-gcs-blob-reader`, the identity Watcher already reads `gs://` blobs with | GCP | done 2026-10-02 (in the bucket's IAM policy); Watcher confirmed that identity on watcher#325 the same day ([its answers](https://github.com/CannObserv/watcher/issues/325#issuecomment-5958475061)). **Retired 2026-11-15:** binding removed, account deleted (CannObserv/watcher#420) |
+| Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level, for `co-gcs-blob-reader`, the identity Watcher then read `gs://` blobs with | GCP | done 2026-10-02 (in the bucket's IAM policy); Watcher confirmed that identity on watcher#325 the same day ([its answers](https://github.com/CannObserv/watcher/issues/325#issuecomment-5958475061)). **Retired 2026-11-15:** binding removed, account deleted (CannObserv/watcher#420) |
 
 ### Broker credential handoff (hash-only, broker#75 as of 2026-09-30)
 
