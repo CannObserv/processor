@@ -21,7 +21,7 @@ What the operator set up once, on `co-processor` and around it: grants and crede
 | Tailnet `tag:processor` → `tag:status:9000` | tailnet policy | #35 gate 2, done 2026-10-07: `http://status:9000/health` answered `production` from `co-processor` at 14:03Z |
 | Status tenant `co-processor`, its production key, and the monitor `co-processor-drift` (`01M4BHMGGTXWQ16J3G5WWDQRYQ`) | `co-status` | CannObserv/status#24 (#35 gate 1), done 2026-10-07 16:02Z |
 | Status key at `/etc/processor/status-checkin.key` (root 600; `processor-drift.service`'s `LoadCredential=`) | this VM | #35 gate 3, [The drift check](MONITORING.md#the-drift-check) |
-| Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level, for `co-gcs-blob-reader`, the identity Watcher already reads `gs://` blobs with | GCP | done 2026-10-02 (in the bucket's IAM policy); Watcher confirmed that identity on watcher#325 the same day ([its answers](https://github.com/CannObserv/watcher/issues/325#issuecomment-5958475061)) |
+| Watcher's reader: `objectViewer` on `co-gcs-processor`, bucket level, for `co-gcs-blob-reader`, the identity Watcher already reads `gs://` blobs with | GCP | done 2026-10-02 (in the bucket's IAM policy); Watcher confirmed that identity on watcher#325 the same day ([its answers](https://github.com/CannObserv/watcher/issues/325#issuecomment-5958475061)). **Retired 2026-11-15:** binding removed, account deleted (CannObserv/watcher#420) |
 
 ### Broker credential handoff (hash-only, broker#75 as of 2026-09-30)
 
@@ -74,13 +74,8 @@ gcloud storage buckets add-iam-policy-binding gs://co-gcs-processor \
 gcloud storage buckets add-iam-policy-binding gs://co-gcs-blobs \
   --member="serviceAccount:${SA}" --role=roles/storage.objectViewer
 
-# 4. Watcher's reader. Proposed: co-gcs-blob-reader, which Watcher already reads
-#    gs:// blobs with (GCS_BLOB_CREDENTIALS). It gains nothing new, since the text
-#    is derived from blobs that identity can read. Run 2026-10-02, ahead of
-#    watcher#325's answer; if Watcher names another identity, grant that one too.
-gcloud storage buckets add-iam-policy-binding gs://co-gcs-processor \
-  --member="serviceAccount:co-gcs-blob-reader@${PROJECT}.iam.gserviceaccount.com" \
-  --role=roles/storage.objectViewer
+# 4. Retired 2026-11-15: Watcher's reader, co-gcs-blob-reader (granted 2026-10-02,
+#    removed with the account on CannObserv/watcher#420). Re-run nothing here.
 
 # 5. The key, straight onto co-processor over SSH stdin, never left on disk here.
 (

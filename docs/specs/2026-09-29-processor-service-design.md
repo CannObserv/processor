@@ -137,6 +137,12 @@ on `co-processor`.
   stays `0.38.0+3`. No behaviour changes: the same wheel bytes, which the lock
   holds to their sha256.
 
+**Amended 2026-11-15 (Watcher's reader retired, processor#130):**
+- Watcher no longer reads `gs://co-gcs-processor` (watcher#379). Its
+  `co-gcs-blob-reader` binding is removed and the account deleted
+  (CannObserv/watcher#420, read back 2026-11-15). Its Grants row is gone; D4,
+  Section 1 and the prefix note name only Archiver and Provisioner (Section 2).
+
 ---
 
 ## Why a new service
@@ -178,7 +184,7 @@ state and UI it should not have).
 | D1 | The service is **Processor**: repo `CannObserv/processor`, VM `co-processor`. `command.processor` names a transform *within* it (`"extract"` in v1). |
 | D2 | **Headless and stateless in v1**: no UI, no database. Idempotency is the write-if-absent store; correlation and dedupe are the issuer's (by `command_id`). |
 | D3 | **Own identities**: broker ACL user, GCS service account, bucket, tailnet tag. Observo's broker#62 `observo` user is stripped. |
-| D4 | **Own bucket** `gs://co-gcs-processor`, derived outputs only, so Watcher's read grant is a plain bucket-level `objectViewer`. |
+| D4 | **Own bucket** `gs://co-gcs-processor`, derived outputs only, so each reader's grant is a plain bucket-level `objectViewer`. *Amended 2026-11-15 (processor#130): was "Watcher's read grant"; Watcher's reader retired on watcher#420.* |
 | D5 | **co-core pinned exactly; Processor owns the pin** (0.38.0 today, processor#37). Bumps are deliberate (Section 5). Processor coordinates with Watcher only when a bump changes the contract: the `content.process` / `content.derived` models or `canonical_text` semantics. It **gives Watcher notice whenever `processor_version` moves**, because Watcher re-baselines on it. Watcher still pins co-core for contracts and the bus (`==0.19.7` on 2026-10-10), and that pin no longer has to equal Processor's. *Amended 2026-10-10 (processor#47, after watcher#350). Until then: matched to Watcher, in lockstep, since both sides extracted during shadow. Watcher agreed to that on 2026-10-02 (watcher#325), and neither side deployed a bump until the parity corpus passed on it unchanged. Amended 2026-10-21 (processor#57): essence resolution left the contract, so a change to it is notice (Section 5).* |
 | D6 | **Extraction runs in a killable child process** with a timeout and an address-space limit, never a thread. |
 | D7 | Broker `NOPERM` and `OOM` are **transient**; a reclaim **re-runs** the extraction (no dedupe key). |
@@ -202,8 +208,8 @@ adapters later, selected by `command.processor` + spec); its bucket; draining
 
 **Does not own:** spec authoring (issuer), interpretation (issuers), fetching
 bytes (Replicator), change detection and diffing (Watcher), the durable registry
-(Archiver), what readers do with its output. Watcher, Archiver and Provisioner
-each read `blobs/` with their own `objectViewer` (Section 2).
+(Archiver), what readers do with its output. Archiver and Provisioner each read
+`blobs/` with their own `objectViewer` (Section 2).
 
 **v1:** Watcher's text extraction — #629's requirements 1–7 as amended here.
 **Later, each its own spec:** agenda adapters; Observo as an issuer; migrating
@@ -238,14 +244,15 @@ processor-version pin on the command; no job API — the bus is the interface.
 | `co-gcs-processor-writer` | `gs://co-gcs-processor` | `objectCreator` + `objectViewer`; **no delete** — append-only, never deleted |
 | `co-gcs-processor-writer` | `gs://co-gcs-blobs` | `objectViewer` (Replicator's raw blobs — the input) |
 | Status tenant `co-processor` (production key, `/etc/processor/status-checkin.key`) | Status monitors `co-processor-drift` and `co-processor-live` | check-in only (`POST /api/v1/monitors/{id}/checkin`); Status's operator owns the monitors and their channels (CannObserv/status#24, #35, #39) |
-| Watcher's service account, `co-gcs-blob-reader` (its `GCS_BLOB_CREDENTIALS`; confirmed on watcher#325, granted 2026-10-02) | `gs://co-gcs-processor` | `objectViewer`, bucket-level |
 | Archiver's `archiver-processor-text-reader@co-gcs.iam.gserviceaccount.com` (its notification composer: a size check, a ranged read and a hash check of `blobs/<sha256>.bin`; CannObserv/archiver#367 D4). No binding on `gs://co-gcs-blobs`, read 2026-10-31 | `gs://co-gcs-processor` | `objectViewer`, bucket-level |
 | Provisioner's `co-gcs-provisioner-reader@co-gcs.iam.gserviceaccount.com` (`provisioner-consumer`, by `LoadCredential=`: the current text by `extracted_fingerprint`; CannObserv/provisioner's spec D6). Bound since Provisioner's go-live, recorded here 2026-10-31 (processor#106) | `gs://co-gcs-processor` | `objectViewer`, bucket-level |
 
 The GCP rows match the buckets' IAM policies as the operator read them on
 2026-10-31 (`gs://co-gcs-processor` etag `CAY=`, `gs://co-gcs-blobs` etag
-`CAk=`; processor#106). `gs://co-gcs-processor` also carries the defaults GCS
-gives a new bucket, for project `co-gcs`: Owner and Editor hold
+`CAk=`; processor#106), less Watcher's `co-gcs-blob-reader` binding, removed
+2026-11-15 (read back on CannObserv/watcher#420, no etag recorded).
+`gs://co-gcs-processor` also carries the defaults GCS gives a new bucket, for
+project `co-gcs`: Owner and Editor hold
 `legacyBucketOwner` and `legacyObjectOwner`, Viewer holds `legacyBucketReader`
 and `legacyObjectReader`. So anyone with Viewer on `co-gcs` can read our objects.
 
@@ -257,11 +264,10 @@ and the broker widens grants live.
 
 Bucket: uniform bucket-level access, public access prevention, no lifecycle
 rules, key scheme `blobs/<sha256>.bin` (co-core's cohort scheme,
-`DEFAULT_PREFIX = "blobs"`). Every reader's grant is bucket-level, so Watcher,
-Archiver and Provisioner read every prefix, and all three read `blobs/` today. A
-later processor whose output any of them must not read gets its own prefix then,
-and the split names, for each of the three, whether its grant narrows to
-`blobs/`.
+`DEFAULT_PREFIX = "blobs"`). Every reader's grant is bucket-level, so Archiver
+and Provisioner read every prefix, and both read `blobs/` today. A later
+processor whose output either must not read gets its own prefix then, and the
+split names, for each of the two, whether its grant narrows to `blobs/`.
 
 ## Section 3 — runtime and code structure
 
