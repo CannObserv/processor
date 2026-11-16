@@ -916,22 +916,21 @@ async def test_a_backoff_is_progress_and_says_so(bus, stores, monkeypatch) -> No
 RECOVERED = "consumer loop recovered"
 
 
-async def run_scripted(consumer: Consumer, script: str, *, stop_after: int | None = None) -> None:
+async def run_scripted(consumer: Consumer, script: str) -> None:
     """Run ``consumer`` over a scripted ``step``: ``F`` raises, ``S`` steps for real.
 
-    The loop stops once the script is spent, or after ``stop_after`` steps: a stop
-    during the backoff that follows that step's failure.
+    The stop is set on the script's last step, so a script ending in ``F`` stops the
+    loop during that failure's backoff.
     """
     real_step = consumer.step
     calls = itertools.count()
     stop = asyncio.Event()
-    last = len(script) if stop_after is None else stop_after
 
     async def step() -> None:
         n = next(calls)
-        if n + 1 >= last:
+        if n == len(script) - 1:
             stop.set()
-        if n < len(script) and script[n] == "F":
+        if script[n] == "F":
             raise RedisConnectionError("broker gone")
         await real_step()
 
@@ -979,7 +978,7 @@ async def test_a_stop_during_a_backoff_logs_no_recovery(bus, stores, monkeypatch
     # The loop never came back: the stop ends it inside the backoff.
     monkeypatch.setattr(consumer_module, "_BACKOFF_START_S", 0.01)
     caplog.set_level(logging.INFO, logger="processor.consumer")
-    await run_scripted(make_consumer(bus, stores), "SFF", stop_after=3)
+    await run_scripted(make_consumer(bus, stores), "SFF")
     assert recoveries(caplog) == []
 
 
