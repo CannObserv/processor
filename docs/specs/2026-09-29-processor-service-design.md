@@ -159,6 +159,13 @@ on `co-processor`.
 - opentelemetry-api 1.45.1 → 1.45.2 (1 advisory) is a floor only: it isn't in the
   stack.
 
+**Amended 2026-11-16 (the consume loop logs its recovery, processor#134):**
+- The first good step after a run of failed steps logs one INFO `consumer loop
+  recovered` with `after_failures` (the run's length), so the journal shows when
+  the loop came back, not only when failures stopped. None follows a stop during
+  a backoff. A log record only: no change to backoff, liveness or the wire
+  (Section 3, Health).
+
 ---
 
 ## Why a new service
@@ -397,7 +404,9 @@ wedge. The heartbeat checks in `ok` to `co-processor-live` every
 read_block_ms`, the reclaim's own bound for a dead command plus one read.
 Otherwise it stays silent:
 - an idle queue still turns the loop, so it never reads as an outage;
-- a broker outage backs off and counts as alive;
+- a broker outage backs off and counts as alive. Its end is logged: the first
+  good step after it logs `consumer loop recovered` with `after_failures`
+  (amended 2026-11-16, #134);
 - a wedged loop goes silent while the process stays up.
 
 The check-in is blocking `requests`, so it runs in a daemon thread, not the

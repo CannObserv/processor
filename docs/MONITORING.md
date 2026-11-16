@@ -97,7 +97,7 @@ Installed before the deploy that brings the timer, the timer's first run (at the
 - the key is missing or wrong, so the check-ins fail;
 - `co-processor` is down, the tailnet path to `status` is gone, or Status refuses.
 
-It never means the queue is empty. A broker outage isn't it either: that backs off, which counts as consuming, and the variables say `backing_off: true`. To find out which:
+It never means the queue is empty. A broker outage isn't it either: that backs off, which counts as consuming, and the variables say `backing_off: true`. The journal shows its end: one `consumer loop recovered`, with `after_failures` (#134). To find out which:
 
 ```bash
 systemctl status processor

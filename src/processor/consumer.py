@@ -23,7 +23,9 @@ max-deliveries hook, no loop (spec Open Question 2) — so the loop is here:
   the command never runs again in this process, so no success follows its failure
   fact.
 - ``run``: ``step`` until stopped, backing off on any exception (connection loss,
-  ``NOPERM``, ``OOM``), never exiting on one. A stop also ends a reclaim between
+  ``NOPERM``, ``OOM``), never exiting on one. The first good step after a run of
+  failures logs ``consumer loop recovered`` with ``after_failures`` (#134); a stop
+  during the backoff logs none. A stop also ends a reclaim between
   messages: the in-flight command finishes, and the rest of a backlog stays pending
   for the next process rather than outlasting the unit's ``TimeoutStopSec``.
 - ``last_progress``: stamped after every step, backoff included, and every message,
@@ -127,6 +129,7 @@ class Consumer:
         """Consume until ``stop`` is set; the current message always finishes."""
         self._stop = stop
         backoff = _BACKOFF_START_S
+        failures = 0  # failed steps in a row: the run the next good step ends (#134)
         started = False
         self.last_progress = time.monotonic()
         while not stop.is_set():
@@ -136,10 +139,14 @@ class Consumer:
                     started = True
                     logger.info("consuming", extra={"group": GROUP, "stream": CONTENT_PROCESS})
                 await self.step()
+                if failures:
+                    logger.info("consumer loop recovered", extra={"after_failures": failures})
+                    failures = 0
                 backoff = _BACKOFF_START_S
                 self.backing_off = False
                 self.last_progress = time.monotonic()
             except Exception as exc:
+                failures += 1
                 self.backing_off = True
                 self.last_progress = time.monotonic()
                 log = logger.warning if is_transient(exc) else logger.exception

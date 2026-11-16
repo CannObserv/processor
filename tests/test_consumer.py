@@ -356,7 +356,7 @@ async def test_a_broker_name_that_does_not_resolve_yet_is_retried(
 
     monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
     monkeypatch.setattr(consumer_module, "_BACKOFF_START_S", 0.01)
-    caplog.set_level(logging.WARNING, logger="processor.consumer")
+    caplog.set_level(logging.INFO, logger="processor.consumer")
     # `bus` holds the ACL user and its denial check; this client reaches it by name.
     client = redis_client(f"redis://{USER}:{PASSWORD}@{host}:6379/{DB}", read_block_ms=100)
     consumer = make_consumer(client, stores)
@@ -364,7 +364,8 @@ async def test_a_broker_name_that_does_not_resolve_yet_is_retried(
     task = asyncio.create_task(consumer.run(stop))
     try:
         async with asyncio.timeout(10):  # no pytest-timeout: a loop that never starts fails
-            while not await admin.exists(CONTENT_PROCESS):
+            # The group, then a good step: the step that ends the failure run.
+            while not (await admin.exists(CONTENT_PROCESS) and consumer.backing_off is False):
                 assert not task.done(), "the loop exited on an unresolved name"
                 await asyncio.sleep(0.01)
     finally:
@@ -376,6 +377,11 @@ async def test_a_broker_name_that_does_not_resolve_yet_is_retried(
     assert len(retries) == 2
     # Logged as a broker fault (a warning), not as a bug with its traceback.
     assert {r.levelno for r in retries} == {logging.WARNING}
+    # The boot path: the group, then the first good step ends the run (#134).
+    messages = [r.getMessage() for r in caplog.records]
+    [recovered] = [r for r in caplog.records if r.getMessage() == "consumer loop recovered"]
+    assert recovered.after_failures == 2
+    assert messages.index("consuming") < messages.index("consumer loop recovered")
 
 
 async def test_stop_during_a_reclaim_finishes_only_the_in_flight_command(
@@ -905,6 +911,76 @@ async def test_a_backoff_is_progress_and_says_so(bus, stores, monkeypatch) -> No
     times, backing_off = zip(*stamps, strict=True)
     assert list(times) == sorted(times) and times[3] > times[1]
     assert backing_off[:5] == (False, True, True, True, False)
+
+
+RECOVERED = "consumer loop recovered"
+
+
+async def run_scripted(consumer: Consumer, script: str, *, stop_after: int | None = None) -> None:
+    """Run ``consumer`` over a scripted ``step``: ``F`` raises, ``S`` steps for real.
+
+    The loop stops once the script is spent, or after ``stop_after`` steps: a stop
+    during the backoff that follows that step's failure.
+    """
+    real_step = consumer.step
+    calls = itertools.count()
+    stop = asyncio.Event()
+    last = len(script) if stop_after is None else stop_after
+
+    async def step() -> None:
+        n = next(calls)
+        if n + 1 >= last:
+            stop.set()
+        if n < len(script) and script[n] == "F":
+            raise RedisConnectionError("broker gone")
+        await real_step()
+
+    consumer.step = step
+    await asyncio.wait_for(consumer.run(stop), timeout=5)
+
+
+def recoveries(caplog) -> list[logging.LogRecord]:
+    """The loop's recovery records (#134)."""
+    return [r for r in caplog.records if r.getMessage() == RECOVERED]
+
+
+async def test_the_first_good_step_after_failures_logs_one_recovery(
+    bus, stores, monkeypatch, caplog
+) -> None:
+    # After a broker outage the journal says the loop came back, with how many
+    # failed steps it took (#134; Replicator's `after_failures`, replicator#193).
+    monkeypatch.setattr(consumer_module, "_BACKOFF_START_S", 0.01)
+    caplog.set_level(logging.INFO, logger="processor.consumer")
+    await run_scripted(make_consumer(bus, stores), "FFFSS")
+    [record] = recoveries(caplog)
+    assert record.levelno == logging.INFO
+    assert record.after_failures == 3
+    # After the run's failures, never inside it.
+    messages = [r.getMessage() for r in caplog.records]
+    assert messages.index(RECOVERED) > max(
+        i for i, m in enumerate(messages) if m == "consumer loop error; backing off"
+    )
+
+
+async def test_each_failure_run_logs_its_own_recovery(bus, stores, monkeypatch, caplog) -> None:
+    monkeypatch.setattr(consumer_module, "_BACKOFF_START_S", 0.01)
+    caplog.set_level(logging.INFO, logger="processor.consumer")
+    await run_scripted(make_consumer(bus, stores), "FFSFS")
+    assert [r.after_failures for r in recoveries(caplog)] == [2, 1]
+
+
+async def test_good_steps_alone_log_no_recovery(bus, stores, caplog) -> None:
+    caplog.set_level(logging.INFO, logger="processor.consumer")
+    await run_scripted(make_consumer(bus, stores), "SSS")
+    assert recoveries(caplog) == []
+
+
+async def test_a_stop_during_a_backoff_logs_no_recovery(bus, stores, monkeypatch, caplog) -> None:
+    # The loop never came back: the stop ends it inside the backoff.
+    monkeypatch.setattr(consumer_module, "_BACKOFF_START_S", 0.01)
+    caplog.set_level(logging.INFO, logger="processor.consumer")
+    await run_scripted(make_consumer(bus, stores), "SFF", stop_after=3)
+    assert recoveries(caplog) == []
 
 
 async def test_each_message_of_a_reclaim_walk_is_progress(admin, bus, stores) -> None:

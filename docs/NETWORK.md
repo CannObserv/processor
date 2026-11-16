@@ -120,14 +120,14 @@ A flap is the tailnet path to `broker` going away for minutes while tailscaled k
 
 - The journal: no entry at all 04:12:53–04:13:26Z (32.7 s, the length of the jump). An idle VM can be that quiet, so this suggests the pause rather than proving it.
 - kernel: `virtio_balloon virtio5: Out of puff! Can't get 1 pages` ×26, 04:13:26–38Z. The host was inflating the balloon, and the guest had no pages to give back. These were the only balloon messages on this boot (since 2026-10-03).
-- `processor`: `consumer loop error; backing off`, `error` `TimeoutError: Timeout reading from broker:6379`, then `Timeout connecting to server` until the path is back (backoff 1, 2, 4 … s).
+- `processor`: `consumer loop error; backing off`, `error` `TimeoutError: Timeout reading from broker:6379`, then `Timeout connecting to server` until the path is back (backoff 1, 2, 4 … s). Since #134 the run ends with one INFO `consumer loop recovered`, `after_failures` the number of WARNINGs.
 - tailscaled:
   - `magicsock: endpoints changed`, with a second STUN address beside the usual one;
   - `LinkChange: major, rebinding … rebind-reason=[time-jumped(33s),ips-changed]`. The wall clock jumped 33 s, which is what a paused VM looks like from inside;
   - `closing connection to derp-10 (rebind-ping-fail)`, then a reconnect;
   - `open-conn-track` timeouts.
 - `processor`: possibly one `liveness check-in failed` (the 10 s bound). The next check-in lands inside the 900 s grace, so nothing pages.
-- Recovery on its own: `NRestarts=0`, and `ack: complete` resumes. A command issued during the gap stays in the stream and is acked once the path is back.
+- Recovery on its own: `NRestarts=0`, `consumer loop recovered` (since #134), and `ack: complete` resumes. A command issued during the gap stays in the stream and is acked once the path is back.
 
 **The cohort saw the same event** (a Mayfly questionnaire, 2026-10-23; synthesis on #67, the broker's timeline on CannObserv/broker#118):
 - co-broker and co-replicator, behind the same egress, each logged the first balloon pressure of their boot (04:13:07Z and 04:13:39Z), then a 31–33 s time jump;
@@ -149,12 +149,13 @@ exe.dev's docs don't describe maintenance, host migration, ballooning or pauses.
 
 ```bash
 journalctl -u processor -p warning -o cat --since <start> | jq -cR 'fromjson? | {timestamp, level, logger, message, error}'
+journalctl -u processor -o cat --since <start> | jq -cR 'fromjson? | select(.message == "consumer loop recovered") | {timestamp, after_failures}'
 journalctl -u tailscaled -o short-iso --since <start> | grep -E 'LinkChange|endpoints changed|rebind-reason|closing connection to derp|open-conn-track'
 journalctl -k -o short-iso --since <start> | grep -E 'Out of puff|balloon'
 systemctl show processor -p NRestarts
 tailscale status
 ```
 
-`-p warning` does the level filter (#76) and `fromjson?` drops systemd's own warning lines; for a window before #76's deploy, every record is `PRIORITY=6`, so drop `-p warning` and filter with `select(.level != "INFO")` instead (DEPLOYMENT.md § Operate → Logs).
+`-p warning` does the level filter (#76) and `fromjson?` drops systemd's own warning lines. The recovery record is INFO, below `-p warning`: the second query reads it. For a window before #76's deploy, every record is `PRIORITY=6`, so drop `-p warning` and filter with `select(.level != "INFO")` instead (DEPLOYMENT.md § Operate → Logs).
 
-Log a flap on the epic as: the window (first WARNING to the first `ack: complete` after it), the counts above, and which kind it was.
+Log a flap on the epic as: the window (first WARNING to `consumer loop recovered`; before #134's deploy, to the first `ack: complete` after it), the counts above, and which kind it was.
