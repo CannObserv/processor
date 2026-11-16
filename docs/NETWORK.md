@@ -120,7 +120,7 @@ A flap is the tailnet path to `broker` going away for minutes while tailscaled k
 
 - The journal: no entry at all 04:12:53–04:13:26Z (32.7 s, the length of the jump). An idle VM can be that quiet, so this suggests the pause rather than proving it.
 - kernel: `virtio_balloon virtio5: Out of puff! Can't get 1 pages` ×26, 04:13:26–38Z. The host was inflating the balloon, and the guest had no pages to give back. These were the only balloon messages on this boot (since 2026-10-03).
-- `processor`: `consumer loop error; backing off`, `error` `TimeoutError: Timeout reading from broker:6379`, then `Timeout connecting to server` until the path is back (backoff 1, 2, 4 … s). Since #134 the run ends with one INFO `consumer loop recovered`, `after_failures` the number of WARNINGs.
+- `processor`: `consumer loop error; backing off`, `error` `TimeoutError: Timeout reading from broker:6379`, then `Timeout connecting to server` until the path is back (backoff 1, 2, 4 … s). Since #134 the run ends with one INFO `consumer loop recovered`, `after_failures` the number of `consumer loop error` records before it.
 - tailscaled:
   - `magicsock: endpoints changed`, with a second STUN address beside the usual one;
   - `LinkChange: major, rebinding … rebind-reason=[time-jumped(33s),ips-changed]`. The wall clock jumped 33 s, which is what a paused VM looks like from inside;
