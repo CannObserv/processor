@@ -118,12 +118,19 @@ co-core-sync = { index = "co-pypi" }
 # pypdf (via co-core[extract]) 6.21.2 fixes 11 advisories on 6.19.0 (loops, runtimes,
 # memory, JPEG) on attacker-reachable PDFs (#71), and 6.21.4 7 more on 6.21.2 (memory and
 # runtime blowups, two infinite loops; #112); opentelemetry-api (via google-api-core)
-# 1.45.1 fixes unbounded tracestate parsing (#71); pyasn1 (via pyasn1-modules, google-auth)
-# 0.6.5 fixes quadratic-time BER/DER decoding (#112). tests/test_lock_floors.py checks them.
+# 1.45.1 fixes unbounded tracestate parsing (#71), 1.45.2 quadratic-time traceparent
+# parsing (#138); pyasn1 (via pyasn1-modules, google-auth) 0.6.5 fixes quadratic-time
+# BER/DER decoding (#112). tests/test_lock_floors.py checks them.
 # pypdf is also extraction stack: moving it bumps LOCAL_GENERATION (tests/test_pin.py).
 constraint-dependencies = [
     "certifi>=2026.10.19",
     "pypdf>=6.21.4",
-    "opentelemetry-api>=1.45.1",
+    "opentelemetry-api>=1.45.2",
     "pyasn1>=0.6.5",
 ]
+# soupsieve (via co-core[extract] and bs4) 4.1 fixes three selector DoS advisories on 2.10
+# (GHSA-mmhr-3c5m-f64f, GHSA-6655-6qjp-jx7x, GHSA-7g44-g9rc-x53w; #138). co-core 0.38.0's
+# extract extra caps it <3 and a constraint only narrows, so this overrides co-core's
+# requirement. Remove it at the co-core bump to >=0.46.1, which declares >=4.1,<5 itself;
+# tests/test_lock_floors.py fails until then. Extraction stack: LOCAL_GENERATION 4.
+override-dependencies = ["soupsieve>=4.1,<5"]
