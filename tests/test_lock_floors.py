@@ -62,12 +62,16 @@ def _uv() -> dict:
     return tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["uv"]
 
 
+def _names(spec: str, name: str) -> bool:
+    # The name ends where a version, extras or marker starts: not at a ``-`` or a letter.
+    return re.match(rf"{re.escape(name)}\s*(?:[<>=!~\[(;]|$)", spec.strip()) is not None
+
+
 def _co_core_spec(name: str) -> str | None:
     # co-core's own ``extract`` requirement on ``name``, as installed, without its marker.
     for req in requires("co-core") or []:
         spec, _, marker = req.partition(";")
-        # The name ends where a version, extras or marker starts: not at a ``-``.
-        if re.match(rf"{re.escape(name)}\s*(?:[<>=!~\[(]|$)", spec) and "extract" in marker:
+        if _names(spec, name) and re.search(r"extra\s*==\s*['\"]extract['\"]", marker):
             return spec.strip()
     return None
 
@@ -92,7 +96,7 @@ def test_pyproject_constrains_the_floor(name: str) -> None:
 @pytest.mark.parametrize("name", sorted(OVERRIDDEN))
 def test_pyproject_overrides_the_floor(name: str) -> None:
     floor = ".".join(map(str, FLOORS[name]))
-    (entry,) = [d for d in _uv().get("override-dependencies", []) if d.startswith(name)]
+    (entry,) = [d for d in _uv().get("override-dependencies", []) if _names(d, name)]
     assert f">={floor}" in entry, entry
     assert name not in " ".join(_uv()["constraint-dependencies"])
 
@@ -113,13 +117,32 @@ def test_co_core_still_needs_the_override(name: str) -> None:
 
 
 def test_the_guard_finds_co_core_s_requirement(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A name that only starts with soupsieve, and soupsieve under another extra: neither counts.
-    others = ["soupsieve-extra>=9.0; extra == 'extract'", "soupsieve>=1; extra == 'x'"]
+    # A name that only starts with soupsieve, and soupsieve under another extra, even
+    # one that only starts with extract: none counts.
+    others = [
+        "soupsieve-extra>=9.0; extra == 'extract'",
+        "soupsieve>=1; extra == 'x'",
+        "soupsieve>=1; extra == 'extraction'",
+    ]
     req = "soupsieve<3,>=2.0; extra == 'extract'"
     monkeypatch.setattr(f"{__name__}.requires", lambda _: [*others, req])
     assert _co_core_spec("soupsieve") == "soupsieve<3,>=2.0"
     monkeypatch.setattr(f"{__name__}.requires", lambda _: others)
     assert _co_core_spec("soupsieve") is None
+
+
+@pytest.mark.parametrize(
+    ("spec", "named"),
+    [
+        ("soupsieve>=4.1,<5", True),
+        ("soupsieve [x] >=4.1", True),
+        ("soupsieve", True),
+        ("soupsieve-extra>=4.1", False),
+        ("soupsieves>=4.1", False),
+    ],
+)
+def test_a_requirement_names_the_package_exactly(spec: str, named: bool) -> None:
+    assert _names(spec, "soupsieve") is named
 
 
 @pytest.mark.parametrize(
