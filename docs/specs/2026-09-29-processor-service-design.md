@@ -149,13 +149,13 @@ on `co-processor`.
   `extract` extra caps it `<3`, so `[tool.uv] override-dependencies` replaces
   that requirement until the co-core bump to ≥ 0.46.1 removes it.
   `LOCAL_GENERATION` 3 → **4**, and facts report `0.38.0+4` (Sections 5 and 7).
-- Results: no fingerprint moved. Two selector shapes now refuse:
+- Results:
   - the goldens and the real corpus held;
   - over 289 HTML files × 34 selector configs, no fingerprint moved;
-  - soupsieve 3.0's strict `:has()` refuses a complex or nested `:has()`
-    (`div:has(p a)`, `div:has(div:has(p))`). A spec with one moves from a fact to
-    a terminal `processing_failed`;
-  - a trailing combinator's refusal reason is reworded.
+  - one selector shape now refuses: soupsieve 3.0's strict `:has()` refuses a
+    complex or nested `:has()` (`div:has(p a)`, `div:has(div:has(p))`). A spec
+    with one moves from a fact to a terminal `processing_failed`;
+  - a trailing combinator's refusal reason is reworded; it was refused before too.
 - opentelemetry-api 1.45.1 → 1.45.2 (1 advisory) is a floor only: it isn't in the
   stack.
 
