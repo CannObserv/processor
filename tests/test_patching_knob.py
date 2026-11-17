@@ -32,6 +32,8 @@ APT = ROOT / "deploy" / "apt"
 HOST = "co-processor"
 #: Prune stages whose review-by date is a soak, not a deadline (pruning.md).
 PRUNE_STAGES = ("disabled:", "removed:")
+#: Each stage line's ``<stage>:<component>`` prefix (pruning.md § The calendar).
+STAGES = ("disabled:", "removed:", "purged:")
 
 
 def _words(raw: str) -> list[str]:
@@ -72,7 +74,8 @@ def _unexpected(knob: dict) -> list[dict]:
 
 
 def _with_line(tmp_path: Path, line: str) -> Path:
-    """The real knob plus one line, so a synthetic exception is read in context."""
+    """The real knob plus one line, so a synthetic exception is read in context. Its
+    ``<what>`` must be one the knob doesn't declare: a keyed line replaces another."""
     knob = tmp_path / "patching-hosts"
     knob.write_text(KNOB.read_text().rstrip("\n") + f"\n{line}\n")
     return knob
@@ -91,7 +94,7 @@ def test_the_knob_reads_clean() -> None:
     assert knob["cadence"]["line"] is not None, "cadence is stated, not defaulted"
 
 
-@pytest.mark.parametrize("what", ["disabled:nginx", "removed:docker"])
+@pytest.mark.parametrize("what", ["disabled:redis", "removed:qdrant"])
 def test_a_prune_soak_ending_stays_green(tmp_path: Path, what: str) -> None:
     """Once a ``disabled:`` or ``removed:`` date passes, the probe reports the
     component again: the prompt for the next stage. CI must not go red on that
@@ -103,7 +106,7 @@ def test_a_prune_soak_ending_stays_green(tmp_path: Path, what: str) -> None:
     assert _unexpected(knob) == []
 
 
-@pytest.mark.parametrize("what", ["purged:nginx", "keep:docker", "not-restarter:x.service"])
+@pytest.mark.parametrize("what", ["purged:ollama", "keep:postgres", "not-restarter:x.service"])
 def test_any_other_expired_exception_stays_red(tmp_path: Path, what: str) -> None:
     """A ``purged:`` line has no next stage: its date is a recheck, and its passing
     is a lapse like any other exception's."""
@@ -134,6 +137,15 @@ def test_no_exception_reason_is_cut_short_by_a_comment() -> None:
             assert " ".join(_words(raw)) == " ".join(raw.split()), (
                 f"' #' opens a comment, cutting this reason short: {raw}"
             )
+
+
+def test_the_dormant_components_are_pruned() -> None:
+    """docker and nginx shipped with the exeuntu image and were never used here:
+    each carries one prune stage, disable -> savepoint -> purge, the owner's 7-day
+    soak (#143). Drift from the image until it stops shipping them."""
+    stages = sorted(words[0] for words in _named("exception") if words[0].startswith(STAGES))
+    assert [stage.split(":", 1)[1] for stage in stages] == ["docker", "nginx"], stages
+    assert not [words for words in _named("exception") if words[0].startswith("keep:")]
 
 
 def test_the_window_is_the_owners() -> None:
