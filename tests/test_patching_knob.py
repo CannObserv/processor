@@ -76,8 +76,11 @@ def _unexpected(knob: dict) -> list[dict]:
 def _with_line(tmp_path: Path, line: str) -> Path:
     """The real knob plus one line, so a synthetic exception is read in context. Its
     ``<what>`` must be one the knob doesn't declare: a keyed line replaces another."""
+    text = KNOB.read_text()
+    # Appended after a ``[host <glob>]`` header, the line would land in its scope.
+    assert not re.search(r"^\s*\[", text, re.M), "the knob has a section: place the line"
     knob = tmp_path / "patching-hosts"
-    knob.write_text(KNOB.read_text().rstrip("\n") + f"\n{line}\n")
+    knob.write_text(text.rstrip("\n") + f"\n{line}\n")
     return knob
 
 
