@@ -143,8 +143,8 @@ def test_the_dormant_components_are_pruned() -> None:
     """docker and nginx shipped with the exeuntu image and were never used here:
     each carries one prune stage, disable -> savepoint -> purge, the owner's 7-day
     soak (#143). Drift from the image until it stops shipping them."""
-    stages = sorted(words[0] for words in _named("exception") if words[0].startswith(STAGES))
-    assert [stage.split(":", 1)[1] for stage in stages] == ["docker", "nginx"], stages
+    stages = [words[0] for words in _named("exception") if words[0].startswith(STAGES)]
+    assert sorted(stage.split(":", 1)[1] for stage in stages) == ["docker", "nginx"], stages
     assert not [words for words in _named("exception") if words[0].startswith("keep:")]
 
 
