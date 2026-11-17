@@ -141,8 +141,9 @@ def test_no_exception_reason_is_cut_short_by_a_comment() -> None:
 
 def test_the_dormant_components_are_pruned() -> None:
     """docker and nginx shipped with the exeuntu image and were never used here:
-    each carries one prune stage, disable -> savepoint -> purge, the owner's 7-day
-    soak (#143). Drift from the image until it stops shipping them."""
+    each carries one prune stage line, ``disabled:`` then ``purged:`` (a savepoint
+    between skips ``removed:``), never ``keep:`` (#143). Drift from the image until
+    it stops shipping them."""
     stages = [words[0] for words in _named("exception") if words[0].startswith(STAGES)]
     assert sorted(stage.split(":", 1)[1] for stage in stages) == ["docker", "nginx"], stages
     assert not [words for words in _named("exception") if words[0].startswith("keep:")]
