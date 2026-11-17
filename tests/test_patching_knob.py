@@ -9,43 +9,55 @@ the submodule (tests/test_skills.py walks it too), so a missing reader fails.
 
 The rest are pure parses of it and of the files it must agree with. Ported from
 CannObserv/broker#67.
+
+**A prune stage's soak ending stays green** (#143, ported from CannObserv/archiver#375):
+a ``disabled:`` or ``removed:`` line's review-by date is its soak, and the reader
+reports its passing as ``soak-ended``, the prompt for the next stage, not a deadline
+for every change's CI. Every other expired exception stays red, a ``purged:`` line's
+``expired-exception`` included (the skill's knob.md and pruning.md, #636).
 """
 
 import json
 import re
 import subprocess
+from datetime import date, timedelta
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 KNOB = ROOT / ".skills" / "patching-hosts"
 READ_KNOB = ROOT / "skills" / "patching-hosts" / "scripts" / "read-knob.sh"
 APT = ROOT / "deploy" / "apt"
 HOST = "co-processor"
+#: Prune stages whose review-by date is a soak, not a deadline (pruning.md).
+PRUNE_STAGES = ("disabled:", "removed:")
+
+
+def _words(raw: str) -> list[str]:
+    """One line's directive words. ``#`` opens a comment at a line's start or after
+    whitespace (the skill's knob.md), so a command keeps a bare ``#``."""
+    words = []
+    for word in raw.split():
+        if word.startswith("#"):
+            break
+        words.append(word)
+    return words
 
 
 def _directives() -> list[list[str]]:
-    """Each directive line's words. ``#`` opens a comment at a line's start or after
-    whitespace (the skill's knob.md), so a command keeps a bare ``#``."""
-    lines = []
-    for raw in KNOB.read_text().splitlines():
-        words = []
-        for word in raw.split():
-            if word.startswith("#"):
-                break
-            words.append(word)
-        if words:
-            lines.append(words)
-    return lines
+    """Each directive line's words."""
+    return [words for raw in KNOB.read_text().splitlines() if (words := _words(raw))]
 
 
 def _named(directive: str) -> list[list[str]]:
     return [words[1:] for words in _directives() if words[0] == directive]
 
 
-def _resolved() -> dict:
+def _resolved(*args: str, knob: Path = KNOB) -> dict:
     assert READ_KNOB.is_file(), f"{READ_KNOB} missing: run `bash .skills/doctor.sh`"
     out = subprocess.run(
-        ["bash", str(READ_KNOB), "--config", str(KNOB), "--host", HOST],
+        ["bash", str(READ_KNOB), "--config", str(knob), "--host", HOST, *args],
         capture_output=True,
         text=True,
         check=True,
@@ -53,14 +65,75 @@ def _resolved() -> dict:
     return json.loads(out)
 
 
+def _unexpected(knob: dict) -> list[dict]:
+    """Every finding but a prune stage's soak ending, which the probe reports."""
+    soaking = {e["line"] for e in knob["exception"] if e["what"].startswith(PRUNE_STAGES)}
+    return [f for f in knob["findings"] if not (f["kind"] == "soak-ended" and f["line"] in soaking)]
+
+
+def _with_line(tmp_path: Path, line: str) -> Path:
+    """The real knob plus one line, so a synthetic exception is read in context."""
+    knob = tmp_path / "patching-hosts"
+    knob.write_text(KNOB.read_text().rstrip("\n") + f"\n{line}\n")
+    return knob
+
+
 def test_the_knob_reads_clean() -> None:
     knob = _resolved()
-    assert knob["findings"] == []
+    assert _unexpected(knob) == []
+    assert not any(
+        e["expired"] for e in knob["exception"] if not e["what"].startswith(PRUNE_STAGES)
+    )
     assert knob["report_only"] is False, knob["report_only_reasons"]
     assert knob["class"]["value"] == "production"
     assert knob["posture"]["value"] == "automatic"
     assert knob["cadence"]["value"] == "weekly"
     assert knob["cadence"]["line"] is not None, "cadence is stated, not defaulted"
+
+
+@pytest.mark.parametrize("what", ["disabled:nginx", "removed:docker"])
+def test_a_prune_soak_ending_stays_green(tmp_path: Path, what: str) -> None:
+    """Once a ``disabled:`` or ``removed:`` date passes, the probe reports the
+    component again: the prompt for the next stage. CI must not go red on that
+    date, for every unrelated change, while the next stage waits its turn."""
+    knob = _resolved(
+        "--today", "2026-11-02", knob=_with_line(tmp_path, f"exception {what} 2026-11-01 soak")
+    )
+    assert [f["kind"] for f in knob["findings"]] == ["soak-ended"]
+    assert _unexpected(knob) == []
+
+
+@pytest.mark.parametrize("what", ["purged:nginx", "keep:docker", "not-restarter:x.service"])
+def test_any_other_expired_exception_stays_red(tmp_path: Path, what: str) -> None:
+    """A ``purged:`` line has no next stage: its date is a recheck, and its passing
+    is a lapse like any other exception's."""
+    knob = _resolved(
+        "--today", "2026-11-02", knob=_with_line(tmp_path, f"exception {what} 2026-11-01 lapse")
+    )
+    assert [f["kind"] for f in _unexpected(knob)] == ["expired-exception"]
+
+
+def test_the_knobs_own_soaks_end_green() -> None:
+    """The day after this knob's last prune soak, it still reads clean."""
+    soaks = [
+        date.fromisoformat(words[1])
+        for words in _named("exception")
+        if words[0].startswith(PRUNE_STAGES)
+    ]
+    if not soaks:
+        pytest.skip("no prune stage declared")
+    knob = _resolved("--today", (max(soaks) + timedelta(days=1)).isoformat())
+    assert _unexpected(knob) == []
+    assert {f["kind"] for f in knob["findings"]} == {"soak-ended"}
+
+
+def test_no_exception_reason_is_cut_short_by_a_comment() -> None:
+    """``#`` after whitespace opens a comment, so it would end a reason early."""
+    for raw in KNOB.read_text().splitlines():
+        if raw.startswith("exception "):
+            assert " ".join(_words(raw)) == " ".join(raw.split()), (
+                f"' #' opens a comment, cutting this reason short: {raw}"
+            )
 
 
 def test_the_window_is_the_owners() -> None:
