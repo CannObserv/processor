@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -305,7 +306,7 @@ async def test_gcs_failures_leave_the_entry_pending(h: Harness, exc, where: str)
     if where == "input":
         h.input_override = FlakyStore(h.input, method="open", exc=exc)
     else:
-        h.output_override = FlakyStore(h.output, method="store", exc=exc)
+        h.output_override = FlakyStore(h.output, method="store_reporting", exc=exc)
     disposition = await h.run(h.message(), attempt=3)  # uncapped: even the last attempt
     assert disposition.action == "leave_pending"
     assert h.publisher.effects == []
@@ -329,10 +330,12 @@ async def test_publish_failure_leaves_pending_and_the_rerun_converges(h: Harness
     assert len(stored) == 1  # the store ran; the reclaim's re-run finds it there
 
     h.publisher.fail = None
-    assert (await h.run(h.message())).action == "ack"
+    rerun = await h.run(h.message())
+    assert rerun.action == "ack"
     (fact,) = h.publisher.facts
     assert fact.empty is False
     assert list(h.output.root.rglob("*.bin")) == stored
+    assert rerun.log_fields["output_created"] is False  # found, not written (#140)
 
 
 async def test_a_non_transient_publish_failure_escapes_to_be_counted(h: Harness) -> None:
@@ -364,7 +367,41 @@ async def test_a_complete_record_names_its_input_and_the_published_output(h: Har
         "output_size_bytes": len(expected.text),
         "empty": False,
         "processor_version": PROCESSOR_VERSION,
+        "output_created": True,  # this call wrote the object (#140)
     }
+
+
+async def test_a_record_for_an_output_already_stored_says_it_was_not_created(
+    h: Harness,
+) -> None:
+    # A re-delivery, or another command whose output is the same text: store_reporting
+    # finds the key taken. A log signal only (#140): exact this way on the local store,
+    # but on GCS a False may be the SDK retrying this call's own create.
+    expected = extract(HTML, "text/html", SPEC)
+    h.output.store(expected.text, bare_sha256(expected.output_digest), CANONICAL_TEXT_MEDIA_TYPE)
+    disposition = await h.run(h.message())
+    assert disposition.action == "ack"
+    assert disposition.log_fields["output_created"] is False
+    (fact,) = h.publisher.facts
+    assert fact.output_uri == h.output.uri_for(bare_sha256(expected.output_digest))
+
+
+async def test_no_record_field_shadows_a_log_record_attribute(h: Harness) -> None:
+    # The consumer logs these as ``extra``, and logging raises KeyError on a name the
+    # LogRecord already has: ``created`` is its timestamp, hence ``output_created`` (#140).
+    reserved = set(vars(logging.LogRecord("x", logging.INFO, "x", 0, "", (), None)))
+    reserved |= {"message", "asctime"}
+    disposition = await h.run(h.message())
+    assert disposition.reason == "complete"
+    assert not reserved & disposition.log_fields.keys()
+
+
+async def test_the_handler_stores_through_the_reporting_twin(h: Harness) -> None:
+    # Plain store is store_reporting(...).uri; calling both would write twice over, and
+    # a FlakyStore that injects on store would no longer reach the handler (#140).
+    h.output_override = FlakyStore(h.output, method="store", exc=AssertionError("plain store"))
+    disposition = await h.run(h.message())
+    assert (disposition.action, disposition.reason) == ("ack", "complete")
 
 
 async def test_an_empty_record_has_no_output_digest(h: Harness) -> None:
@@ -410,6 +447,7 @@ async def test_a_publish_failure_record_names_the_stored_output(h: Harness) -> N
     assert disposition.action == "leave_pending"
     assert disposition.log_fields["output_digest"] == extract(HTML, "text/html", SPEC).output_digest
     assert disposition.log_fields["input_digest"] == hashlib.sha256(HTML).hexdigest()
+    assert disposition.log_fields["output_created"] is True
 
 
 # --- the consumer's cap (#17) -----------------------------------------------------------

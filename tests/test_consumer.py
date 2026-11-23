@@ -216,6 +216,7 @@ async def test_a_complete_record_names_what_it_read_and_published(
     assert logged["output_size_bytes"] == len(expected.text)
     assert logged["empty"] is False
     assert logged["processor_version"] == PROCESSOR_VERSION
+    assert logged["output_created"] is True  # store_reporting (#140)
 
 
 async def test_an_undecodable_frame_is_dead_lettered(admin, bus, stores) -> None:

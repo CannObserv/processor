@@ -166,6 +166,11 @@ on `co-processor`.
   a backoff. A log record only: no change to backoff, liveness or the wire
   (Section 3, Health).
 
+**Amended 2026-11-23 (co-core 0.51.1, processor#140):**
+- The output store is written through co-core's `store_reporting`
+  (cannobserv#530, v0.41.0). The outcome record of a stored output logs
+  `output_created` as a log signal only (Section 4).
+
 ---
 
 ## Why a new service
@@ -531,8 +536,14 @@ above. Elsewhere (a terminal, `systemd-run --pipe`) there is no prefix
   `invalid_input` detail quotes it.
   Once a complete fact exists, it adds `output_digest` (absent when `empty`),
   `output_size_bytes`, `empty` and `processor_version`, taken from that fact (#26).
-  Whether the store wrote a new object is not logged: co-core's write-if-absent
-  swallows the 412.
+  A stored output also logs `output_created`: whether this call created the
+  object, from co-core's `store_reporting` (cannobserv#530, #140; not `created`,
+  a `LogRecord` attribute). It's a log signal, never a branch, because each
+  backend is exact one way only. A GCS `true` is exact, but a `false` may be
+  the SDK retrying this call's own create into the 412. A local `false` is
+  exact, but a `true` may be a race. An empty output stores nothing and logs
+  no `output_created`. *Amended 2026-11-23 (processor#140). Until then the
+  write wasn't logged, because co-core's write-if-absent swallowed the 412.*
 
 These answer the two points broker#62 left for the consumer to state: `NOPERM`
 is transient, and under `maxmemory` a refused `XADD` is transient, with the

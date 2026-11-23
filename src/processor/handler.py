@@ -20,6 +20,11 @@ A download that fails its checksum (``DataCorruption``) is ``input_unreadable``.
 
 Order is store → publish → ack. A publish failure after a store leaves the entry
 pending; the re-run finds the object already stored (write-if-absent) and publishes.
+The store goes through ``store_reporting`` (cannobserv#530, #140), and the outcome
+record says whether this call created the object (``output_created``; not
+``created``, which is a ``LogRecord`` attribute). A log signal, never a
+branch: each backend is exact one way only (GCS's ``True``, the filesystem's
+``False``).
 """
 
 import asyncio
@@ -68,7 +73,8 @@ class Disposition:
     timings: dict[str, float] = field(default_factory=dict)
     # What the command read and published, in wire form (#26): ``input_digest`` once
     # valid; from a complete fact, ``output_digest`` (absent when empty),
-    # ``output_size_bytes``, ``empty`` and ``processor_version``.
+    # ``output_size_bytes``, ``empty`` and ``processor_version``; and from the store,
+    # ``output_created`` (absent when empty: nothing stored; #140).
     log_fields: dict[str, object] = field(default_factory=dict)
 
 
@@ -126,8 +132,9 @@ async def handle(message: BusMessage, *, attempt: int, deps: Deps) -> Dispositio
     timer = _Timer()
     ids = {"command_id": command.command_id, "info_source_id": command.info_source_id}
     log_fields = input_log_fields(command)
+    created = None
     try:
-        fact = await _derive(command, deps, timer)
+        fact, created = await _derive(command, deps, timer)
     except _Terminal as exc:
         fact = _failed(command, deps, exc.reason, exc.detail)
     except Exception as exc:
@@ -148,7 +155,7 @@ async def handle(message: BusMessage, *, attempt: int, deps: Deps) -> Dispositio
         fact = _failed(command, deps, "extraction_error", f"gave up on attempt {attempt}: {detail}")
 
     if isinstance(fact, ProcessingCompleteEmit):
-        log_fields = {**log_fields, **_output_log_fields(fact)}
+        log_fields = {**log_fields, **_output_log_fields(fact, created)}
 
     since = time.monotonic()
     try:
@@ -188,19 +195,26 @@ def input_log_fields(command: ContentProcessCommand) -> dict[str, str]:
         return {}
 
 
-def _output_log_fields(fact: ProcessingCompleteEmit) -> dict[str, object]:
-    # From the fact, so the record says what was published. An empty one has no digest.
+def _output_log_fields(fact: ProcessingCompleteEmit, created: bool | None) -> dict[str, object]:
+    # From the fact, so the record says what was published. An empty one has no digest,
+    # and stored nothing, so no ``output_created`` either.
     digest = {} if fact.output_digest is None else {"output_digest": fact.output_digest}
-    return digest | {
-        "output_size_bytes": fact.output_size_bytes,
-        "empty": fact.empty,
-        "processor_version": fact.processor_version,
-    }
+    stored = {} if created is None else {"output_created": created}
+    return (
+        digest
+        | {
+            "output_size_bytes": fact.output_size_bytes,
+            "empty": fact.empty,
+            "processor_version": fact.processor_version,
+        }
+        | stored
+    )
 
 
 async def _derive(
     command: ContentProcessCommand, deps: Deps, timer: _Timer
-) -> ProcessingCompleteEmit:
+) -> tuple[ProcessingCompleteEmit, bool | None]:
+    # The fact, and whether the store created its output (None: empty, nothing stored).
     transform = TRANSFORMS.get(command.processor)
     if transform is None:
         raise _Terminal("unsupported_processor", f"no transform named {command.processor!r}")
@@ -224,17 +238,18 @@ async def _derive(
     if not isinstance(outcome, ExtractOutcome):
         raise _Strike(f"child returned {type(outcome).__name__}, not ExtractOutcome")
 
-    output_uri = None
+    output_uri = created = None
     if not outcome.empty:
-        output_uri = await asyncio.to_thread(
-            deps.stores.output.store,
+        stored = await asyncio.to_thread(
+            deps.stores.output.store_reporting,
             outcome.text,
             bare_sha256(outcome.output_digest),
             CANONICAL_TEXT_MEDIA_TYPE,
         )
+        output_uri, created = stored.uri, stored.created
     timer.lap("store_ms", since)
 
-    return ProcessingCompleteEmit(
+    fact = ProcessingCompleteEmit(
         occurred_at=deps.clock(),
         command_id=command.command_id,
         info_source_id=command.info_source_id,
@@ -247,6 +262,7 @@ async def _derive(
         spec_schema_version=outcome.spec_schema_version,
         processor_version=outcome.processor_version,
     )
+    return fact, created
 
 
 async def _read_input(command: ContentProcessCommand, deps: Deps, timer: _Timer) -> bytes:
