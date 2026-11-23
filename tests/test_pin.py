@@ -26,7 +26,7 @@ import pytest
 
 from processor.processors.extract import LOCAL_GENERATION, PROCESSOR_VERSION
 
-EXPECTED = "0.38.0"
+EXPECTED = "0.51.1"
 ROOT = Path(__file__).resolve().parent.parent
 PINNED = ("co-core", "co-core-aio", "co-core-sync")
 SRC = ROOT / "src" / "processor"
@@ -35,7 +35,8 @@ RESOLVERS = frozenset({"resolve_dispatch_essence", "extension_media_type"})
 GENERATION = 4
 # The transitive closure of co-core's ``extract`` extra in uv.lock: what turns bytes
 # into text beside co-core itself. Moved together with GENERATION (#71: pypdf 6.21.2;
-# #112: pypdf 6.21.4; #138: soupsieve 4.1.1, by override past co-core's cap).
+# #112: pypdf 6.21.4; #138: soupsieve 4.1.1, by override past co-core's cap; #140:
+# soupsieve 4.1.3 with co-core 0.51.1, which floors it at 4.1 itself).
 EXTRACTION_STACK = {
     "beautifulsoup4": "4.15.0",
     "et-xmlfile": "2.0.0",
@@ -45,7 +46,7 @@ EXTRACTION_STACK = {
     "pypdf": "6.21.4",
     "python-jsonpath": "2.2.2",
     "six": "1.17.0",
-    "soupsieve": "4.1.1",
+    "soupsieve": "4.1.3",
     "typing-extensions": "4.16.0",
     "webencodings": "0.6.1",
 }

@@ -13,7 +13,6 @@ constraints = [
     { name = "pyasn1", specifier = ">=0.6.5" },
     { name = "pypdf", specifier = ">=6.21.4" },
 ]
-overrides = [{ name = "soupsieve", specifier = ">=4.1,<5" }]
 
 [[package]]
 name = "annotated-types"
@@ -277,15 +276,15 @@ wheels = [
 
 [[package]]
 name = "co-core"
-version = "0.38.0"
+version = "0.51.1"
 source = { registry = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" }
 dependencies = [
     { name = "dateparser" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core/co_core-0.38.0.tar.gz", hash = "sha256:2ec3cbc6f020792d24b3baff92724567c4eb74102b80e3ed47b54dc3ec39cf29" }
+sdist = { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core/co_core-0.51.1.tar.gz", hash = "sha256:0ea6e42d708d458eb7fdcca4494f132f5451a843d25a806b36d96f649e78764d" }
 wheels = [
-    { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core/co_core-0.38.0-py3-none-any.whl", hash = "sha256:44a62404f645de685c6260e087311d3e2cf0cf6074e9a9cfc2d6cf35b3c566f9" },
+    { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core/co_core-0.51.1-py3-none-any.whl", hash = "sha256:cad8632b11ecfd8810cfaafd1f2041934d17edbc30d3ccc08c24f5a40a4bd087" },
 ]
 
 [package.optional-dependencies]
@@ -301,15 +300,15 @@ extract = [
 
 [[package]]
 name = "co-core-aio"
-version = "0.38.0"
+version = "0.51.1"
 source = { registry = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" }
 dependencies = [
     { name = "co-core" },
     { name = "httpx" },
 ]
-sdist = { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core-aio/co_core_aio-0.38.0.tar.gz", hash = "sha256:682de39ea8df87d24e1d02c330375c8bf7e9785ea6bd931964bd4e2ef26c82b1" }
+sdist = { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core-aio/co_core_aio-0.51.1.tar.gz", hash = "sha256:881fce7ea6e5648a4092f3732776f147ca0abfe51bdd4ab47a5e97bb08ac4554" }
 wheels = [
-    { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core-aio/co_core_aio-0.38.0-py3-none-any.whl", hash = "sha256:aac71c6f5e8d34e5a9aff856ce0f1c40898b41561ad399df908896ece718aef1" },
+    { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core-aio/co_core_aio-0.51.1-py3-none-any.whl", hash = "sha256:4835d85f72659cfda2e603de88ad4035875473d09b0afccb9ad386e7da23ce12" },
 ]
 
 [package.optional-dependencies]
@@ -319,16 +318,16 @@ bus = [
 
 [[package]]
 name = "co-core-sync"
-version = "0.38.0"
+version = "0.51.1"
 source = { registry = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" }
 dependencies = [
     { name = "co-core" },
     { name = "requests" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core-sync/co_core_sync-0.38.0.tar.gz", hash = "sha256:0cfb6c4b1ae16c0217c42de6f070dbea79b2ce9a20140d251fd6b3a73c7c7e14" }
+sdist = { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core-sync/co_core_sync-0.51.1.tar.gz", hash = "sha256:1485be9960fc9940d2a8f455a9fde5761d24d51a15cc1b598886780706d4b8fc" }
 wheels = [
-    { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core-sync/co_core_sync-0.38.0-py3-none-any.whl", hash = "sha256:f69d84215d6df4d92b261eed5b11d69a9d4c95a1ce659d362b825d094f5072f4" },
+    { url = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/co-core-sync/co_core_sync-0.51.1-py3-none-any.whl", hash = "sha256:a93fcc9c76b5dddf6adca5f59ba15de08a93c66c3e909a8c3e62b8518c288019" },
 ]
 
 [package.optional-dependencies]
@@ -894,9 +893,9 @@ lint = [
 
 [package.metadata]
 requires-dist = [
-    { name = "co-core", extras = ["extract"], specifier = "==0.38.0", index = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" },
-    { name = "co-core-aio", extras = ["bus"], specifier = "==0.38.0", index = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" },
-    { name = "co-core-sync", extras = ["gcs"], specifier = "==0.38.0", index = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" },
+    { name = "co-core", extras = ["extract"], specifier = "==0.51.1", index = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" },
+    { name = "co-core-aio", extras = ["bus"], specifier = "==0.51.1", index = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" },
+    { name = "co-core-sync", extras = ["gcs"], specifier = "==0.51.1", index = "https://us-west1-python.pkg.dev/co-gcs/co-pypi/simple/" },
     { name = "google-api-core", specifier = ">=2.27,<3" },
     { name = "google-auth", specifier = ">=2,<3" },
     { name = "google-cloud-storage", specifier = ">=3,<4" },
@@ -1406,11 +1405,11 @@ wheels = [
 
 [[package]]
 name = "soupsieve"
-version = "4.1.1"
+version = "4.1.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/1f/52/ee5646b65d98a252e807ccc37725363942372a4113072e0bce7ed22f8b84/soupsieve-4.1.1.tar.gz", hash = "sha256:b296bd2d2f65b1a78149f3d7bf6736a147d2c9e2dfbde0e4404639d748a02e03", size = 169784, upload-time = "2026-11-14T17:23:32.467Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/77/d59ca6aa338bdd8d880234d15b7c466cb176e44502899a9df81ba2e13cd0/soupsieve-4.1.3.tar.gz", hash = "sha256:13f70186c8f40bf8d0ff7bbab09a18fb149600b465269207b5e5b588f55fda08", size = 181564, upload-time = "2026-11-20T12:58:27.613Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cd/65/7fae69a095696195334a934eab23aeb12e2715e6c3f08025d2f91942750e/soupsieve-4.1.1-py3-none-any.whl", hash = "sha256:8ff3422dab0b720fb667ee79864d80531a0e57994a13eb701697719ffcb751f6", size = 55089, upload-time = "2026-11-14T17:23:31.001Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/f7/be207468cac6ad79389f36cf1fce4f2836960df91659979ec486c727bb2e/soupsieve-4.1.3-py3-none-any.whl", hash = "sha256:7a390d1a57d1ab7bb228531e9b8a750a5ebf87db774e0ef6faeeac057d22a5bf", size = 59792, upload-time = "2026-11-20T12:58:26.459Z" },
 ]
 
 [[package]]

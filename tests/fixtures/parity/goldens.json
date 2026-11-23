@@ -1,5 +1,5 @@
 {
-  "co_core": "0.38.0",
+  "co_core": "0.51.1",
   "generated_by": "scripts/gen_parity_goldens.py (co-core's pure extract API, direct; #47)",
   "goldens": {
     "csv": {
@@ -14,6 +14,12 @@
       "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
       "spec_schema_version": 1
     },
+    "feed_atom_include_description": {
+      "content_fingerprint": "sha256:b06b4586789b168c2538ead939c76f01ffa1e420c41891baa725147028811ba6",
+      "content_size_bytes": 214,
+      "spec_fingerprint": "spec1:sha256:86f75c92d51a42f3d8eced4b7ac0c0dafc1426f930af508f9eb12350f0d30159",
+      "spec_schema_version": 1
+    },
     "feed_no_items": {
       "content_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "content_size_bytes": 0,
@@ -24,6 +30,18 @@
       "content_fingerprint": "sha256:78e284978faf41fbe8ccd8dc06e6d2803d9788097fca633486dfbbbdc024be09",
       "content_size_bytes": 422,
       "spec_fingerprint": "spec1:sha256:71ec7a46fe3cd2c105ad4029e31f1fdbe3fdffc17ab976167e793143957c9a60",
+      "spec_schema_version": 1
+    },
+    "feed_rss_include_description": {
+      "content_fingerprint": "sha256:bf73076cfcf38403036679e1aeb331fe991f9a7b6d188ff01fb27d57e5288944",
+      "content_size_bytes": 5579,
+      "spec_fingerprint": "spec1:sha256:be56040cb09489b8e0e44d034853001acc47520915320a687abb9db1493bde53",
+      "spec_schema_version": 1
+    },
+    "feed_rss_include_description_false": {
+      "content_fingerprint": "sha256:78e284978faf41fbe8ccd8dc06e6d2803d9788097fca633486dfbbbdc024be09",
+      "content_size_bytes": 422,
+      "spec_fingerprint": "spec1:sha256:faa689914d2ac79b3847b2f51db6b78e7991d4935725cd5b37a701ffeee9e3e2",
       "spec_schema_version": 1
     },
     "feed_rss_rss_essence": {
@@ -126,6 +144,18 @@
       "refused": "UnsupportedExtractionError"
     },
     "refused_empty_xpath": {
+      "refused": "UnsupportedExtractionError"
+    },
+    "refused_include_description_not_bool": {
+      "refused": "UnsupportedExtractionError"
+    },
+    "refused_include_description_on_css": {
+      "refused": "UnsupportedExtractionError"
+    },
+    "refused_include_description_on_html": {
+      "refused": "UnsupportedExtractionError"
+    },
+    "refused_include_description_on_non_feed_xml": {
       "refused": "UnsupportedExtractionError"
     },
     "refused_invalid_xpath": {

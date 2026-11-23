@@ -8,9 +8,9 @@ dependencies = [
     # Exact, and Processor owns the pin (spec D5, §5). processor_version is
     # "<co-core version>+<LOCAL_GENERATION>", so a bump moves every fact Watcher
     # compares; tests/test_pin.py makes one a deliberate, test-failing act.
-    "co-core[extract]==0.38.0",
-    "co-core-aio[bus]==0.38.0",
-    "co-core-sync[gcs]==0.38.0",
+    "co-core[extract]==0.51.1",
+    "co-core-aio[bus]==0.51.1",
+    "co-core-sync[gcs]==0.51.1",
     # All three come from the co-pypi index alone ([tool.uv.sources]), each declared
     # here: uv binds a source to a direct dependency only (#121).
     "pydantic>=2.12,<3",
@@ -122,16 +122,11 @@ co-core-sync = { index = "co-pypi" }
 # parsing (#138); pyasn1 (via pyasn1-modules, google-auth) 0.6.5 fixes quadratic-time
 # BER/DER decoding (#112). tests/test_lock_floors.py checks them.
 # pypdf is also extraction stack: moving it bumps LOCAL_GENERATION (tests/test_pin.py).
+# soupsieve's 4.1 floor (#138) needs no entry: co-core 0.51.1's extract extra declares
+# >=4.1,<5 itself, and tests/test_lock_floors.py holds it there (#140).
 constraint-dependencies = [
     "certifi>=2026.10.19",
     "pypdf>=6.21.4",
     "opentelemetry-api>=1.45.2",
     "pyasn1>=0.6.5",
 ]
-# soupsieve (via co-core[extract] and bs4) 4.1 fixes three selector DoS advisories on 2.10
-# (GHSA-mmhr-3c5m-f64f, GHSA-6655-6qjp-jx7x, GHSA-7g44-g9rc-x53w; #138). co-core 0.38.0's
-# extract extra caps it <3 and a constraint only narrows, so this overrides co-core's
-# requirement. Remove it at the co-core bump to >=0.46.1, which declares >=4.1,<5 itself:
-# tests/test_lock_floors.py fails once co-core's own requirement admits >=4.1, the cue.
-# Extraction stack: LOCAL_GENERATION 4.
-override-dependencies = ["soupsieve>=4.1,<5"]
