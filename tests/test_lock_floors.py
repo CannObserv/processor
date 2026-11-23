@@ -108,6 +108,12 @@ def _requirement_name(spec: str) -> str:
     return re.match(r"\s*([A-Za-z0-9._-]+)", spec).group(1).lower()
 
 
+def test_each_floor_is_held_one_way() -> None:
+    # An override and co-core's own floor exclude each other, and each names a floor.
+    assert OVERRIDDEN <= FLOORS.keys() and CO_CORE_FLOORED <= FLOORS.keys()
+    assert OVERRIDDEN.isdisjoint(CO_CORE_FLOORED)
+
+
 @pytest.mark.parametrize("name", sorted(FLOORS.keys() - OVERRIDDEN - CO_CORE_FLOORED))
 def test_pyproject_constrains_the_floor(name: str) -> None:
     floor = ".".join(map(str, FLOORS[name]))
