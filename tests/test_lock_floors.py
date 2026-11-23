@@ -24,6 +24,8 @@ from importlib.metadata import requires, version
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
+from packaging.version import InvalidVersion, Version
 
 ROOT = Path(__file__).resolve().parent.parent
 FLOORS = {
@@ -82,16 +84,35 @@ def _co_core_spec(name: str) -> str | None:
     return None
 
 
-def _pad(v: tuple[int, ...]) -> tuple[int, ...]:
-    # So 4.1.0 and 4.1 compare equal.
-    return v + (0,) * (4 - len(v))
+def _bounds(spec: str) -> list:
+    # (operator, version, specifier) per clause, parsed as PEP 440 (CR 4). Only a plain
+    # release is read: a pre-, dev-, post- or local version, or a wildcard, says nothing
+    # simple about a floor, so it fails loudly rather than reading as a number.
+    out = []
+    for clause in Requirement(spec).specifier:
+        try:
+            v = Version(clause.version)
+        except InvalidVersion:
+            v = None
+        if v is None or v.pre or v.dev is not None or v.post is not None or v.local:
+            raise ValueError(f"{spec}: {clause} isn't a plain release; read it by hand")
+        out.append((clause.operator, v, clause))
+    return out
+
+
+def _version(floor: tuple[int, ...]) -> Version:
+    return Version(".".join(map(str, floor)))
 
 
 def _admits(spec: str, floor: tuple[int, ...]) -> bool:
-    # Whether the requirement allows ``floor`` or later: only an upper bound can refuse it.
-    for op, v in re.findall(r"(<=|<)\s*([\d.]+)", spec):
-        cap = _pad(_parts(v))
-        if cap < _pad(floor) or (op == "<" and cap == _pad(floor)):
+    # Whether the requirement allows ``floor`` or later. A lower bound or an exclusion
+    # never refuses all of them; an upper bound refuses them when it refuses the floor;
+    # ==, === and ~= when they refuse the lowest version they could allow from there.
+    f = _version(floor)
+    for op, v, clause in _bounds(spec):
+        if op in ("<", "<=") and not clause.contains(f):
+            return False
+        if op in ("==", "===", "~=") and not clause.contains(max(f, v)):
             return False
     return True
 
@@ -99,9 +120,8 @@ def _admits(spec: str, floor: tuple[int, ...]) -> bool:
 def _floors(spec: str, floor: tuple[int, ...]) -> bool:
     # Whether the requirement alone refuses everything below ``floor``: a lower bound at
     # or above it. ``>v`` counts only when v is at least the floor (>4.0 admits 4.0.1).
-    return any(
-        _pad(_parts(v)) >= _pad(floor) for _, v in re.findall(r"(>=|==|~=|>)\s*([\d.]+)", spec)
-    )
+    f = _version(floor)
+    return any(op in (">=", ">", "==", "===", "~=") and v >= f for op, v, _ in _bounds(spec))
 
 
 def _requirement_name(spec: str) -> str:
@@ -198,6 +218,11 @@ def test_a_requirement_names_the_package_exactly(spec: str, named: bool) -> None
         ("soupsieve>=4.1,<5", True),  # co-core 0.46.1 to 0.51.1 (#140)
         ("soupsieve>=2.0,<5", True),  # only the cap lifted: a constraint would do
         ("soupsieve<=4.1", True),
+        ("soupsieve==4.0", False),  # pinned below the floor
+        ("soupsieve==4.1.3", True),
+        ("soupsieve~=4.0", True),  # >=4.0,<5
+        ("soupsieve~=4.0.0", False),  # >=4.0.0,<4.1
+        ("soupsieve!=4.1", True),  # 4.1.1 is still allowed
         ("soupsieve>=2.0", True),
         ("soupsieve", True),
     ],
@@ -238,3 +263,15 @@ def test_the_guard_reads_whether_co_core_floors_it(spec: str, floors: bool) -> N
 )
 def test_an_override_s_name_is_its_requirement_s(spec: str, name: str) -> None:
     assert _requirement_name(spec) == name
+
+
+@pytest.mark.parametrize(
+    "spec",
+    ["soupsieve>=4.1rc1", "soupsieve<=4.1rc1", "soupsieve>=4.1.dev0", "soupsieve==4.1.*",
+     "soupsieve<4.1.post1"],
+)  # fmt: skip
+def test_the_guard_refuses_to_guess_at_a_non_plain_version(spec: str) -> None:
+    # As numbers, >=4.1rc1 read as floored at 4.1 and <=4.1rc1 as admitting it (CR 4).
+    for read in (_admits, _floors):
+        with pytest.raises(ValueError, match="read it by hand"):
+            read(spec, (4, 1))
