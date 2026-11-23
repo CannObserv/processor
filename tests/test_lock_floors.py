@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -125,7 +126,7 @@ def _floors(spec: str, floor: tuple[int, ...]) -> bool:
 
 
 def _requirement_name(spec: str) -> str:
-    return re.match(r"\s*([A-Za-z0-9._-]+)", spec).group(1).lower()
+    return canonicalize_name(Requirement(spec).name)
 
 
 def test_each_floor_is_held_one_way() -> None:
@@ -258,7 +259,8 @@ def test_the_guard_reads_whether_co_core_floors_it(spec: str, floors: bool) -> N
         ("soupsieve>=4.1,<5", "soupsieve"),
         ("  SoupSieve [x] >=4.1", "soupsieve"),
         ("opentelemetry-api>=1.45.2", "opentelemetry-api"),
-        ("zope.interface", "zope.interface"),
+        ("opentelemetry_api>=1.45.2", "opentelemetry-api"),  # normalised (CR 5)
+        ("Zope.Interface", "zope-interface"),
     ],
 )
 def test_an_override_s_name_is_its_requirement_s(spec: str, name: str) -> None:
