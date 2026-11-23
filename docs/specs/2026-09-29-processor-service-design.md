@@ -602,9 +602,9 @@ reclaim re-running (not re-publishing) the extraction.
     and py-pdf's sample corpora, 4 of 106 PDFs extracted differently (word
     spacing); the goldens and the real corpus held.
 - **co-core `==0.51.1`** since processor#140 (2026-11-23). Before it, `==0.38.0`
-  since processor#37 (2026-10-20), `==0.37.0` since processor#21 (2026-10-17), and `==0.32.0` since processor#29
-  (2026-10-12), the catch-up jump from
-  0.19.7, the version Watcher's `uv.lock` resolved at the cutover (Watcher's
+  since processor#37 (2026-10-20), `==0.37.0` since processor#21 (2026-10-17),
+  and `==0.32.0` since processor#29 (2026-10-12), the catch-up jump from 0.19.7,
+  the version Watcher's `uv.lock` resolved at the cutover (Watcher's
   `pyproject.toml` allowed `>=0.19.6,<0.20`), so both sides reported `"0.19.7+1"`
   from the first shadow command. Since D5's 2026-10-10 amendment, Watcher's lock
   no longer constrains this pin. Processor needs `GcsBlobStore` (0.19.3+), the
