@@ -177,8 +177,10 @@ on `co-processor`.
   configs, no result moved (Section 5).
 - co-core 0.51.0 maps `extraction.include_description` (cannobserv#559). A
   `true` on `full_page` appends each RSS or Atom item's description to its feed
-  line. Absent or `false`, a spec translates byte-identically, and no existing
-  golden moved. It brings new refusals, each one extracted silently before: a
+  line. Absent or `false`, the extracted text is byte-identical, and no existing
+  golden moved. An explicit `false` still moves `spec_fingerprint`, which hashes
+  the whole spec (the `feed_rss_include_description_false` golden). It brings
+  new refusals, each one extracted silently before: a
   non-bool value; `true` on any algorithm but `full_page`; `true` on an HTML,
   PDF, CSV/Excel or JSON body; `true` on a non-feed XML root (Section 4).
 - The output store is written through co-core's `store_reporting`
