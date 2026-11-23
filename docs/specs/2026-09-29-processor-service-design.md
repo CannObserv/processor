@@ -167,6 +167,20 @@ on `co-processor`.
   (Section 3, Health).
 
 **Amended 2026-11-23 (co-core 0.51.1, processor#140):**
+- The pin moves from 0.38.0 to **0.51.1** for all three packages (Sections 2 and 5).
+  Facts report `0.51.1+4`: the version moved, so `LOCAL_GENERATION` stays 4
+  (Sections 5 and 7). The contract is unchanged, so Watcher gets notice, not
+  coordination (D5).
+- co-core ≥ 0.46.1 declares `soupsieve>=4.1,<5` itself, so #138's
+  `override-dependencies` is removed. soupsieve 4.1.1 → 4.1.3 rides along. That
+  is upstream's further quadratic-time fixes. Over 311 HTML files × 34 selector
+  configs, no result moved (Section 5).
+- co-core 0.51.0 maps `extraction.include_description` (cannobserv#559). A
+  `true` on `full_page` appends each RSS or Atom item's description to its feed
+  line. Absent or `false`, a spec translates byte-identically, and no existing
+  golden moved. It brings new refusals, each one extracted silently before: a
+  non-bool value; `true` on any algorithm but `full_page`; `true` on an HTML,
+  PDF, CSV/Excel or JSON body; `true` on a non-feed XML root (Section 4).
 - The output store is written through co-core's `store_reporting`
   (cannobserv#530, v0.41.0). The outcome record of a stored output logs
   `output_created` as a log signal only (Section 4).
@@ -213,7 +227,7 @@ state and UI it should not have).
 | D2 | **Headless and stateless in v1**: no UI, no database. Idempotency is the write-if-absent store; correlation and dedupe are the issuer's (by `command_id`). |
 | D3 | **Own identities**: broker ACL user, GCS service account, bucket, tailnet tag. Observo's broker#62 `observo` user is stripped. |
 | D4 | **Own bucket** `gs://co-gcs-processor`, derived outputs only, so each reader's grant is a plain bucket-level `objectViewer`. *Amended 2026-11-15 (processor#130): was "Watcher's read grant"; Watcher's reader retired on watcher#420.* |
-| D5 | **co-core pinned exactly; Processor owns the pin** (0.38.0 today, processor#37). Bumps are deliberate (Section 5). Processor coordinates with Watcher only when a bump changes the contract: the `content.process` / `content.derived` models or `canonical_text` semantics. It **gives Watcher notice whenever `processor_version` moves**, because Watcher re-baselines on it. Watcher still pins co-core for contracts and the bus (`==0.19.7` on 2026-10-10), and that pin no longer has to equal Processor's. *Amended 2026-10-10 (processor#47, after watcher#350). Until then: matched to Watcher, in lockstep, since both sides extracted during shadow. Watcher agreed to that on 2026-10-02 (watcher#325), and neither side deployed a bump until the parity corpus passed on it unchanged. Amended 2026-10-21 (processor#57): essence resolution left the contract, so a change to it is notice (Section 5).* |
+| D5 | **co-core pinned exactly; Processor owns the pin** (0.51.1 today, processor#140). Bumps are deliberate (Section 5). Processor coordinates with Watcher only when a bump changes the contract: the `content.process` / `content.derived` models or `canonical_text` semantics. It **gives Watcher notice whenever `processor_version` moves**, because Watcher re-baselines on it. Watcher still pins co-core for contracts and the bus (`==0.19.7` on 2026-10-10), and that pin no longer has to equal Processor's. *Amended 2026-10-10 (processor#47, after watcher#350). Until then: matched to Watcher, in lockstep, since both sides extracted during shadow. Watcher agreed to that on 2026-10-02 (watcher#325), and neither side deployed a bump until the parity corpus passed on it unchanged. Amended 2026-10-21 (processor#57): essence resolution left the contract, so a change to it is notice (Section 5).* |
 | D6 | **Extraction runs in a killable child process** with a timeout and an address-space limit, never a thread. |
 | D7 | Broker `NOPERM` and `OOM` are **transient**; a reclaim **re-runs** the extraction (no dedupe key). |
 | D8 | **v1 scope is #629's requirements only.** |
@@ -252,7 +266,7 @@ processor-version pin on the command; no job API — the bus is the interface.
 | Thing | Value |
 |---|---|
 | Repo | `CannObserv/processor` — Python 3.12, uv, hatchling src layout |
-| Dependencies | `co-core[extract]`, `co-core-aio[bus]`, `co-core-sync[gcs]`, all `==0.38.0` (Section 5), from the private `co-pypi` Artifact Registry index (amended 2026-11-06, #121) |
+| Dependencies | `co-core[extract]`, `co-core-aio[bus]`, `co-core-sync[gcs]`, all `==0.51.1` (Section 5), from the private `co-pypi` Artifact Registry index (amended 2026-11-06, #121) |
 | CI | the index's token minted through WIF as `co-pypi-reader` (org var `GCP_WIF_PROVIDER`), as in the other cohort repos (amended 2026-11-06, #121) |
 | VM | exe.dev `co-processor`, 8 GB, default `exeuntu` image, tag `processor` |
 | Service | systemd unit `processor`: `MemoryMax` below VM RAM, `Restart=on-failure`, `OOMPolicy=continue` (Section 4). Runs as its own user `processor` (no sudo, not in `docker`, no home), from a read-only release at `/srv/processor/live` that `scripts/deploy.sh` builds from a commit on `origin/main` (amended 2026-10-06, #2: the cohort's release standard, broker#22 / status#9) |
@@ -439,7 +453,7 @@ above. Elsewhere (a terminal, `systemd-run --pipe`) there is no prefix
 | Malformed digest, or `input_uri` the input store does not recognize | `invalid_input`, terminal (issuer does not re-fetch) | yes |
 | Input bytes gone, or the download fails its checksum (`DataCorruption`, amended 2026-09-30) | `input_unreadable`, terminal for the command (issuer re-fetches, capped) | yes |
 | Bytes hash ≠ `input_digest` | `input_digest_mismatch`, terminal | yes |
-| Extractor raises, including `MemoryError` under `RLIMIT_AS`, a JSON body co-core can't parse (`ValueError`, as for PDF and XML), and a spec co-core refuses (`UnsupportedExtractionError` since 0.32.0, cannobserv#523; on 0.38.0: `regex`, an empty `xpath` or `jsonpath`, an invalid `xpath`, `jsonpath` or CSS selector, an unknown algorithm, `xpath` on PDF / CSV / JSON, `css` on XML / PDF / CSV / JSON, `jsonpath` on anything but JSON, `ignore_selectors` on anything but HTML), amended 2026-10-12 and 2026-10-20 | `extraction_error`, terminal | yes |
+| Extractor raises, including `MemoryError` under `RLIMIT_AS`, a JSON body co-core can't parse (`ValueError`, as for PDF and XML), and a spec co-core refuses (`UnsupportedExtractionError` since 0.32.0, cannobserv#523; on 0.51.1: `regex`, an empty `xpath` or `jsonpath`, an invalid `xpath`, `jsonpath` or CSS selector, an unknown algorithm, `xpath` on PDF / CSV / JSON, `css` on XML / PDF / CSV / JSON, `jsonpath` on anything but JSON, `ignore_selectors` on anything but HTML, an `include_description` that isn't a bool, and a true one on any algorithm but `full_page` or on any body but an RSS or Atom feed), amended 2026-10-12, 2026-10-20 and 2026-11-23 | `extraction_error`, terminal | yes |
 | Child timeout or crash | — | no; the 3rd attempt publishes `extraction_error`, terminal, and acks |
 | A non-transient exception escaping the handler (a bug, or an ack or dead-letter refused), amended 2026-09-30, 2026-10-02, 2026-10-05 and 2026-10-17 | at the cap, `dead_lettered`, terminal, unless this entry's fact already went out (a fact published before a refused ack stands) | no; counted like a strike, and the 3rd attempt publishes, then dead-letters the entry with the exception as its reason. A dead-letter that does not land is retried alone, without running the command again (#28) |
 | GCS 5xx / 429 / timeout / auth; broker `NOPERM`; broker `OOM command not allowed`; broker `MISCONF` / `BUSY` / `MASTERDOWN` / `TRYAGAIN` / `CLUSTERDOWN` / `NOREPLICAS` (amended 2026-09-30) | — | no; the entry is reclaimed |
@@ -573,21 +587,37 @@ reclaim re-running (not re-publishing) the extraction.
     its advisories, by `override-dependencies` past co-core 0.38.0's `<3`. No
     fingerprint moved over 289 HTML files × 34 selector configs, and the goldens
     and the real corpus held. A complex or nested `:has()` now refuses
-    (soupsieve 3.0's strict `:has()`).
+    (soupsieve 3.0's strict `:has()`). The override went at processor#140: co-core
+    0.51.1 floors soupsieve at 4.1 itself. soupsieve 4.1.3 rode along with that
+    bump, so the generation stayed 4. On co-core 0.51.1, over 311 HTML files × 34
+    selector configs (the same input classes), 4.1.1 and 4.1.3 gave identical
+    results run for run. Nothing moved: the same strict-`:has()` refusals, and the
+    same 2 timeouts on one 10 MB page.
   - 3 was processor#112: pypdf 6.21.2 → 6.21.4 for its advisories. Over the same
     corpora at HEAD, 0 of 110 PDFs extracted differently; the goldens and the
     real corpus held.
   - 2 was processor#71: pypdf 6.19.0 → 6.21.2 for its advisories. Over pypdf's
     and py-pdf's sample corpora, 4 of 106 PDFs extracted differently (word
     spacing); the goldens and the real corpus held.
-- **co-core `==0.38.0`** since processor#37 (2026-10-20). Before it,
-  `==0.37.0` since processor#21 (2026-10-17), and `==0.32.0` since processor#29
+- **co-core `==0.51.1`** since processor#140 (2026-11-23). Before it, `==0.38.0`
+  since processor#37 (2026-10-20), `==0.37.0` since processor#21 (2026-10-17), and `==0.32.0` since processor#29
   (2026-10-12), the catch-up jump from
   0.19.7, the version Watcher's `uv.lock` resolved at the cutover (Watcher's
   `pyproject.toml` allowed `>=0.19.6,<0.20`), so both sides reported `"0.19.7+1"`
   from the first shadow command. Since D5's 2026-10-10 amendment, Watcher's lock
-  no longer constrains this pin. Processor needs `GcsBlobStore` (0.19.3+) and the
-  `content.process` types (0.19.4).
+  no longer constrains this pin. Processor needs `GcsBlobStore` (0.19.3+), the
+  `content.process` types (0.19.4) and `store_reporting` (0.41.0).
+  - Across 0.38.0 → 0.51.1, the `content.process` / `content.derived` models are
+    AST-identical, docstrings included. So are `canonical_text`,
+    `spec_fingerprint`, `dispatch`, `media_type`, the envelope and
+    `co_core_aio.bus`. `streams.py` changes only in its docstring. The extract
+    package changes only by `include_description` (cannobserv#559, +105/−32 over
+    8 files). The blob store gains `Stored` and the reporting twins
+    (cannobserv#530); plain `store` is now `store_reporting(...).uri`, with the
+    same checks and writes. `changes.py` grows its fetch, replicate, capture and
+    registry models, none of which Processor reads. The child loads no new
+    module. The goldens did not move; seven cases were added for
+    `include_description`. Notice, on watcher#394 (processor#140).
   - Across 0.37.0 → 0.38.0 (0.37.1 between), the `content.process` /
     `content.derived` models (docstrings aside), `canonical_text`, the stores
     and `co_core_aio.bus` are unchanged in code. `spec_fingerprint` moves its
@@ -753,9 +783,9 @@ TDD, red first.
   - Parity with Watcher's local path should be proven before shadow, not
     discovered in it.
 - **Pin test.** The lock's co-core equals the expected exact version and
-  `processor_version(LOCAL_GENERATION) == "0.38.0+4"` — a bump is a deliberate,
+  `processor_version(LOCAL_GENERATION) == "0.51.1+4"` — a bump is a deliberate,
   test-failing act. So is moving the extraction stack (Section 5, processor#71,
-  processor#112, processor#138).
+  processor#112, processor#138, processor#140).
 - **Shells — one test per Section 4 row.** Input/output stores: a local co-core
   store on a temp dir behind the same interface, plus fakes raising GCS 5xx /
   429 / `NotFound`. Bus: fakeredis (or co-core-aio's test double, if it ships
@@ -826,7 +856,7 @@ writing-plans for v1 there. Implementation happens on `co-processor`.
 
 ---
 
-## Contract quick reference (co-core 0.19.4–0.38.0, unchanged across them but the refusal, added in 0.32.0, and `dead_lettered`, in 0.37.0)
+## Contract quick reference (co-core 0.19.4–0.51.1, unchanged across them but the refusal, added in 0.32.0, `dead_lettered`, in 0.37.0, and `store_reporting`, in 0.41.0)
 
 | Need | Name | Module |
 |---|---|---|
@@ -840,7 +870,7 @@ writing-plans for v1 there. Implementation happens on `co-processor`.
 | Canonical bytes | `canonical_text`, `canonical_text_fingerprint`, `CANONICAL_TEXT_MEDIA_TYPE`, `processor_version` | `co_core.pure.extract.canonical` |
 | Spec identity | `spec_fingerprint`, `spec_schema_version` | `co_core.pure.extract.spec_fingerprint` |
 | Digests | `bare_sha256`; `validate_fingerprint` | `co_core.pure.util.hashing`; `co_core.pure.util.blobstore` |
-| Stores | `BlobStore` (`open`, `store`, `exists`, `uri_for`); `GcsBlobStore` | `co_core.pure.util.blobstore`; `co_core_sync.drivers.blobstore.gcs` |
+| Stores | `BlobStore` (`open`, `store_reporting` → `Stored(uri, created)` since 0.41.0, `exists`, `uri_for`); `GcsBlobStore` | `co_core.pure.util.blobstore`; `co_core_sync.drivers.blobstore.gcs` |
 | Bus client | `AsyncBusConsumer`, producer | `co-core-aio[bus]` |
 
 Field rules the Emit classes enforce: `output_digest` is `sha256:<hex>`
@@ -867,7 +897,7 @@ echoed, reporting only.
    `ChangeRevision.processor_version` is never rewritten. `spec_fingerprint`
    gets the same treatment.
 2. ~~**co-core-aio:** does `AsyncBusConsumer` expose a delivery count or a
-   max-deliveries hook?~~ **Answered, no (0.19.4 through 0.38.0).** It offers
+   max-deliveries hook?~~ **Answered, no (0.19.4 through 0.51.1).** It offers
    primitives only: `ensure_group`, `read`, `ack`, `claim_stale` /
    `claim_stale_page`, and `dead_letter`. It has no delivery count, no hook
    and no run loop. The in-memory counter stays, and Processor owns its loop.
