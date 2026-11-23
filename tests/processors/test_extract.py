@@ -121,6 +121,42 @@ def test_the_corpus_covers_the_refusals_and_the_dispatched_essences() -> None:
     } <= REFUSED
     # Refused until 0.38.0: jsonpath (cannobserv#354) and xpath on HTML (cannobserv#557).
     assert {"json_jsonpath", "json_jsonpath_titles", "html_xpath"}.isdisjoint(REFUSED)
+    # Refused since 0.51.0 (cannobserv#559, #140); each extracted silently before.
+    assert {
+        "refused_include_description_not_bool",
+        "refused_include_description_on_css",
+        "refused_include_description_on_html",
+        "refused_include_description_on_non_feed_xml",
+    } <= REFUSED
+
+
+@pytest.mark.parametrize(
+    "case_id",
+    [
+        "refused_include_description_not_bool",
+        "refused_include_description_on_css",
+        "refused_include_description_on_html",
+        "refused_include_description_on_non_feed_xml",
+    ],
+)
+def test_each_include_description_refusal_is_for_that_key(case_id: str) -> None:
+    # A refused golden records only the type, so this pins the reason: on an HTML body
+    # css is honoured, so the key alone can refuse (#140).
+    (case,) = [c for c in CASES if c["id"] == case_id]
+    with pytest.raises(UnsupportedExtractionError, match="include_description"):
+        _run(case)
+
+
+def test_include_description_appends_each_item_s_description() -> None:
+    # cannobserv#559: true adds the description field; false is the plain feed line.
+    def text(case_id: str) -> bytes:
+        (case,) = [c for c in CASES if c["id"] == case_id]
+        return _run(case).text
+
+    description = b"Insufficient validation of 4via6 subnet router destinations"
+    assert description in text("feed_rss_include_description")
+    assert description not in text("feed_rss_include_description_false")
+    assert text("feed_rss_include_description_false") == text("feed_rss")
 
 
 def test_the_fallback_case_uses_an_essence_co_core_does_not_map() -> None:
