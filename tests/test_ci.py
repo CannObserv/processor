@@ -271,7 +271,8 @@ def test_the_attest_step_comes_between_the_sync_and_the_suite(ci: dict) -> None:
 # A minimal evaluator for GitHub's expression syntax: enough for these `if:`s.
 # Literals, dotted context paths (missing ones are null, read as ''), ==, !=, !(…),
 # &&, ||, parentheses and startsWith. GitHub compares strings case-insensitively; the
-# values below are written in one case, so plain equality agrees.
+# values below are written in one case, so plain equality agrees. A step's implicit
+# `success() &&` is not modelled: every earlier step is taken to have passed.
 _TOKEN = re.compile(
     r"\s*(?:(?P<str>'(?:[^']|'')*')|(?P<op>\|\||&&|==|!=|!|\(|\)|,)|(?P<name>[A-Za-z_][\w.-]*))"
 )
