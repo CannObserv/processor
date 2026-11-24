@@ -1,9 +1,10 @@
 """The ``.skills/`` knobs the vendored ``shipping-work`` reads hold what #115 chose.
 
 ``merge_mode``, ``deploy_command`` and ``attest-local-gate`` are read by the skill's
-own readers, never re-parsed here: a knob that is present but unusable is exit 2 there, never the
-default. Both read the *primary* checkout, so each runs in a scratch repo holding
-only the knobs (a linked worktree would read the main checkout's). The doc-check
+own readers, never re-parsed here: a knob that is present but unusable is exit 2
+there, never the default. The first two read the *primary* checkout (a linked
+worktree would read the main checkout's), and the third the commit at ``HEAD``, so
+each runs in a scratch repo holding only the knobs, committed. The doc-check
 pair gets the dead-entry check upstream lacks for single entries: one entry that
 matches nothing is a hole the gate never reports, while the gate does fail a list
 that matches nothing at all.
