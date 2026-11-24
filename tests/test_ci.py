@@ -269,8 +269,8 @@ def test_the_attest_step_comes_between_the_sync_and_the_suite(ci: dict) -> None:
 
 
 # A minimal evaluator for GitHub's expression syntax: enough for these `if:`s.
-# Literals, dotted context paths (missing ones are null, read as ''), ==, !=, !, &&,
-# ||, parentheses and startsWith. GitHub compares strings case-insensitively; the
+# Literals, dotted context paths (missing ones are null, read as ''), ==, !=, !(…),
+# &&, ||, parentheses and startsWith. GitHub compares strings case-insensitively; the
 # values below are written in one case, so plain equality agrees.
 _TOKEN = re.compile(
     r"\s*(?:(?P<str>'(?:[^']|'')*')|(?P<op>\|\||&&|==|!=|!|\(|\)|,)|(?P<name>[A-Za-z_][\w.-]*))"
@@ -306,6 +306,10 @@ def _evaluate(expression: str, context: dict) -> bool:
         if found["str"] is not None:
             out.append(repr(found["str"][1:-1].replace("''", "'")))
         elif found["op"] is not None:
+            # Python's `not` binds looser than `==`, GitHub's `!` tighter: they agree
+            # only on a parenthesised operand.
+            bare = found["op"] == "!" and not text[pos:].lstrip().startswith("(")
+            assert not bare, f"`!` is read only before `(`: {text!r}"
             out.append(_PY[found["op"]])
         elif found["name"] in _LITERALS:
             out.append(_LITERALS[found["name"]])
@@ -328,6 +332,13 @@ def test_the_evaluator_reads_githubs_syntax(expression: str, expected: bool) -> 
     # Guard the guard: a missing path reads as null, never as an error.
     context = {"github": {"event_name": "push", "ref": "refs/heads/main"}, "steps": {}}
     assert _evaluate(expression, context) is expected
+
+
+def test_the_evaluator_refuses_a_bare_not() -> None:
+    """GitHub's ``!`` binds tighter than ``==``; Python's ``not`` looser. Only ``!(`` is
+    read, so ``!a == b`` is refused rather than misread."""
+    with pytest.raises(AssertionError, match="only before"):
+        _evaluate("!github.event_name == 'push'", {"github": {"event_name": "push"}})
 
 
 def _job_run(
