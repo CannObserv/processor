@@ -1,24 +1,24 @@
 # Dependencies and CI
 
-What Processor pins and how each pin moves: the CI workflow's actions and images, shellcheck, the lock audit, co-core, the extraction stack, certifi. The deploy's CI gate: [DEPLOYMENT.md](DEPLOYMENT.md#the-ci-gate).
+What Processor pins and how each pin moves: the CI workflow's actions and images, the local-gate attestation, shellcheck, the lock audit, co-core, the extraction stack, certifi. The deploy's CI gate: [DEPLOYMENT.md](DEPLOYMENT.md#the-ci-gate).
 
 ## At a glance
 
 | Thing | Value |
 |---|---|
-| CI | GitHub Actions [.github/workflows/ci.yml](../.github/workflows/ci.yml) on `ubuntu-24.04`, the node's image: lint (ruff, shellcheck), then the full suite against `redis:7.0.15` (the broker's, not 7.2: CLIENT SETINFO; upstream EOL, the next is broker#85's call), pulled from `mirror.gcr.io`, never anonymously from Docker Hub (#43). Keyless WIF to `co-pypi-reader`, whose token only `uv sync` gets (#121), needs the org variable `GCP_WIF_PROVIDER` shared with this repo and a `roles/iam.workloadIdentityUser` binding for `principalSet://…/attribute.repository/CannObserv/processor`. Actions SHA-pinned; Dependabot version updates `github-actions` only, `uv` security updates landed by hand ([§ below](#ci-pins-and-dependabot), #80). Shell lint, with an opt-in pre-commit hook: [§ below](#shell-lint) (#81) |
+| CI | GitHub Actions [.github/workflows/ci.yml](../.github/workflows/ci.yml) on `ubuntu-24.04`, the node's image: lint (ruff, shellcheck), then the full suite against `redis:7.0.15` (the broker's, not 7.2: CLIENT SETINFO; upstream EOL, the next is broker#85's call), pulled from `mirror.gcr.io`, never anonymously from Docker Hub (#43). An attested PR runs only the integration tier ([§ below](#local-gate-attestation), #147). Keyless WIF to `co-pypi-reader`, whose token only `uv sync` gets (#121), needs the org variable `GCP_WIF_PROVIDER` shared with this repo and a `roles/iam.workloadIdentityUser` binding for `principalSet://…/attribute.repository/CannObserv/processor`. Actions SHA-pinned; Dependabot version updates `github-actions` only, `uv` security updates landed by hand ([§ below](#ci-pins-and-dependabot), #80). Shell lint, with an opt-in pre-commit hook: [§ below](#shell-lint) (#81) |
 | Lock audit | [.github/workflows/audit.yml](../.github/workflows/audit.yml): `uv audit --frozen`, report-only, outside the deploy gate (#73). The weekly patch window reads the live lock (#75): [§ below](#the-lock-audit) |
 
 ## CI pins and Dependabot
 
 Ported from broker#88 and broker#90 (#80).
 
-**Pins.** Every `uses:` in `ci.yml` and `audit.yml` takes the form `owner/action@<40-hex sha> # vX.Y.Z`. A tag can be moved, and setup-uv publishes no floating major since v8. As of #80, with setup-uv moved by #110 (Dependabot's first PR here):
+**Pins.** Every `uses:` in `ci.yml` and `audit.yml` takes the form `owner/action@<40-hex sha> # vX.Y.Z`. A tag can be moved, and setup-uv publishes no floating major since v8. As of #80, with setup-uv moved by #110 (Dependabot's first PR here) and #148:
 
 | Action | Pin |
 |---|---|
 | `actions/checkout` | v7.0.1 |
-| `astral-sh/setup-uv` | v10.3.3 |
+| `astral-sh/setup-uv` | v10.4.0 |
 | `google-github-actions/auth` | v3.0.0 |
 
 These are broker's majors (operator, 2026-10-29). `tests/test_dependabot.py` holds the form. `tests/test_ci.py` holds each major to a floor, so a Dependabot major passes and a downgrade fails. `tests/test_lock_audit.py` holds `audit.yml`'s pins equal to `ci.yml`'s.
@@ -78,6 +78,16 @@ git push origin main                            # GitHub marks the PR merged
 - **No deploy:** an action bump touches `.github/` alone, which is outside `RUNTIME_*` ([MONITORING.md § The drift check](MONITORING.md#the-drift-check)).
 
 **The runner image.** Every job in `ci.yml` and `audit.yml` runs on `ubuntu-24.04`, co-processor's image, not `ubuntu-latest`. That is 26.04 now: main's run 41003391205 (2026-10-30) ran on `ubuntu-26.04` (#81, as broker#88). The shell lint and the suite then run on the node's userland, and `test`'s Redis fallback, 24.04's apt `redis-server`, is 7.0.15. `tests/test_ci.py` holds every `runs-on` to one image, and on co-processor holds that image to `/etc/os-release`. So a node upgrade fails the suite there until the pins move with it.
+
+## Local-gate attestation
+
+Adopted in #147 from `shipping-work` (gregoryfoster/skills#688; the reference is `skills/shipping-work/references/attestation.md`). The repo is public, so it saves no billed minutes; it is the cohort's shape (CannObserv/status's).
+
+- **The push.** `.skills/attest-local-gate` is committed `on`, so `push.sh` runs `pre-ship.sh` on a clean tree, pushes only what passes, then posts the commit status `gate/local` = `success` on the pushed SHA. It needs `GH_TOKEN`'s **Commit statuses: Read and write**.
+- **CI reads it on a PR only.** `test`'s `attest` step reads the head's combined status (`statuses: read` on the job, since a job's `permissions` replace the workflow's). When attested, the `pytest` step skips. A bot's PR, a fork's, a manual run and a tag never skip.
+- **The integration tier always runs.** `pre-ship.sh` deselects `integration`, so an attested PR runs `pytest -m integration` instead (60 tests, the bus contract against the broker's Redis). `tests/test_ci.py` evaluates both `if:`s over each trigger: exactly one runs.
+- **Step-level, so the deploy gate is unchanged.** A push to `main` reads nothing and runs the whole suite, and a skipped step leaves `test` `success` ([DEPLOYMENT.md § The CI gate](DEPLOYMENT.md#the-ci-gate)). No schedule: every commit reaches `main` through that run.
+- **Trust, not proof.** Anyone with push access can post `gate/local`. Never make it a required status. Never post it by hand.
 
 ## Shell lint
 

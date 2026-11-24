@@ -11,7 +11,7 @@ Vendored by [`managing-skills`](../skills/managing-skills/SKILL.md): one git sub
 | `skills/<name>` | agentskills.io discovery: a symlink `../skills-vendor/<owner>-<repo>/skills/<name>`, or a committed override |
 | `.claude/skills/<name>` | Claude Code discovery: always `../../skills/<name>`, so an override shadows the vendor copy in both systems |
 | `.skills/doctor.sh` | A real file, not a symlink (it would dangle exactly when needed). Re-links dangling vendor symlinks by initialising the submodules; `reviewing-*` / `shipping-*` run it as preflight |
-| `.skills/merge_mode`, `deploy_command`, `doc-sensitive-paths`, `doc-sections`, `gate-stamp-inputs` | `shipping-work`'s knobs (#115): [§ Shipping](#shipping-shipping-work). [tests/test_shipping_knobs.py](../tests/test_shipping_knobs.py) reads the first two through the skill's own readers |
+| `.skills/merge_mode`, `deploy_command`, `doc-sensitive-paths`, `doc-sections`, `gate-stamp-inputs`, `attest-local-gate` | `shipping-work`'s knobs (#115, #147): [§ Shipping](#shipping-shipping-work). [tests/test_shipping_knobs.py](../tests/test_shipping_knobs.py) reads `merge_mode`, `deploy_command` and `attest-local-gate` through the skill's own readers |
 | `.claude/hooks/gh-env.sh`, `scripts/env-value.sh` | Ours, not vendored: `GH_TOKEN` from `.env`, as data, for the session's `gh` calls (the refresh hook finds its own: [§ Refresh](#refresh)). A replica of [gregoryfoster/skills#334](https://github.com/gregoryfoster/skills/issues/334)'s `using-github-cli`; adopt that once it ships, and the hook becomes its vendor symlink |
 | `.claude/hooks/context-budget-guard.sh`, `.github/workflows/context-cadence.yml`, `.gitattributes`, `.skills/context-*` | `curating-context`'s write guard, weekly measurement and ledger (#126): [§ Context budget](#context-budget) |
 | `.skills/worktree_venv` | `none`: each worktree provisions its own `.venv` (`using-git-worktrees` → *Venv linking*). Set when this checkout was the unit's `WorkingDirectory=`; since #2 the unit runs a release, and the knob stays only so worktrees never share the checkout's venv |
@@ -81,6 +81,7 @@ One skill since #115, which detects the stack: `Detected: toolchain uv`, with no
 | `deploy_command` | `setsid -w scripts/deploy.sh` | The release deploy (#2). `-w` keeps the deploy's exit code (broker#123). The skill appends the pushed SHA |
 | `doc-sensitive-paths`, `doc-sections` | tailored | Committed together, or every hit says which half is the default. A dead entry, a missing doc or a missing heading fails `tests/test_shipping_knobs.py` |
 | `gate-stamp-inputs` | `.env` | Replaces the default, so `.env` is named again (`tests/test_child.py` probes it). `.wheelhouse/*` left with #121: no untracked file decides which co-core installs |
+| `attest-local-gate` | `on` | `push.sh` gates the exact tree, then posts `gate/local` on the pushed SHA (#147). An attested PR's CI skips the suite but not the integration tier: [DEPENDENCIES.md § Local-gate attestation](DEPENDENCIES.md#local-gate-attestation). Ship from a clean tree, submodules included |
 | `import-targets`, `pre-ship-uv-args` | absent | The default `processor` is right, and CI's `uv run pytest` takes no group |
 
 ### Merging under `pr`
