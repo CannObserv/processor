@@ -374,6 +374,8 @@ def _job_run(
     )
 
 
+# A tag push never fires ci.yml today (push.branches is [main]). Its rows hold the
+# reference's tag clause, should a tag trigger ever be added.
 TRIGGERS = pytest.mark.parametrize(("event", "ref", "bot", "fork"), [
     ("push", "refs/heads/main", False, False),
     ("push", "refs/tags/v1.0.0", False, False),
@@ -402,7 +404,7 @@ def test_the_full_suite_runs_on_every_unattested_trigger(
 
 @pytest.mark.parametrize(("event", "ref", "bot", "fork"), [
     ("push", "refs/heads/main", False, False),  # main's run, which deploy.sh reads
-    ("push", "refs/tags/v1.0.0", False, False),
+    ("push", "refs/tags/v1.0.0", False, False),  # unreachable today: see TRIGGERS
     ("workflow_dispatch", "refs/heads/main", False, False),
     ("pull_request", "refs/pull/1/merge", True, False),  # Dependabot
     ("pull_request", "refs/pull/1/merge", False, True),  # a fork
