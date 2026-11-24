@@ -245,9 +245,10 @@ def _attest(ci: dict) -> dict:
 
 
 def test_the_attest_step_reads_the_heads_combined_status_on_a_pr_only(ci: dict) -> None:
-    """On a push to main, a merge GitHub made carries no status, and a refused read
-    would fail the run deploy.sh reads: so it reads only on a PR. The combined status
-    keeps each context's latest state; a page is 30 contexts unless asked for more."""
+    """Only on a PR. Processor merges by fast-forward, so main's push run is on the
+    PR's head SHA, which carries its ``gate/local``: a read there would skip the full
+    suite on the run deploy.sh reads. The combined status keeps each context's latest
+    state; a page is 30 contexts unless asked for more."""
     step = _attest(ci)
     assert step["if"] == "github.event_name == 'pull_request'"
     assert step["env"] == {

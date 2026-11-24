@@ -154,9 +154,10 @@ jobs:
 
       # The local-gate attestation (#147; skills/shipping-work/references/
       # attestation.md). push.sh posts gate/local = success on a commit whose tree
-      # pre-ship.sh passed. Read on pull requests only: a push to main is the run
-      # deploy.sh reads, so it reads nothing and runs the whole suite, and a refused
-      # read can't fail it. Unset reads as not attested.
+      # pre-ship.sh passed. Read on pull requests only. A fast-forward merge puts the
+      # PR's head on main, status and all, so a read on main's push run (the one
+      # deploy.sh reads) would skip the suite there. Unread, it runs the whole suite,
+      # and a refused read can't fail it. Unset reads as not attested.
       #
       # HEAD is the PR's head: on pull_request, github.sha is the merge commit,
       # which nobody gated. The combined status keeps each context's latest state
