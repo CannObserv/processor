@@ -73,7 +73,7 @@ def test_deploy_command_is_the_release_deploy(scratch: Path) -> None:
     assert out.stdout.strip() == f"setsid -w scripts/deploy.sh {sha}"
 
 
-def test_the_local_gate_is_attested(scratch: Path) -> None:
+def test_attest_local_gate_is_on(scratch: Path) -> None:
     """#147: ``push.sh`` attests the gate (``gate/local``), and CI's ``test`` job reads
     it (tests/test_ci.py). Read from the commit, by the skill's own reader: 0 is
     ``on``, 3 ``off``, 2 unusable."""
