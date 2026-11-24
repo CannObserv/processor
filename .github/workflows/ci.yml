@@ -86,9 +86,12 @@ jobs:
     # The node's image, not ubuntu-latest (#81, as broker#88): tests/test_ci.py.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # statuses: read for the attest step (#147). Job-level permissions replace the
+    # workflow's, so it sits here, not above.
     permissions:
       contents: read
       id-token: write
+      statuses: read
     # The broker's exact Redis, 7.0.15 (broker deploy/redis-acl.conf), as on
     # co-processor's scratch server. Not a newer 7.x: from 7.2 redis-py's CLIENT
     # SETINFO is an ACL denial the broker's grant cannot cover until it upgrades
@@ -149,7 +152,55 @@ jobs:
           UV_INDEX_CO_PYPI_PASSWORD: ${{ steps.auth.outputs.access_token }}
         run: uv sync --locked
 
+      # The local-gate attestation (#147; skills/shipping-work/references/
+      # attestation.md). push.sh posts gate/local = success on a commit whose tree
+      # pre-ship.sh passed. Read on pull requests only: a push to main is the run
+      # deploy.sh reads, so it reads nothing and runs the whole suite, and a refused
+      # read can't fail it. Unset reads as not attested.
+      #
+      # HEAD is the PR's head: on pull_request, github.sha is the merge commit,
+      # which nobody gated. The combined status keeps each context's latest state
+      # (/statuses lists every one ever posted, so a later failure would still
+      # count). A page is 30 contexts unless more are asked for. A refused read
+      # fails this step: loud, never a silent skip.
+      - name: Attested by the local gate?
+        id: attest
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          n=$(gh api "repos/${{ github.repository }}/commits/$HEAD/status?per_page=100" \
+                --jq '[.statuses[] | select(.context == "gate/local" and .state == "success")] | length')
+          echo "attested=$([ "$n" -gt 0 ] && echo yes || echo no)" | tee -a "$GITHUB_OUTPUT"
+
       # No marker filter: the integration tests are the bus contract. Host-bound
       # tests (live tailscaled, installed drop-ins) skip off co-processor.
+      #
+      # Skipped only for an attested commit, and never for a bot's PR (Dependabot)
+      # or a fork's: neither came from a local gate. The reference's `if:`,
+      # verbatim. Step-level, not job-level: a skipped job reads `skipped`, which
+      # deploy.sh refuses; a skipped step leaves `test` success. No schedule: under
+      # merge_mode pr, every commit reaches main through a full push run.
       - name: pytest
+        if: >-
+          steps.attest.outputs.attested != 'yes'
+          || (github.event_name != 'push' && github.event_name != 'pull_request')
+          || startsWith(github.ref, 'refs/tags/')
+          || (github.event_name == 'pull_request'
+              && (github.event.pull_request.user.type == 'Bot'
+                  || github.event.pull_request.head.repo.full_name != github.repository))
         run: uv run pytest
+
+      # Exactly when the step above skips. pre-ship.sh deselects every integration
+      # test, so the gate never ran this tier: an attested PR still checks the bus
+      # contract against the broker's Redis here (tests/test_ci.py).
+      - name: pytest (integration)
+        if: >-
+          !(steps.attest.outputs.attested != 'yes'
+          || (github.event_name != 'push' && github.event_name != 'pull_request')
+          || startsWith(github.ref, 'refs/tags/')
+          || (github.event_name == 'pull_request'
+              && (github.event.pull_request.user.type == 'Bot'
+                  || github.event.pull_request.head.repo.full_name != github.repository)))
+        run: uv run pytest -m integration

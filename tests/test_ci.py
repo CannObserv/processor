@@ -56,9 +56,15 @@ def test_runs_on_pushes_and_prs_to_main(ci: dict) -> None:
 
 
 def test_cloud_access_is_job_scoped(ci: dict) -> None:
+    """A job's ``permissions`` replace the workflow's, so ``statuses: read`` sits on
+    ``test``, whose attest step reads the combined status (#147); at workflow level
+    it would be ignored."""
     assert ci["permissions"] == {"contents": "read"}
-    for name, job in ci["jobs"].items():
-        assert job["permissions"] == {"contents": "read", "id-token": "write"}, name
+    cloud = {"contents": "read", "id-token": "write"}
+    assert {name: job["permissions"] for name, job in ci["jobs"].items()} == {
+        "lint": cloud,
+        "test": {**cloud, "statuses": "read"},
+    }
 
 
 PAIR = {
@@ -214,8 +220,198 @@ def test_the_whole_suite_runs_against_the_brokers_redis(ci: dict) -> None:
     redis = job["services"]["redis"]
     assert redis["image"] == BROKER_REDIS
     assert "6379:6379" in redis["ports"]
-    (pytest_run,) = [line for line in _runs(job).splitlines() if "pytest" in line]
-    assert " -m " not in pytest_run, "a marker filter would drop the integration tests"
+    runs = [line for line in _runs(job).splitlines() if "pytest" in line]
+    assert runs == [FULL_SUITE, INTEGRATION], "a marker filter would drop the integration tests"
+
+
+# The local-gate attestation (#147; shipping-work's references/attestation.md).
+# CannObserv/status's shape: the attest step reads only on a PR, and the full suite
+# skips at step level, so `test` stays `success` and every push to main runs it all:
+# deploy.sh's gate is unchanged. The local gate deselects the integration tier, so an
+# attested PR still runs that, on the inverse condition.
+FULL_SUITE = "uv run pytest"
+INTEGRATION = "uv run pytest -m integration"
+REPO = "CannObserv/processor"
+
+
+def _step_running(job: dict, command: str) -> dict:
+    (step,) = [s for s in _steps(job) if s.get("run", "").strip() == command]
+    return step
+
+
+def _attest(ci: dict) -> dict:
+    (step,) = [s for s in _steps(ci["jobs"]["test"]) if s.get("id") == "attest"]
+    return step
+
+
+def test_the_attest_step_reads_the_heads_combined_status_on_a_pr_only(ci: dict) -> None:
+    """On a push to main, a merge GitHub made carries no status, and a refused read
+    would fail the run deploy.sh reads: so it reads only on a PR. The combined status
+    keeps each context's latest state; a page is 30 contexts unless asked for more."""
+    step = _attest(ci)
+    assert step["if"] == "github.event_name == 'pull_request'"
+    assert step["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "HEAD": "${{ github.event.pull_request.head.sha || github.sha }}",
+    }
+    run = step["run"]
+    assert "commits/$HEAD/status?per_page=100" in run
+    assert '.context == "gate/local" and .state == "success"' in run
+    assert '"attested=$(' in run and '"$GITHUB_OUTPUT"' in run
+
+
+def test_the_attest_step_comes_between_the_sync_and_the_suite(ci: dict) -> None:
+    job = ci["jobs"]["test"]
+    steps = _steps(job)
+    order = [_sync_step(job), _attest(ci), _step_running(job, FULL_SUITE)]
+    assert [steps.index(s) for s in order] == sorted(steps.index(s) for s in order)
+    assert steps.index(_step_running(job, INTEGRATION)) > steps.index(_attest(ci))
+
+
+# A minimal evaluator for GitHub's expression syntax: enough for these `if:`s.
+# Literals, dotted context paths (missing ones are null, read as ''), ==, !=, !, &&,
+# ||, parentheses and startsWith. GitHub compares strings case-insensitively; the
+# values below are written in one case, so plain equality agrees.
+_TOKEN = re.compile(
+    r"\s*(?:(?P<str>'(?:[^']|'')*')|(?P<op>\|\||&&|==|!=|!|\(|\)|,)|(?P<name>[A-Za-z_][\w.-]*))"
+)
+_PY = {
+    "||": " or ",
+    "&&": " and ",
+    "!": " not ",
+    "==": "==",
+    "!=": "!=",
+    "(": "(",
+    ")": ")",
+    ",": ",",
+}
+_LITERALS = {"true": "True", "false": "False", "null": "''"}
+
+
+def _evaluate(expression: str, context: dict) -> bool:
+    def lookup(path: str) -> object:
+        value: object = context
+        for key in path.split("."):
+            value = value.get(key, "") if isinstance(value, dict) else ""
+        return value
+
+    def starts_with(text: object, prefix: object) -> bool:
+        return str(text).lower().startswith(str(prefix).lower())
+
+    out, pos, text = [], 0, expression.strip()
+    while pos < len(text):
+        found = _TOKEN.match(text, pos)
+        assert found and found.end() > pos, f"cannot read {text[pos:]!r}"
+        pos = found.end()
+        if found["str"] is not None:
+            out.append(repr(found["str"][1:-1].replace("''", "'")))
+        elif found["op"] is not None:
+            out.append(_PY[found["op"]])
+        elif found["name"] in _LITERALS:
+            out.append(_LITERALS[found["name"]])
+        elif found["name"] == "startsWith":
+            out.append("_starts_with")
+        else:
+            out.append(f"_lookup({found['name']!r})")
+    names = {"__builtins__": {}, "_lookup": lookup, "_starts_with": starts_with}
+    return bool(eval("".join(out), names))  # noqa: S307 - our own workflow's text
+
+
+@pytest.mark.parametrize(("expression", "expected"), [
+    ("github.event_name == 'push'", True),
+    ("github.event_name != 'push' || startsWith(github.ref, 'refs/tags/')", False),
+    ("!(github.event_name == 'push') || steps.none.outputs.x != 'yes'", True),
+    ("github.event.pull_request.user.type == 'Bot'", False),
+    ("'it''s' == 'it''s' && true", True),
+])  # fmt: skip
+def test_the_evaluator_reads_githubs_syntax(expression: str, expected: bool) -> None:
+    # Guard the guard: a missing path reads as null, never as an error.
+    context = {"github": {"event_name": "push", "ref": "refs/heads/main"}, "steps": {}}
+    assert _evaluate(expression, context) is expected
+
+
+def _job_run(
+    ci: dict,
+    event: str,
+    *,
+    status: bool,
+    ref: str = "refs/heads/main",
+    bot: bool = False,
+    fork: bool = False,
+) -> tuple[bool, bool]:
+    """Whether the full suite and the integration step run, for one trigger.
+
+    ``status`` is whether the head carries ``gate/local`` = ``success``. The attest
+    step's output exists only if that step ran, as on Actions."""
+    github: dict = {"event_name": event, "ref": ref, "repository": REPO}
+    if event == "pull_request":
+        github["event"] = {
+            "pull_request": {
+                "user": {"type": "Bot" if bot else "User"},
+                "head": {"repo": {"full_name": "someone/processor" if fork else REPO}},
+            }
+        }
+    context = {"github": github, "steps": {}}
+    if _evaluate(_attest(ci)["if"], context):
+        attested = "yes" if status else "no"
+        context["steps"] = {"attest": {"outputs": {"attested": attested}}}
+    job = ci["jobs"]["test"]
+    return tuple(
+        _evaluate(_step_running(job, command).get("if", "true"), context)
+        for command in (FULL_SUITE, INTEGRATION)
+    )
+
+
+TRIGGERS = pytest.mark.parametrize(("event", "ref", "bot", "fork"), [
+    ("push", "refs/heads/main", False, False),
+    ("push", "refs/tags/v1.0.0", False, False),
+    ("workflow_dispatch", "refs/heads/main", False, False),
+    ("pull_request", "refs/pull/1/merge", False, False),
+    ("pull_request", "refs/pull/1/merge", True, False),
+    ("pull_request", "refs/pull/1/merge", False, True),
+])  # fmt: skip
+
+
+@TRIGGERS
+@pytest.mark.parametrize("status", [True, False])
+def test_exactly_one_of_the_suite_and_the_integration_tier_runs(
+    ci: dict, event: str, ref: str, bot: bool, fork: bool, status: bool
+) -> None:
+    full, integration = _job_run(ci, event, status=status, ref=ref, bot=bot, fork=fork)
+    assert full != integration
+
+
+@TRIGGERS
+def test_the_full_suite_runs_on_every_unattested_trigger(
+    ci: dict, event: str, ref: str, bot: bool, fork: bool
+) -> None:
+    assert _job_run(ci, event, status=False, ref=ref, bot=bot, fork=fork) == (True, False)
+
+
+@pytest.mark.parametrize(("event", "ref", "bot", "fork"), [
+    ("push", "refs/heads/main", False, False),  # main's run, which deploy.sh reads
+    ("push", "refs/tags/v1.0.0", False, False),
+    ("workflow_dispatch", "refs/heads/main", False, False),
+    ("pull_request", "refs/pull/1/merge", True, False),  # Dependabot
+    ("pull_request", "refs/pull/1/merge", False, True),  # a fork
+])  # fmt: skip
+def test_a_status_never_skips_the_suite_outside_a_humans_pr(
+    ci: dict, event: str, ref: str, bot: bool, fork: bool
+) -> None:
+    """A bot's PR and a fork's never came from a local gate; a push to main reads no
+    status at all, so its run is always the whole suite."""
+    assert _job_run(ci, event, status=True, ref=ref, bot=bot, fork=fork) == (True, False)
+
+
+def test_an_attested_humans_pr_runs_only_the_integration_tier(ci: dict) -> None:
+    """The local gate ran the rest (pre-ship.sh deselects `integration`)."""
+    assert _job_run(ci, "pull_request", status=True) == (False, True)
+
+
+def test_the_integration_steps_condition_is_the_suites_negated(ci: dict) -> None:
+    job = ci["jobs"]["test"]
+    full, integration = (_step_running(job, c)["if"] for c in (FULL_SUITE, INTEGRATION))
+    assert " ".join(integration.split()) == f"!({' '.join(full.split())})"
 
 
 def _image(spec: object) -> str | None:

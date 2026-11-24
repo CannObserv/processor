@@ -1,7 +1,7 @@
 """The ``.skills/`` knobs the vendored ``shipping-work`` reads hold what #115 chose.
 
-``merge_mode`` and ``deploy_command`` are read by the skill's own readers, never
-re-parsed here: a knob that is present but unusable is exit 2 there, never the
+``merge_mode``, ``deploy_command`` and ``attest-local-gate`` are read by the skill's
+own readers, never re-parsed here: a knob that is present but unusable is exit 2 there, never the
 default. Both read the *primary* checkout, so each runs in a scratch repo holding
 only the knobs (a linked worktree would read the main checkout's). The doc-check
 pair gets the dead-entry check upstream lacks for single entries: one entry that
@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 KNOBS = ROOT / ".skills"
 SHIP = ROOT / "skills" / "shipping-work" / "scripts"
 DOCTOR_HINT = "dangling: run `bash .skills/doctor.sh`"
+KNOBS_READ = (".skills/merge_mode", ".skills/deploy_command", ".skills/attest-local-gate")
 
 
 def _lines(name: str) -> list[str]:
@@ -41,7 +42,7 @@ def scratch(tmp_path: Path) -> Path:
     origin, repo = tmp_path / "origin.git", tmp_path / "repo"
     subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
-    for rel in (".skills/merge_mode", ".skills/deploy_command", "scripts/deploy.sh"):
+    for rel in (*KNOBS_READ, "scripts/deploy.sh"):
         (repo / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / rel, repo / rel)
     _git(repo, "add", "-A")
@@ -69,6 +70,20 @@ def test_deploy_command_is_the_release_deploy(scratch: Path) -> None:
     sha = _git(scratch, "rev-parse", "HEAD")
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip() == f"setsid -w scripts/deploy.sh {sha}"
+
+
+def test_the_local_gate_is_attested(scratch: Path) -> None:
+    """#147: ``push.sh`` attests the gate (``gate/local``), and CI's ``test`` job reads
+    it (tests/test_ci.py). Read from the commit, by the skill's own reader: 0 is
+    ``on``, 3 ``off``, 2 unusable."""
+    assert (SHIP / "_attest-gate.sh").is_file(), DOCTOR_HINT
+    out = subprocess.run(
+        ["bash", "-c", '. "$1" && attest_read_knob', "_", str(SHIP / "_attest-gate.sh")],
+        cwd=scratch,
+        capture_output=True,
+        text=True,
+    )
+    assert out.returncode == 0, out.stderr
 
 
 def test_deploy_command_names_an_executable_repo_script() -> None:

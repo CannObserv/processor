@@ -1,0 +1,6 @@
+# push.sh runs the gate on the exact tree, pushes only what passes, then posts the
+# commit status gate/local = success on the pushed SHA (#147, skills#688). CI's
+# `test` job reads it on a PR only and skips the suite the gate ran, never the
+# integration tier (docs/DEPENDENCIES.md § Local-gate attestation). Trust, not
+# proof: never a required status. Read from the commit, not the work tree.
+on

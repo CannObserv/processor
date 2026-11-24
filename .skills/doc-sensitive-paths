@@ -34,6 +34,7 @@ deploy_command
 doc-sensitive-paths
 doc-sections
 gate-stamp-inputs
+attest-local-gate
 
 # Semantic search (docs/SOCRATICODE.md).
 .socraticode.json
