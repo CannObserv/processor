@@ -85,7 +85,7 @@ Adopted in #147 from `shipping-work` (gregoryfoster/skills#688; the reference is
 
 - **The push.** `.skills/attest-local-gate` is committed `on`, so `push.sh` runs `pre-ship.sh` on a clean tree, pushes only what passes, then posts the commit status `gate/local` = `success` on the pushed SHA. It needs `GH_TOKEN`'s **Commit statuses: Read and write**.
 - **CI reads it on a PR only.** `test`'s `attest` step reads the head's combined status (`statuses: read` on the job, since a job's `permissions` replace the workflow's). When attested, the `pytest` step skips. A bot's PR, a fork's, a manual run and a tag never skip.
-- **The integration tier always runs.** `pre-ship.sh` deselects `integration`, so an attested PR runs `pytest -m integration` instead (60 tests, the bus contract against the broker's Redis). `tests/test_ci.py` evaluates both `if:`s over each trigger: exactly one runs.
+- **The integration tier always runs.** `pre-ship.sh` deselects `integration`, so an attested PR runs `pytest -m integration` instead: the bus contract against the broker's Redis. `tests/test_ci.py` evaluates both `if:`s over each trigger: exactly one runs.
 - **Step-level, so the deploy gate is unchanged.** A push to `main` reads nothing and runs the whole suite, and a skipped step leaves `test` `success` ([DEPLOYMENT.md § The CI gate](DEPLOYMENT.md#the-ci-gate)). No schedule: every commit reaches `main` through that run.
 - **Trust, not proof.** Anyone with push access can post `gate/local`. Never make it a required status. Never post it by hand.
 
