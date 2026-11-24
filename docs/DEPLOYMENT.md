@@ -103,7 +103,7 @@ A stop mid-reclaim finishes the command in hand and leaves the rest pending. A c
 **A deploy needs the commit's CI to have passed** (#34, ported from status#11). Before anything is built, `deploy.sh` asks GitHub's Actions API about the commit. It refuses unless `lint`, `test` and any other job in the run all succeeded. The refusal names each job that didn't, with its conclusion, and links the run. A refused deploy changes nothing.
 
 - **Which run.** The newest `push` run of `ci.yml` on `main` for exactly that commit. Every FF merge also has a `pull_request` run on the same SHA, and that one doesn't count, nor does a `workflow_dispatch` run. A re-run counts, since GitHub reports a run's latest attempt.
-  - That run always runs the full suite. The local-gate attestation skips it only on a PR's run ([DEPENDENCIES.md § Local-gate attestation](DEPENDENCIES.md#local-gate-attestation), #147).
+  - That run always runs the full suite. The local-gate attestation skips the suite only on a PR's run ([DEPENDENCIES.md § Local-gate attestation](DEPENDENCIES.md#local-gate-attestation), #147).
 - **The run and every job in it must be `success`.** A `skipped` job leaves the run's own conclusion `success`, so the gate reads the jobs too.
   - `CI_JOBS` in `deploy.sh` (`lint test`) is a floor, and `tests/test_deploy.py` holds `ci.yml` to it. Any other job counts without being named there.
   - A job renamed in `ci.yml` must be renamed in `CI_JOBS`. A build from before the rename then lacks the new name, so rolling back to it needs `--skip-ci`.
