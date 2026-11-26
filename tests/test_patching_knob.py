@@ -127,7 +127,7 @@ def test_the_knobs_own_soaks_end_green() -> None:
         if words[0].startswith(PRUNE_STAGES)
     ]
     if not soaks:
-        pytest.skip("no prune stage declared")
+        pytest.skip("no disabled: or removed: soak declared")
     knob = _resolved("--today", (max(soaks) + timedelta(days=1)).isoformat())
     assert _unexpected(knob) == []
     assert {f["kind"] for f in knob["findings"]} == {"soak-ended"}
