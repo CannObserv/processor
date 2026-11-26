@@ -127,7 +127,7 @@ def test_the_knobs_own_soaks_end_green() -> None:
         if words[0].startswith(PRUNE_STAGES)
     ]
     if not soaks:
-        pytest.skip("no prune stage declared")
+        pytest.skip("no disabled: or removed: soak declared")
     knob = _resolved("--today", (max(soaks) + timedelta(days=1)).isoformat())
     assert _unexpected(knob) == []
     assert {f["kind"] for f in knob["findings"]} == {"soak-ended"}
@@ -142,13 +142,13 @@ def test_no_exception_reason_is_cut_short_by_a_comment() -> None:
             )
 
 
-def test_the_dormant_components_are_pruned() -> None:
+def test_the_dormant_components_are_purged() -> None:
     """docker and nginx shipped with the exeuntu image and were never used here:
-    each carries one prune stage line, ``disabled:`` then ``purged:`` (a savepoint
-    between skips ``removed:``), never ``keep:`` (#143). Drift from the image until
-    it stops shipping them."""
+    disabled 2026-11-17, then purged from a savepoint 2026-11-26 (#143), so each
+    carries one ``purged:`` line and no other stage, never ``keep:``. Drift from the
+    image until it stops shipping them (CannObserv/provisioner#164)."""
     stages = [words[0] for words in _named("exception") if words[0].startswith(STAGES)]
-    assert sorted(stage.split(":", 1)[1] for stage in stages) == ["docker", "nginx"], stages
+    assert sorted(stages) == ["purged:docker", "purged:nginx"], stages
     assert not [words for words in _named("exception") if words[0].startswith("keep:")]
 
 

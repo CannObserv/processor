@@ -129,7 +129,7 @@ Provisioner's disk GC and headroom sensor (provisioner#61), **VERSION 3** (#99),
 
 **This host's choices** (each one is a comment in the config):
 - **Homes:** `homes` is `/home/exedev` (`processor` has no home).
-- **Tiers:** the template's, plus `worktrees` for this repo's `.worktrees/`. `docker` stays off, because the daemon is inactive. `npx_spec_files` keeps the SocratiCode pin in the deploy checkout's `.claude/settings.json`.
+- **Tiers:** the template's, plus `worktrees` for this repo's `.worktrees/`. `docker` stays off, because docker is purged (#143). `npx_spec_files` keeps the SocratiCode pin in the deploy checkout's `.claude/settings.json`.
 - **uv cache:** pruned only (`uv_clean_above_mb = 0`). Releases are built with `UV_LINK_MODE=copy`.
 - **Lines:** alert at 85% Use% (as `df` reports it), clear at 80%. On 2026-10-27, `/` was 76% used with 1.8G under the line, before the first prune (estimated at about 3.5G of idle VS Code builds and caches; the report-only run measures it, #82).
 - **pytest:** `pyproject.toml` keeps one basetemp, and only a failed run's (`tmp_path_retention_*`). A run's basetemp is about 62M.
