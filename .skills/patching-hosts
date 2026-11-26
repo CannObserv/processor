@@ -66,7 +66,7 @@ owner /srv/processor/live self
 
 # --- dormant components (#143) --------------------------------------------
 # Both shipped with the exeuntu image (one apt-get, 2026-09-29) and nothing here
-# used them: pruned disable -> savepoint -> purge (as CannObserv/archiver#375).
+# used them: pruned disable -> savepoint -> purge (as CannObserv/archiver#375, #512).
 # Masked 2026-11-17T21:57Z, savepointed 23:54Z (/var/backups/patching-hosts-prune-*),
 # purged 2026-11-26T22:17Z by prune.sh, the docker group and the data with them.
 # The masks stay, so a reinstall stays down. A purged: line has no next stage: it
