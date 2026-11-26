@@ -66,11 +66,14 @@ owner /srv/processor/live self
 
 # --- dormant components (#143) --------------------------------------------
 # Both shipped with the exeuntu image (one apt-get, 2026-09-29) and nothing here
-# uses them: pruned disable -> savepoint -> purge, the owner's 7-day soak (as
-# CannObserv/archiver#375). Masked 2026-11-17T21:57Z by prune.sh. The date is the
-# soak: the reader reports soak-ended from 2026-11-25, the purge's prompt, clear
-# of the 2026-11-24 window. Drift from the image while it ships them.
-exception disabled:nginx 2026-11-24 exeuntu image leftover, never enabled or served here; masked 2026-11-17 (#143)
-exception disabled:docker 2026-11-24 exeuntu image leftover, no containers or volumes, processor not in its group; masked 2026-11-17 (#143)
+# used them: pruned disable -> savepoint -> purge (as CannObserv/archiver#375, #512).
+# Masked 2026-11-17T21:57Z, savepointed 23:54Z (/var/backups/patching-hosts-prune-*),
+# purged 2026-11-26T22:17Z by prune.sh, the docker group and the data with them.
+# The masks stay, so a reinstall stays down. A purged: line has no next stage: it
+# stays while the image ships them (CannObserv/provisioner#164), and its date is a
+# recheck of that. Past it, the reader reports expired-exception and the knob test
+# goes red: renew it, or drop the line once the image stops shipping them.
+exception purged:nginx 2027-02-23 exeuntu image leftover, never enabled or served here; purged 2026-11-26 (#143)
+exception purged:docker 2027-02-23 exeuntu image leftover, no containers or volumes; purged with its group 2026-11-26 (#143)
 
 records CannObserv/processor

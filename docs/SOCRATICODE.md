@@ -142,7 +142,7 @@ apply it. Left in, vendored trees outrank first-party code in `codebase_search`.
 the `env` block in `.claude/settings.json` and the key in git-ignored
 `.claude/settings.local.json` (installed by the operator with CannObserv/index's
 `scripts/install_qdrant_key.sh`; it prints `installed 64 chars`). No Docker
-here: `docker.socket` is disabled (#2), so a session that missed the `env` block
+here: docker is purged (#143), so a session that missed the `env` block
 fails loudly instead of starting a local stack. Collections: `codebase_processor`,
 `context_processor`, `processor_symgraph_*`. Adoption: #5.
 

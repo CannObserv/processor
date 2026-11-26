@@ -16,7 +16,7 @@ What the operator set up once, on `co-processor` and around it: grants and crede
 | SA `co-gcs-processor-writer`: `objectCreator` + `objectViewer` on `co-gcs-processor` (**no delete**), `objectViewer` on `co-gcs-blobs` | GCP | done 2026-10-02, [GCP provisioning](#gcp-provisioning) (spec §2) |
 | SA key at `/etc/processor/co-gcs-processor-writer.json` (root 600 since #2; the unit's `LoadCredential=`) | this VM | done 2026-10-02; the writer's preflight reached both buckets |
 | User `processor` (system, no home, no sudo, not in `docker`); `/srv/processor` (`exedev`, 755); `/etc/processor` root-only | this VM | #2, [Install](#install-once-2s-stage-b) |
-| `docker.socket` disabled | this VM | done 2026-10-05 (operator, #2 gate 1); `disabled` and `inactive` on 2026-10-06 |
+| `docker.socket` disabled | this VM | done 2026-10-05 (operator, #2 gate 1); docker purged 2026-11-26, with its group (#143) |
 | Landlock ABI ≥ 6 | kernel | 6 on 2026-10-06 (6.12.93); [Containment](#containment) |
 | Tailnet `tag:processor` → `tag:status:9000` | tailnet policy | #35 gate 2, done 2026-10-07: `http://status:9000/health` answered `production` from `co-processor` at 14:03Z |
 | Status tenant `co-processor`, its production key, and the monitor `co-processor-drift` (`01M4BHMGGTXWQ16J3G5WWDQRYQ`) | `co-status` | CannObserv/status#24 (#35 gate 1), done 2026-10-07 16:02Z |
@@ -172,7 +172,7 @@ The extraction child is assumed compromised by the document it parses (spec §3,
 - **Prerequisites:**
   - Landlock ABI ≥ 6 (Linux 6.12; `co-processor`: 6);
   - x86_64 or aarch64;
-  - `docker.socket` disabled. It is enabled by default on exeuntu, and `/run/docker.sock` meant root to the `docker` group; the child can't reach any socket now, but `processor` isn't in that group either.
+  - `docker.socket` disabled, or docker absent. It is enabled by default on exeuntu, and `/run/docker.sock` meant root to the `docker` group; the child can't reach any socket now. Here docker is purged, group and all (#143).
 - **Fail closed.** Under `CO_PROCESSOR_CHILD_CONTAINMENT=required` (the default), `processor run` exits 1 with `child containment unavailable` where the kernel can't contain the child, and systemd restarts it, so the unit flaps visibly.
 - **The boot canary.** Before it takes any command, `processor run` makes one real extraction (a tiny HTML page) through the child, under the configured containment. It exits 1 with `child canary failed` (`kind`, `detail`) if that fails. This covers what the ABI check can't see, such as a library outside the allowlist after a host update, which would otherwise crash every command three times and publish a terminal `extraction_error` for each. A child that fails to contain itself exits 70 before it reads its request, which counts as a strike.
 - **Debugging the parent.** Being undumpable means no core dump, and `py-spy dump` or `gdb -p` need root (`sudo py-spy dump --pid <pid>`). The child is still dumpable, and its environment holds only `PATH` and `LANG`.
@@ -190,7 +190,6 @@ ps -o user= -p "$pid"                                            # processor
 grep NoNewPrivs "/proc/$pid/status"                              # 1
 sudo -u processor cat "/proc/$pid/environ" >/dev/null            # Permission denied (undumpable)
 sudo -u processor cat /etc/processor/.env >/dev/null             # Permission denied
-systemctl is-enabled docker.socket                               # disabled
 # The key as the unit receives it: readable by the service's uid through an ACL,
 # from anywhere on the host, so by the child's but for Landlock (CR 9). The control
 # proves the uid can read it, so the second line's refusal is Landlock's.

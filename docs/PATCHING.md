@@ -68,7 +68,6 @@ The first unattended run reads in `journalctl -u apt-daily-upgrade` and `/var/lo
 4. `apply.sh --approve --step bulk --lane maintenance --dry-run <dir>`, in the background, within 24 h of the dry run. It restarts nothing. With no data store there is no recovery point: `recovery-point.sh` refuses ("nothing to dump"), and the bulk records the before-versions, the rollback path, in the `<run>` it creates and prints.
 5. Held steps, each approved, each `apply.sh --approve --step <name> --run <run>`:
    - `redis`: the scratch server restarts;
-   - `docker`: `containerd`. Docker and containerd are disabled and inactive here, so nothing is running to restart;
    - `tailscale`, if pending: a 2.3 s tailnet blip, sockets survive ([§ Tailnet flaps](NETWORK.md#tailnet-flaps), "A tailscaled restart here").
 6. The reboot and restart decision, from the host, never from this run's set: under `automatic` a `-security` library may have landed any day since the last run. `sudo needrestart -b -r l` and `sudo grep -c '(deleted)' /proc/1/maps`. The kernel never decides one on exe.dev. Expect a reboot when `systemd` or `libsystemd0` is in the set: after those families, needrestart listed dbus and logind on co-broker and co-status, and PID 1 mapped deleted files.
 7. The reboot: `reboot-chain.sh --run <run>` prints the chain; `--approve` launches it. It stops `processor` (up to `TimeoutStopSec=240`), then reboots in-guest. **Never `exe.dev restart`**: that is a hard reset (#83).
