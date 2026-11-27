@@ -43,7 +43,7 @@ The broker node never holds `processor`'s plaintext; since broker#72 its hourly 
 
    ```bash
    REDISCLI_AUTH="$(sed -n 's|^CO_PROCESSOR_BUS_URL=redis://processor:\([^@]*\)@.*|\1|p' /etc/processor/.env)" \
-     redis-cli -h broker --user processor PING   # PONG
+     valkey-cli -h broker --user processor PING   # PONG
    ```
 4. Then create the group right away (below).
 

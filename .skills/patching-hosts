@@ -55,9 +55,10 @@ origin deb.nodesource.com follow
 origin pkgs.tailscale.com follow
 hold tailscale tailscale
 
-# The scratch redis-server (localhost:6379, tests and smoke runs only) holds
-# nothing to recover, so it gets no datastore line. Its packages stay the
-# default `redis` held step: their postinst restarts it.
+# The scratch valkey-server (localhost:6379, tests and smoke runs only; Valkey
+# 7.2 since #54) holds nothing to recover, so it gets no datastore line. Its
+# packages stay the default `redis` held step, which takes valkey-server and
+# valkey-tools: their postinst restarts it.
 
 # --- owners ---------------------------------------------------------------
 # The release is an extract with no git origin: its uv.lock is this repo's,

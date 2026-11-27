@@ -34,11 +34,11 @@ Python 3.12, uv, hatchling src layout, pytest, ruff.
 |---|---|
 | VM | exe.dev `co-processor` (8 GB, 2 vCPU), tag `processor` |
 | Broker | `broker:6379`, by MagicDNS name, never by address. Tailscale runs `--accept-dns=true`, with an OOM drop-in for tailscaled: [docs/NETWORK.md](docs/NETWORK.md#tailscale-dns) |
-| Scratch bus | `redis-server` on `localhost:6379` — tests and smoke runs only |
+| Scratch bus | `valkey-server` on `localhost:6379` — tests and smoke runs only |
 | Input | `gs://co-gcs-blobs` (Replicator's raw blobs), read-only |
 | Output | `gs://co-gcs-processor/blobs/<sha256>.bin`, write-if-absent, **never deleted** |
 | Service | systemd unit `processor` ([deploy/processor.service](deploy/processor.service)), as user `processor` (no sudo, not in `docker`, no home), from `/srv/processor/live` → `releases/<build>`, a read-only release `scripts/deploy.sh` builds from a commit on `origin/main` (#2). **Never from a checkout**. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
-| CI | [.github/workflows/ci.yml](.github/workflows/ci.yml): lint (ruff, shellcheck), then the full suite (an attested PR: integration only, #147) against `redis:7.0.15`, the broker's, pulled from `mirror.gcr.io`, never anonymously from Docker Hub (#43). Pins, keyless WIF to `co-pypi-reader`, Dependabot (`github-actions` only): [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#ci-pins-and-dependabot); shell lint: [§ Shell lint](docs/DEPENDENCIES.md#shell-lint) |
+| CI | [.github/workflows/ci.yml](.github/workflows/ci.yml): lint (ruff, shellcheck), then the full suite (an attested PR: integration only, #147) against `valkey:7.2.14`, the broker's, pulled from `mirror.gcr.io`, never anonymously from Docker Hub (#43). Pins, keyless WIF to `co-pypi-reader`, Dependabot (`github-actions` only): [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#ci-pins-and-dependabot); shell lint: [§ Shell lint](docs/DEPENDENCIES.md#shell-lint) |
 | Lock audit | [.github/workflows/audit.yml](.github/workflows/audit.yml), report-only, outside the deploy gate: [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md#the-lock-audit) |
 | Status | Check-ins: drift (`processor-drift.timer`, hourly), liveness (`processor run`, 5 min), disk headroom ([deploy/disk-gc/disk-gc.conf](deploy/disk-gc/disk-gc.conf)): [docs/MONITORING.md](docs/MONITORING.md) |
 | Patching | `automatic` (knob `.skills/patching-hosts`, #113): `-security` daily by unattended-upgrades; the rest in one approved run a week, `Tue 05:00–10:00` UTC. Never a bare `apt-get upgrade`. [docs/PATCHING.md](docs/PATCHING.md#patching) |
@@ -77,7 +77,7 @@ Never edit sibling repos (`cannobserv`, `broker`, `watcher`, `replicator`, `arch
 ```bash
 bash scripts/co-pypi.sh uv sync          # install deps (co-core from the co-pypi index)
 uv run pytest                            # tests
-uv run pytest -m integration             # bus tests against the scratch redis-server
+uv run pytest -m integration             # bus tests against the scratch valkey-server
 uv run ruff check . && uv run ruff format --check .
 bash scripts/shellcheck.sh               # our shell scripts, as CI's lint step
 scripts/deploy.sh [<build>]              # ship: CI green, then build a release from origin/main, switch, verify (as exedev)

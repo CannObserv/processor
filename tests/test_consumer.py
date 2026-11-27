@@ -72,7 +72,7 @@ async def admin():
     try:
         await client.ping()
     except RedisConnectionError:
-        pytest.skip("the scratch redis-server is not running on localhost:6379")
+        pytest.skip("the scratch valkey-server is not running on localhost:6379")
     await client.flushdb()
     await client.execute_command("ACL", "LOG", "RESET")
     yield client

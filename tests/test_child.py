@@ -361,7 +361,7 @@ async def test_the_child_cannot_open_a_tcp_connection(tcp_listener: int) -> None
 
 @needs_landlock
 async def test_the_child_cannot_reach_the_scratch_redis_port() -> None:
-    # The broker's port; the scratch redis-server stands in for it (no control:
+    # The broker's port; the scratch valkey-server stands in for it (no control:
     # it may not be running here, and the socket is refused before any connect).
     result = await _run("try_connect", "AF_INET", ["127.0.0.1", 6379], containment="required")
     assert result.value == ["denied", errno.EPERM]

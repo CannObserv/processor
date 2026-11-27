@@ -64,7 +64,7 @@ asyncio_default_fixture_loop_scope = "function"
 tmp_path_retention_count = 1
 tmp_path_retention_policy = "failed"
 markers = [
-    "integration: needs the scratch redis-server on localhost:6379",
+    "integration: needs the scratch valkey-server on localhost:6379",
 ]
 
 [tool.ruff]

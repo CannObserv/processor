@@ -8,7 +8,7 @@ Spec §6 cutover step 3. Run it after an install, a deploy, or a key rotation, a
 
 What is real, and what is not:
 
-- **Bus:** the scratch ``redis-server`` (``redis://localhost:6379/14``), never the
+- **Bus:** the scratch ``valkey-server`` (``redis://localhost:6379/14``), never the
   broker. ``processor`` must not ``XADD content.process`` there, and a fact for a
   made-up command would be a fake fact on the real bus. Any other host is refused,
   and so is a db already holding the streams. The script deletes its streams
@@ -72,7 +72,7 @@ async def smoke(
 ) -> ProcessingCompleteEvent:
     """Run ``item`` through the consumer on ``redis_url``; return its verified fact."""
     if urlparse(redis_url).hostname not in _LOCAL_HOSTS:
-        raise ValueError(f"not the scratch redis-server: {redis_url!r}")
+        raise ValueError(f"not the scratch bus: {redis_url!r}")
     client = redis_client(redis_url, read_block_ms=1000)
     try:
         if await client.exists(*_STREAMS):
@@ -152,7 +152,7 @@ def main() -> int:
     """CLI: the production output store, the scratch bus."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--digest", default=DEFAULT_DIGEST, help="a real-corpus input_digest")
-    parser.add_argument("--bus-url", default=SCRATCH_URL, help="the scratch redis-server")
+    parser.add_argument("--bus-url", default=SCRATCH_URL, help="the scratch valkey-server")
     args = parser.parse_args()
     settings = Settings()
     output = build_stores(settings).output

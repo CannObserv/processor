@@ -187,6 +187,14 @@ on `co-processor`.
   (cannobserv#530, v0.41.0). The outcome record of a stored output logs
   `output_created` as a log signal only (Section 4).
 
+**Amended 2026-11-27 (the broker's engine is Valkey 7.2.14, processor#54):**
+- The broker moved from Redis 7.0.15 to Valkey 7.2.14 (CannObserv/broker#85).
+  redis-py sends `CLIENT SETINFO` on every connect from 7.2, and the broker
+  grants `processor` `+client|setinfo` with the engine (Section 3's grants).
+  Processor's code is unchanged.
+- The scratch bus on `co-processor` is `valkey-server` 7.2.14, and CI's service
+  image is `mirror.gcr.io/valkey/valkey:7.2.14` (Sections 7 and 8).
+
 ---
 
 ## Why a new service
@@ -282,7 +290,7 @@ processor-version pin on the command; no job API — the bus is the interface.
 
 | Principal | Resource | Grant |
 |---|---|---|
-| ACL user `processor` | `content.process` | `+xreadgroup +xack +xautoclaim +xgroup\|create +xlen +xrange +xinfo\|stream +info +ping` |
+| ACL user `processor` | `content.process` | `+xreadgroup +xack +xautoclaim +xgroup\|create +xlen +xrange +xinfo\|stream +info +client\|setinfo +ping` |
 | ACL user `processor` | `content.derived`, `content.process.dlq` | selector `(+xadd ~content.derived ~content.process.dlq)` |
 | ACL user `processor` | `content.process.dlq` | selector `(+xdel ~content.process.dlq)` |
 | `co-gcs-processor-writer` | `gs://co-gcs-processor` | `objectCreator` + `objectViewer`; **no delete** — append-only, never deleted |
@@ -838,7 +846,7 @@ TDD, red first.
    (default `exeuntu` image, which ships Claude Code) through exe.dev with
    `EXE_API_TOKEN`. **Never the `observo-worker` tag**: Observo's rowless-VM
    orphan sweep reaps by it (`exe.ls(tag=observo-worker)`).
-4. First-boot setup: uv + Python 3.12, `redis-server` (scratch bus), the
+4. First-boot setup: uv + Python 3.12, `valkey-server` (scratch bus), the
    Tailscale package, `/etc/processor/` (700). No secrets in the setup script,
    and no backslashes — `/exec` unescapes them.
 5. Join the tailnet with the one-time key, piped over SSH stdin (never argv or
