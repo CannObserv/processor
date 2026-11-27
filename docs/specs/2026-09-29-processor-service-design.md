@@ -190,10 +190,10 @@ on `co-processor`.
 **Amended 2026-11-27 (the broker's engine is Valkey 7.2.14, processor#54):**
 - The broker moved from Redis 7.0.15 to Valkey 7.2.14 (CannObserv/broker#85).
   redis-py sends `CLIENT SETINFO` on every connect from 7.2, and the broker
-  grants `processor` `+client|setinfo` with the engine (Section 3's grants).
+  grants `processor` `+client|setinfo` with the engine (Section 2's grants).
   Processor's code is unchanged.
 - The scratch bus on `co-processor` is `valkey-server` 7.2.14, and CI's service
-  image is `mirror.gcr.io/valkey/valkey:7.2.14` (Sections 7 and 8).
+  image is `mirror.gcr.io/valkey/valkey:7.2.14` (Section 8).
 
 ---
 
