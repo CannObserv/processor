@@ -9,11 +9,11 @@ import yaml
 
 WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
 WIF_SA = "co-pypi-reader@co-gcs.iam.gserviceaccount.com"
-# The broker's exact engine: Valkey 7.2.14 since broker#85 (processor#54). From 7.2
-# redis-py sends CLIENT SETINFO on every connect; the broker grants it with the engine,
-# and the integration suite's user mirrors that grant. valkey/valkey, the image broker#85
-# names, via Google's mirror (#43). A 7.0 rollback (broker#85) reverts this pin and the
-# grant together: 7.0 refuses +client|setinfo.
+# The broker's exact engine: Valkey 7.2.14 since broker#85 (processor#54). redis-py
+# sends CLIENT SETINFO on every connect, and 7.2 is the first engine that has it, so the
+# ACL checks it: the broker grants it with the engine, and the suite's user mirrors that.
+# valkey/valkey, the image broker#85 names, via Google's mirror (#43). A 7.0 rollback
+# (broker#85) reverts this pin and the grant together: 7.0 refuses +client|setinfo.
 BROKER_REDIS = "mirror.gcr.io/valkey/valkey:7.2.14"
 # The engine's own client: the image's redis-cli is only a compat symlink.
 HEALTH_CMD = '--health-cmd "valkey-cli ping"'

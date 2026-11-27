@@ -93,9 +93,10 @@ jobs:
       id-token: write
       statuses: read
     # The broker's exact engine, Valkey 7.2.14 (broker#85), as on co-processor's
-    # scratch server. From 7.2 redis-py sends CLIENT SETINFO on every connect: the
-    # broker grants it to processor with the engine, and the integration suite's
-    # user mirrors the grant (tests/test_consumer.py), so a denial here is one the
+    # scratch server. redis-py sends CLIENT SETINFO on every connect, and 7.2 is
+    # the first engine that has the command, so the ACL checks it: the broker
+    # grants it to processor with the engine, and the integration suite's user
+    # mirrors the grant (tests/test_consumer.py), so a denial here is one the
     # broker would log too. A 7.0 rollback reverts this pin and that grant together.
     # The integration suite runs here in full: db 15, a throwaway ACL user, and
     # briefly maxmemory, all of which a service container absorbs. Valkey's image

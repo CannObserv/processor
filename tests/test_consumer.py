@@ -51,7 +51,8 @@ pytestmark = pytest.mark.integration
 DB = 15
 USER, PASSWORD = "processor-test", "scratch-only-not-a-secret"
 # Broker deploy/redis-acl.conf's `processor` stanza. +client|setinfo since Valkey 7.2
-# (broker#85, P4): redis-py 7.4 sends CLIENT SETINFO on every connect (processor#54).
+# (broker#85, P4): redis-py sends CLIENT SETINFO on every connect, and 7.2 is the first
+# engine that has the command, so the ACL checks it (processor#54).
 GRANTS = [
     "~content.process", "~content.process.dlq", "resetchannels",
     "+xreadgroup", "+xack", "+xautoclaim", "+xgroup|create", "+xlen", "+xrange",
