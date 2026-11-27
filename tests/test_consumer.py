@@ -1,11 +1,11 @@
-"""The consumer loop against the scratch redis-server, as broker#75's ACL user (spec §3, §4).
+"""The consumer loop against the scratch Valkey, as the broker's ACL user (spec §3, §4).
 
 Runs on db 15 (flushed around each test) as a test user holding exactly the grants
-broker#75 gives ``processor`` — plus ``+select``, which db-15 isolation needs and the
-broker's db-0 user does not. After every test ``ACL LOG`` must hold no denial for
-that user: the capture broker#75 asks for, that the consumer issues only granted
-commands. Two tests narrow the grant or cap memory on purpose to show ``NOPERM`` and
-``OOM`` leave the entry pending rather than dead-lettering it.
+the broker gives ``processor`` (broker#75; ``+client|setinfo`` since broker#85) — plus
+``+select``, which db-15 isolation needs and the broker's db-0 user does not. After every
+test ``ACL LOG`` must hold no denial for that user: the capture broker#75 asks for, that
+the consumer issues only granted commands. Two tests narrow the grant or cap memory on
+purpose to show ``NOPERM`` and ``OOM`` leave the entry pending rather than dead-lettering it.
 """
 
 import asyncio
@@ -50,10 +50,12 @@ pytestmark = pytest.mark.integration
 
 DB = 15
 USER, PASSWORD = "processor-test", "scratch-only-not-a-secret"
+# Broker deploy/redis-acl.conf's `processor` stanza. +client|setinfo since Valkey 7.2
+# (broker#85, P4): redis-py 7.4 sends CLIENT SETINFO on every connect (processor#54).
 GRANTS = [
     "~content.process", "~content.process.dlq", "resetchannels",
     "+xreadgroup", "+xack", "+xautoclaim", "+xgroup|create", "+xlen", "+xrange",
-    "+xinfo|stream", "+info", "+ping",
+    "+xinfo|stream", "+info", "+ping", "+client|setinfo",
     "(+xadd ~content.derived ~content.process.dlq)",
     "(+xdel ~content.process.dlq)",
     "+select",  # db-15 isolation only; the broker's user lives on db 0
