@@ -92,27 +92,28 @@ jobs:
       contents: read
       id-token: write
       statuses: read
-    # The broker's exact Redis, 7.0.15 (broker deploy/redis-acl.conf), as on
-    # co-processor's scratch server. Not a newer 7.x: from 7.2 redis-py's CLIENT
-    # SETINFO is an ACL denial the broker's grant cannot cover until it upgrades
-    # (granting it is a required step of that upgrade, per the broker). The
-    # integration suite runs here in full: db 15, a throwaway ACL user, and briefly
-    # maxmemory, all of which a service container absorbs. Docker Hub's official
-    # image via Google's mirror: GitHub's shared runners exhaust Hub's anonymous
+    # The broker's exact engine, Valkey 7.2.14 (broker#85), as on co-processor's
+    # scratch server. From 7.2 redis-py sends CLIENT SETINFO on every connect: the
+    # broker grants it to processor with the engine, and the integration suite's
+    # user mirrors the grant (tests/test_consumer.py), so a denial here is one the
+    # broker would log too. A 7.0 rollback reverts this pin and that grant together.
+    # The integration suite runs here in full: db 15, a throwaway ACL user, and
+    # briefly maxmemory, all of which a service container absorbs. Valkey's image
+    # via Google's mirror: GitHub's shared runners exhaust Docker Hub's anonymous
     # pull limit, and a red main run blocks deploys (#43, tests/test_ci.py). The
-    # mirror serves only tags it has cached (an old one 404s), and 7.0 is past EOL:
-    # "manifest unknown" at Initialize containers means 7.0.15 left the cache, not
-    # a broken commit. The fallback is the runner's apt redis-server: runs-on is
-    # 24.04 (#81), whose apt redis-server is 7.0.15. Assert the version and wait on
-    # redis-cli ping (#43).
-    # broker#85 decides the broker's next Redis; this pin moves with it.
+    # image is valkey/valkey, the one broker#85 names. The mirror serves only tags
+    # it has cached: "manifest unknown" at Initialize containers means 7.2.14 left
+    # the cache, not a broken commit. The fallback is the runner's apt
+    # valkey-server: runs-on is 24.04 (#81), whose noble-updates carries 7.2.14.
+    # Assert the version and wait on valkey-cli ping (#43).
+    # The broker's engine decides this pin; it moves with broker's next one.
     services:
       redis:
-        image: mirror.gcr.io/library/redis:7.0.15
+        image: mirror.gcr.io/valkey/valkey:7.2.14
         ports:
           - 6379:6379
         options: >-
-          --health-cmd "redis-cli ping"
+          --health-cmd "valkey-cli ping"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10

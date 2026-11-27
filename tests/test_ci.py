@@ -9,12 +9,14 @@ import yaml
 
 WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "ci.yml"
 WIF_SA = "co-pypi-reader@co-gcs.iam.gserviceaccount.com"
-# The broker's exact version (broker deploy/redis-acl.conf: "this broker is 7.0.15").
-# Not 7.2: redis-py sends CLIENT SETINFO there, which the broker's ACL cannot grant
-# until it upgrades, so a 7.2 container reports denials the broker never sees.
-# 7.0 is upstream EOL: broker#85 decides the next version, and this pin moves with it.
-# Docker Hub's official image via Google's mirror (#43): see test_image_comes_from_the_mirror.
-BROKER_REDIS = "mirror.gcr.io/library/redis:7.0.15"
+# The broker's exact engine: Valkey 7.2.14 since broker#85 (processor#54). From 7.2
+# redis-py sends CLIENT SETINFO on every connect; the broker grants it with the engine,
+# and the integration suite's user mirrors that grant. valkey/valkey, the image broker#85
+# names, via Google's mirror (#43). A 7.0 rollback (broker#85) reverts this pin and the
+# grant together: 7.0 refuses +client|setinfo.
+BROKER_REDIS = "mirror.gcr.io/valkey/valkey:7.2.14"
+# The engine's own client: the image's redis-cli is only a compat symlink.
+HEALTH_CMD = '--health-cmd "valkey-cli ping"'
 MIRROR = "mirror.gcr.io/"
 AUDIT_WORKFLOW = WORKFLOW.parent / "audit.yml"
 # co-processor's image: every job runs on it, not ubuntu-latest (#81, as broker#88).
@@ -163,8 +165,8 @@ def _runners() -> dict[str, str]:
 
 def test_every_job_runs_on_the_nodes_image() -> None:
     """Not ubuntu-latest, which moved to 26.04 under us (#81, as broker#88): the
-    shell lint and the suite run on co-processor's userland, and the Redis
-    fallback above is 24.04's apt redis-server."""
+    shell lint and the suite run on co-processor's userland, and the bus's
+    fallback is 24.04's apt valkey-server, 7.2.14 in noble-updates."""
     runners = _runners()
     assert {"ci.yml:lint", "ci.yml:test", "audit.yml:audit"} <= set(runners)
     assert set(runners.values()) == {NODE_IMAGE}, runners
@@ -220,6 +222,7 @@ def test_the_whole_suite_runs_against_the_brokers_redis(ci: dict) -> None:
     redis = job["services"]["redis"]
     assert redis["image"] == BROKER_REDIS
     assert "6379:6379" in redis["ports"]
+    assert HEALTH_CMD in redis["options"]
     runs = [line for line in _runs(job).splitlines() if "pytest" in line]
     assert runs == [FULL_SUITE, INTEGRATION], "a marker filter would drop the integration tests"
 
